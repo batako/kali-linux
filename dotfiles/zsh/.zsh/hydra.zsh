@@ -87,8 +87,17 @@ hydrassh() {
   echo "[*] target: ssh://$target  user: $user"
   echo "[*] wordlist: $wordlist"
 
+  local log rc
+  log="$(mktemp "${TMPDIR:-/tmp}/hydrassh.XXXXXX")"
+  trap 'rm -f "$log"' EXIT INT TERM
+
   hydra -l "$user" \
     -P "$wordlist" \
     -t 32 -f -V \
-    ssh://"$target"
+    ssh://"$target" 2>&1 | tee "$log"
+  rc=${pipestatus[1]}
+
+  python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
+
+  return $rc
 }

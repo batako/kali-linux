@@ -8,10 +8,18 @@ from db import show_tasks
 from db import complete_task
 from db import print_host_summary_json
 from db import add_artifact
+from db import creds_upsert
+from db import list_ssh_creds
+from db import get_ssh_last_user
+from db import set_ssh_last_user
 from db import list_executions
 from db import get_execution
 from db import list_artifacts
 from db import delete_artifact
+from creds import import_hydra_ssh
+from creds import RECON_CREDS_BANNER
+from creds import emit_import_results
+import json
 
 from scanner import network_scan
 from scanner import host_scan
@@ -291,7 +299,6 @@ def main():
         print("ok")
 
     elif cmd == "creds-add":
-        # convenience wrapper around artifact-add
         if len(sys.argv) < 5:
             print("usage: recon.py creds-add <ip> <username> <password>")
             sys.exit(1)
@@ -300,8 +307,74 @@ def main():
         username = sys.argv[3]
         password = sys.argv[4]
 
-        add_artifact(ip=ip, kind="username", key="", value=username, execution_id=None)
-        add_artifact(ip=ip, kind="password", key=username, value=password, execution_id=None)
+        status = creds_upsert(ip=ip, username=username, password=password)
+        print(status)
+
+    elif cmd == "creds-list":
+        args = sys.argv[2:]
+        as_json = False
+        if args and args[0] == "--json":
+            as_json = True
+            args = args[1:]
+
+        ip = args[0] if args else None
+        if not ip:
+            print("usage: recon.py creds-list [--json] <ip>")
+            sys.exit(1)
+
+        rows = list_ssh_creds(ip)
+        if as_json:
+            # omit passwords in json? user needs them for ssh - include
+            print(json.dumps(rows))
+        else:
+            if not rows:
+                print(f"(no ssh creds for {ip})")
+            else:
+                for r in rows:
+                    print(f"{r['username']}\t{r['password']}")
+
+    elif cmd == "creds-import-hydra":
+        if len(sys.argv) < 3:
+            print("usage: recon.py creds-import-hydra <ip> [--file path]")
+            sys.exit(1)
+
+        ip = sys.argv[2]
+        path = None
+        args = sys.argv[3:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--file" and i + 1 < len(args):
+                path = args[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        if path:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        else:
+            text = sys.stdin.read()
+
+        results = import_hydra_ssh(text, ip=ip)
+        emit_import_results(results)
+        if not results:
+            print("", file=sys.stdout)
+            print(RECON_CREDS_BANNER, file=sys.stdout)
+            print("[i] no hydra ssh credentials found in output", file=sys.stdout)
+
+    elif cmd == "ssh-last-get":
+        if len(sys.argv) < 3:
+            print("usage: recon.py ssh-last-get <ip>")
+            sys.exit(1)
+        last = get_ssh_last_user(sys.argv[2])
+        if last:
+            print(last)
+
+    elif cmd == "ssh-last-set":
+        if len(sys.argv) < 4:
+            print("usage: recon.py ssh-last-set <ip> <username>")
+            sys.exit(1)
+        set_ssh_last_user(sys.argv[2], sys.argv[3])
         print("ok")
 
     elif cmd == "artifact-list":

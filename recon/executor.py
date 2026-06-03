@@ -8,6 +8,9 @@ import threading
 import time
 
 from db import add_artifact
+from creds import RECON_CREDS_BANNER
+from creds import import_hydra_ssh
+from creds import emit_import_results
 from db import add_execution
 from db import claim_task
 from db import find_done_execution
@@ -203,6 +206,13 @@ def run_command(
 
         _extract_artifacts(ip, exec_id, stdout)
         _extract_artifacts(ip, exec_id, stderr)
+
+        combined = (stdout or "") + "\n" + (stderr or "")
+        # hydrassh already runs creds-import-hydra; skip to avoid duplicate recon block
+        if RECON_CREDS_BANNER not in combined:
+            cred_results = import_hydra_ssh(combined, ip=ip, execution_id=exec_id)
+            emit_import_results(cred_results)
+
         return exec_id
 
     except Exception as e:

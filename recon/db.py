@@ -691,6 +691,152 @@ def add_artifact(ip, kind, key, value, execution_id=None):
     conn.close()
 
 
+def _get_password_artifact(ip: str, username: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT id, value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'password' AND key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, username),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def _username_artifact_exists(ip: str, username: str) -> bool:
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT 1
+        FROM artifacts
+        WHERE ip = ? AND kind = 'username' AND value = ?
+        LIMIT 1
+        """,
+        (ip, username),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> str:
+    """
+    Insert or update ssh credentials for (ip, username).
+    Returns: saved | updated | unchanged
+    """
+    if not ip or not username or not password:
+        raise ValueError("ip, username, and password required")
+
+    existing = _get_password_artifact(ip, username)
+    if existing and (existing["value"] or "") == password:
+        return "unchanged"
+
+    conn = connect()
+    cur = conn.cursor()
+
+    if existing:
+        cur.execute(
+            """
+            UPDATE artifacts
+            SET value = ?, execution_id = ?, created_at = datetime('now')
+            WHERE id = ?
+            """,
+            (password, execution_id, int(existing["id"])),
+        )
+        status = "updated"
+    else:
+        cur.execute(
+            """
+            INSERT INTO artifacts (
+                ip, kind, key, value, execution_id, created_at
+            ) VALUES (?, 'password', ?, ?, ?, datetime('now'))
+            """,
+            (ip, username, password, execution_id),
+        )
+        status = "saved"
+
+    has_user = cur.execute(
+        """
+        SELECT 1 FROM artifacts
+        WHERE ip = ? AND kind = 'username' AND value = ?
+        LIMIT 1
+        """,
+        (ip, username),
+    ).fetchone()
+
+    if not has_user:
+        cur.execute(
+            """
+            INSERT INTO artifacts (
+                ip, kind, key, value, execution_id, created_at
+            ) VALUES (?, 'username', '', ?, ?, datetime('now'))
+            """,
+            (ip, username, execution_id),
+        )
+
+    conn.commit()
+    conn.close()
+    return status
+
+
+def list_ssh_creds(ip: str):
+    """Return [{username, password}, ...] latest password per username."""
+    conn = connect()
+    rows = conn.execute(
+        """
+        SELECT key, value, id
+        FROM artifacts
+        WHERE ip = ? AND kind = 'password' AND key != ''
+        ORDER BY id DESC
+        """,
+        (ip,),
+    ).fetchall()
+    conn.close()
+
+    by_user = {}
+    for r in rows:
+        user = r["key"]
+        if user not in by_user:
+            by_user[user] = r["value"]
+    return [{"username": u, "password": by_user[u]} for u in sorted(by_user)]
+
+
+def get_ssh_last_user(ip: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'ssh_last_user' AND key = ''
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip,),
+    ).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_ssh_last_user(ip: str, username: str, execution_id=None):
+    if get_ssh_last_user(ip) == username:
+        return
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO artifacts (
+            ip, kind, key, value, execution_id, created_at
+        ) VALUES (?, 'ssh_last_user', '', ?, ?, datetime('now'))
+        """,
+        (ip, username, execution_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def get_host_summary(ip: str, executions_limit: int = 10, artifacts_limit: int = 50):
     conn = connect()
     cur = conn.cursor()

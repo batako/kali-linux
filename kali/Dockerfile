@@ -32,6 +32,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     openssh-client \
     openvpn \
     smbclient \
+    sshpass \
     telnet \
     \
     # === network diagnostics ===

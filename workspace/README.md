@@ -13,6 +13,16 @@
 
 コマンドの使い方は [COMMAND.md](../COMMAND.md)。
 
+### SSH 認証情報（recon DB）
+
+| 操作 | コマンド |
+|------|----------|
+| hydra SSH 成功後に自動保存 | `hydrassh`（または `x hydrassh`） |
+| 手動登録 | `creds-add [ip] <user> <pass>` |
+| 一覧 | `creds-list` / `ssh-list` |
+| パスワード入力なしで接続 | `ssh` / `ssh <user>` / `ssh user@ip`（要 `sshpass`、DB に creds あり） |
+| 通常の OpenSSH | `command ssh ...` |
+
 ## レイアウト
 
 | パス | 用途 |
