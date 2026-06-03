@@ -40,26 +40,55 @@ hydraweb() {
 }
 
 hydrassh() {
-  local target user
+  local target="" user="" wordlist="$RECON_PASSLIST"
+  local -a args=("$@")
 
-  if [[ $# -ge 2 ]]; then
-    target="$1"
-    user="$2"
-  elif [[ $# -eq 1 ]]; then
+  if [[ $# -lt 1 ]]; then
+    echo "usage: hydrassh [target] <user> [wordlist]"
+    echo "  default wordlist: \$RECON_PASSLIST"
+    echo "  omit target when \$IP is set (target-set <ip>)"
+    return 1
+  fi
+
+  # zsh arrays are 1-based; do not use $# here (it is the function's argc, not args length)
+  if [[ -n "${args[-1]}" && -f "${args[-1]:A}" ]]; then
+    wordlist="${args[-1]:A}"
+    if (( ${#args[@]} > 1 )); then
+      args=("${args[1,-2]}")
+    else
+      args=()
+    fi
+  fi
+
+  if [[ ${#args[@]} -ge 2 && "${args[1]}" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+    target="${args[1]}"
+    user="${args[2]}"
+  elif [[ ${#args[@]} -eq 2 ]]; then
+    target="${args[1]}"
+    user="${args[2]}"
+  elif [[ ${#args[@]} -eq 1 ]]; then
     target="${IP:-}"
-    user="$1"
+    user="${args[1]}"
   else
-    echo "usage: hydrassh [target] <user>  (or: target-set <ip> first)"
+    echo "usage: hydrassh [target] <user> [wordlist]"
     return 1
   fi
 
-  if [[ -z "$target" ]]; then
-    echo "usage: hydrassh [target] <user>  (or: target-set <ip> first)"
+  if [[ -z "$target" || -z "$user" ]]; then
+    echo "usage: hydrassh [target] <user> [wordlist]  (or: target-set <ip> first)"
     return 1
   fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  echo "[*] target: ssh://$target  user: $user"
+  echo "[*] wordlist: $wordlist"
 
   hydra -l "$user" \
-    -P "$RECON_PASSLIST" \
+    -P "$wordlist" \
     -t 32 -f -V \
     ssh://"$target"
 }
