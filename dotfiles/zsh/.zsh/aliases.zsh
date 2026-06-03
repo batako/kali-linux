@@ -19,16 +19,6 @@ scan() {
   nmap -sC -sV "$target"
 }
 
-# anonymous FTP
-ftpa() {
-  local target="${1:-${IP:-}}"
-  if [[ -z "$target" ]]; then
-    echo "usage: ftpa [ip]  (or: target-set <ip> first)"
-    return 1
-  fi
-  ftp "anonymous@${target}"
-}
-
 alias ss='searchsploit'
 alias msf='msfconsole'
 

@@ -46,7 +46,7 @@ ReconOS の永続化層。ここに置くのは `recon.db` のみ。
 
 ```
 cases/<name>/
-├── logs/       # listen -l など
+├── logs/       # listen -l, ftpa -l, ftp -l など
 ├── exports/    # ハッシュ・クラック結果など
 ├── memo.md     # 任意
 ├── task.txt    # 任意
