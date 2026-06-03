@@ -15,9 +15,8 @@ scan() {
     return 1
   fi
 
-  local out_dir="${RECON_HOME:-/workspace/recon}/scans"
-  mkdir -p "$out_dir"
-  nmap -sC -sV -oN "${out_dir}/nmap-${target}.txt" "$target"
+  # stdout only; persist with: x scan
+  nmap -sC -sV "$target"
 }
 alias ss='searchsploit'
 alias msf='msfconsole'

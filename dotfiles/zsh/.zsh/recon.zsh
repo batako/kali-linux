@@ -34,14 +34,13 @@ target-clear() {
 }
 
 recon-init() {
-  mkdir -p "$RECON_HOME/scans"
-  mkdir -p "$RECON_HOME/exports"
-  mkdir -p "$RECON_HOME/notes"
+  mkdir -p "$RECON_HOME"
 
   python3 "$RECON_APP" init
 
   echo "[+] recon initialized"
   echo "[+] db: $RECON_DB"
+  echo "[*] file outputs (logs, exports): cs <name> first (or CASE_LOOSE=1)"
 }
 
 net-scan() {

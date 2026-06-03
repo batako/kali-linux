@@ -54,7 +54,8 @@ sshkey-crack() {
     return 1
   fi
 
-  local out_dir="${RECON_HOME:-/workspace/recon}/exports"
+  local out_dir
+  out_dir="$(case-exports-dir)" || return 1
   mkdir -p "$out_dir"
 
   local base="${key:t}"

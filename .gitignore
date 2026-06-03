@@ -12,3 +12,7 @@ workspace/exploits/**
 workspace/recon/**
 !workspace/recon/**/
 !workspace/recon/**/.keep
+
+workspace/cases/**
+!workspace/cases/**/
+!workspace/cases/**/.keep

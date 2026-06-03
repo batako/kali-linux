@@ -4,13 +4,14 @@
 
 _listen-log-path() {
   local port="$1"
-  local home="${RECON_HOME:-/workspace/recon}"
+  local logs
+  logs="$(case-logs-dir)" || return 1
   local ip="${IP:-notarget}"
   local ts
   ts="$(date +%Y%m%d-%H%M%S)"
 
-  mkdir -p "$home/shells"
-  echo "$home/shells/revshell_${ip}_${port}_${ts}.log"
+  mkdir -p "$logs"
+  echo "$logs/revshell_${ip}_${port}_${ts}.log"
 }
 
 listen() {
@@ -26,7 +27,7 @@ listen() {
       -h|--help)
         echo "usage: listen [-l] [port]"
         echo "  start netcat listener (default: 4444)"
-        echo "  -l  record full session to \$RECON_HOME/shells/ (typed input + output)"
+        echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)"
         return 0
         ;;
       *)
