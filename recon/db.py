@@ -676,19 +676,53 @@ def find_done_execution(ip: str, command: str):
 
 
 def add_artifact(ip, kind, key, value, execution_id=None):
+    """
+    Insert artifact if (ip, kind, key, value) is new.
+    On duplicate: skip insert; refresh execution_id when provided.
+    Returns artifact id.
+    """
+    key = key or ""
     conn = connect()
     cur = conn.cursor()
 
-    cur.execute("""
-    INSERT INTO artifacts (
-        ip, kind, key, value, execution_id, created_at
-    ) VALUES (
-        ?, ?, ?, ?, ?, datetime('now')
-    )
-    """, (ip, kind, key, value, execution_id))
+    row = cur.execute(
+        """
+        SELECT id
+        FROM artifacts
+        WHERE ip = ? AND kind = ? AND key = ? AND value = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, kind, key, value),
+    ).fetchone()
 
+    if row:
+        art_id = int(row["id"])
+        if execution_id is not None:
+            cur.execute(
+                """
+                UPDATE artifacts
+                SET execution_id = ?, created_at = datetime('now')
+                WHERE id = ?
+                """,
+                (execution_id, art_id),
+            )
+            conn.commit()
+        conn.close()
+        return art_id
+
+    cur.execute(
+        """
+        INSERT INTO artifacts (
+            ip, kind, key, value, execution_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (ip, kind, key, value, execution_id),
+    )
+    art_id = int(cur.lastrowid)
     conn.commit()
     conn.close()
+    return art_id
 
 
 def _get_password_artifact(ip: str, username: str):
@@ -782,26 +816,29 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
     return status
 
 
+# Stored for creds/ssh; hidden from artifact-list (use creds-list / cl)
+_ARTIFACT_CRED_KINDS = ("username", "password", "ssh_last_user")
+
+
 def list_ssh_creds(ip: str):
-    """Return [{username, password}, ...] latest password per username."""
+    """Return [{username, password}, ...] one row per username (latest password)."""
     conn = connect()
     rows = conn.execute(
         """
-        SELECT key, value, id
+        SELECT key AS username, value AS password
         FROM artifacts
-        WHERE ip = ? AND kind = 'password' AND key != ''
-        ORDER BY id DESC
+        WHERE id IN (
+            SELECT MAX(id)
+            FROM artifacts
+            WHERE ip = ? AND kind = 'password' AND key != ''
+            GROUP BY key
+        )
+        ORDER BY key
         """,
         (ip,),
     ).fetchall()
     conn.close()
-
-    by_user = {}
-    for r in rows:
-        user = r["key"]
-        if user not in by_user:
-            by_user[user] = r["value"]
-    return [{"username": u, "password": by_user[u]} for u in sorted(by_user)]
+    return [{"username": r["username"], "password": r["password"]} for r in rows]
 
 
 def get_ssh_last_user(ip: str):
@@ -825,6 +862,10 @@ def set_ssh_last_user(ip: str, username: str, execution_id=None):
         return
     conn = connect()
     cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM artifacts WHERE ip = ? AND kind = 'ssh_last_user'",
+        (ip,),
+    )
     cur.execute(
         """
         INSERT INTO artifacts (
@@ -971,29 +1012,46 @@ def get_execution(execution_id: int):
 
 
 def list_artifacts(ip: str = None, limit: int = 100):
+    """
+    Distinct artifacts for list view: latest row per (ip, kind, key, value).
+    Excludes cred-related kinds (see creds-list / cl).
+    """
     conn = connect()
-    cur = conn.cursor()
+    kinds_placeholders = ",".join("?" * len(_ARTIFACT_CRED_KINDS))
+    params = list(_ARTIFACT_CRED_KINDS)
 
     if ip:
-        rows = cur.execute(
-            """
-            SELECT id, ip, kind, key, value, execution_id, created_at
-            FROM artifacts
-            WHERE ip = ?
-            ORDER BY id DESC
+        rows = conn.execute(
+            f"""
+            SELECT a.id, a.ip, a.kind, a.key, a.value, a.execution_id, a.created_at
+            FROM artifacts a
+            INNER JOIN (
+                SELECT MAX(id) AS id
+                FROM artifacts
+                WHERE ip = ?
+                  AND kind NOT IN ({kinds_placeholders})
+                GROUP BY kind, COALESCE(key, ''), value
+            ) d ON a.id = d.id
+            ORDER BY a.id DESC
             LIMIT ?
             """,
-            (ip, int(limit)),
+            (ip, *params, int(limit)),
         ).fetchall()
     else:
-        rows = cur.execute(
-            """
-            SELECT id, ip, kind, key, value, execution_id, created_at
-            FROM artifacts
-            ORDER BY id DESC
+        rows = conn.execute(
+            f"""
+            SELECT a.id, a.ip, a.kind, a.key, a.value, a.execution_id, a.created_at
+            FROM artifacts a
+            INNER JOIN (
+                SELECT MAX(id) AS id
+                FROM artifacts
+                WHERE kind NOT IN ({kinds_placeholders})
+                GROUP BY ip, kind, COALESCE(key, ''), value
+            ) d ON a.id = d.id
+            ORDER BY a.id DESC
             LIMIT ?
             """,
-            (int(limit),),
+            (*params, int(limit)),
         ).fetchall()
 
     conn.close()
