@@ -5,31 +5,40 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    # === basic tools ===
+    # === core ===
     binutils \
-    dnsutils \
-    exiftool \
     file \
-    fzf \
-    git \
     htop \
-    inetutils-ping \
-    jq \
     neovim \
-    netcat-openbsd \
-    openssh-client \
-    python3-pip \
-    ripgrep \
-    smbclient \
-    telnet \
     tmux \
-    traceroute \
-    whois \
     zsh \
     \
+    # === productivity ===
+    fzf \
+    git \
+    ripgrep \
+    \
+    # === scripting ===
+    jq \
+    python3-pip \
+    \
+    # === forensics ===
+    exiftool \
+    \
     # === network ===
+    ftp \
     microsocks \
+    netcat-openbsd \
+    openssh-client \
     openvpn \
+    smbclient \
+    telnet \
+    \
+    # === network diagnostics ===
+    dnsutils \
+    inetutils-ping \
+    traceroute \
+    whois \
     \
     # === GUI ===
     dbus-x11 \
