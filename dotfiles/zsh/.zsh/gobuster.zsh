@@ -17,6 +17,17 @@ gb-normalize-url() {
   echo "$url"
 }
 
+gb-resolve-target() {
+  local target="${1:-${IP:-}}"
+
+  if [[ -z "$target" ]]; then
+    echo "usage: target-set <ip>  or pass url/ip as argument" >&2
+    return 1
+  fi
+
+  echo "$target"
+}
+
 gb-set-web() {
   echo "Select Gobuster wordlist:"
   echo "1) raft-small"
@@ -125,8 +136,7 @@ gb-dir() {
   done
 
   if [[ -z "$url" ]]; then
-    echo "usage: gb-dir <url>"
-    return 1
+    url="$(gb-resolve-target)" || return 1
   fi
 
   url="$(gb-normalize-url "$url")"
@@ -153,12 +163,18 @@ gb-dir() {
 }
 
 gb-dns() {
-  if [[ $# -lt 1 ]]; then
-    echo "usage: gbdns <domain>"
-    return 1
+  local domain=""
+
+  if [[ $# -ge 1 ]]; then
+    domain="$1"
+  else
+    domain="${IP:-}"
   fi
 
-  local domain="$1"
+  if [[ -z "$domain" ]]; then
+    echo "usage: gb-dns [domain]  (or: target-set <ip>)"
+    return 1
+  fi
 
   echo "========================"
   echo "[DNS] $domain"
@@ -173,12 +189,13 @@ gb-dns() {
 }
 
 gb-vhost() {
-  if [[ $# -lt 1 ]]; then
-    echo "usage: gb-vhost <ip>"
-    return 1
-  fi
+  local ip=""
 
-  local ip="$1"
+  if [[ $# -ge 1 ]]; then
+    ip="$1"
+  else
+    ip="$(gb-resolve-target)" || return 1
+  fi
 
   echo "=============================="
   echo "[VHOST]"
