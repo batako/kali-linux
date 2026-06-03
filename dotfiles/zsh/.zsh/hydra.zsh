@@ -40,13 +40,26 @@ hydraweb() {
 }
 
 hydrassh() {
-  if [[ $# -lt 2 ]]; then
-    echo "usage: hydrassh <target> <user>"
+  local target user
+
+  if [[ $# -ge 2 ]]; then
+    target="$1"
+    user="$2"
+  elif [[ $# -eq 1 ]]; then
+    target="${IP:-}"
+    user="$1"
+  else
+    echo "usage: hydrassh [target] <user>  (or: target-set <ip> first)"
     return 1
   fi
 
-  hydra -l "$2" \
+  if [[ -z "$target" ]]; then
+    echo "usage: hydrassh [target] <user>  (or: target-set <ip> first)"
+    return 1
+  fi
+
+  hydra -l "$user" \
     -P "$RECON_PASSLIST" \
     -t 32 -f -V \
-    ssh://"$1"
+    ssh://"$target"
 }
