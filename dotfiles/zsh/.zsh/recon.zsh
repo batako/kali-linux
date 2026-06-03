@@ -259,6 +259,10 @@ creds-list() {
   python3 "$RECON_APP" creds-list "$ip"
 }
 
+cl() {
+  creds-list "$@"
+}
+
 artifact-list() {
   # usage: artifact-list [-l] [ip]   default: current target ($IP)
   python3 "$RECON_APP" artifact-list "$@"
