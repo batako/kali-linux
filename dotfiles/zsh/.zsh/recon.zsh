@@ -259,28 +259,6 @@ creds-list() {
   python3 "$RECON_APP" creds-list "$ip"
 }
 
-# Test ssh account picker / sshpass wiring (login will fail unless target accepts these)
-creds-dummy() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "usage: creds-dummy [ip]  (or: target-set <ip> first)"
-    return 1
-  fi
-
-  local -a pairs=(
-    "dummy_alpha dummy-pass-alpha"
-    "dummy_beta dummy-pass-beta"
-  )
-  local p user pass st
-  for p in "${pairs[@]}"; do
-    user="${p%% *}"
-    pass="${p#* }"
-    st="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass")"
-    echo "[+] $user@$ip ($st)"
-  done
-  echo "[*] creds-list $ip; run: ssh  (picker test — dummies will not log in)"
-}
-
 artifact-list() {
   # usage: artifact-list [-l] [ip]   default: current target ($IP)
   python3 "$RECON_APP" artifact-list "$@"
