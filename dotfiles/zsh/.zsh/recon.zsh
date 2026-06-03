@@ -282,12 +282,12 @@ creds-dummy() {
 }
 
 artifact-list() {
-  # usage: artifact-list [ip]
-  if [[ $# -ge 1 ]]; then
-    python3 "$RECON_APP" artifact-list "$1"
-  else
-    python3 "$RECON_APP" artifact-list
-  fi
+  # usage: artifact-list [-l] [ip]   default: current target ($IP)
+  python3 "$RECON_APP" artifact-list "$@"
+}
+
+al() {
+  artifact-list "$@"
 }
 
 artifact-del() {

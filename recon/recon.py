@@ -378,7 +378,25 @@ def main():
         print("ok")
 
     elif cmd == "artifact-list":
-        ip = sys.argv[2] if len(sys.argv) >= 3 else None
+        # list artifacts; default = target IP ($IP), -l = all hosts
+        args = sys.argv[2:]
+        list_all = False
+
+        if args and args[0] in ("-l", "--all"):
+            list_all = True
+            args = args[1:]
+
+        if args:
+            ip = args[0]
+        elif list_all:
+            ip = None
+        else:
+            ip = os.environ.get("IP")
+            if not ip:
+                print("usage: recon.py artifact-list [-l] [ip]")
+                print("hint: target-set <ip>  or  artifact-list -l  for all hosts")
+                sys.exit(1)
+
         rows = list_artifacts(ip=ip, limit=200)
 
         print("")
