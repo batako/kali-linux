@@ -1,0 +1,40 @@
+services:
+  kali:
+    build:
+      context: .
+      dockerfile: ./kali/Dockerfile
+
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+
+    environment:
+      - VNC_PASSWORD=kali1234
+
+    volumes:
+      # working directory
+      - ./workspace:/workspace
+
+      # recon app
+      - ./recon:/opt/recon:ro
+
+      # configs
+      - ./config/openvpn/tryhackme.ovpn:/etc/openvpn/tryhackme.ovpn:ro
+      - ./dotfiles/tmux/.tmux.conf:/home/kali/.tmux.conf:ro
+      - ./dotfiles/zsh/.p10k.zsh:/home/kali/.p10k.zsh
+      - ./dotfiles/zsh/.zsh:/home/kali/.zsh:ro
+      - ./dotfiles/zsh/.zshrc:/home/kali/.zshrc
+      - ./kali/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+
+    tty: true
+    stdin_open: true
+
+    cap_add:
+      - NET_ADMIN
+
+    devices:
+      - /dev/net/tun
+
+    ports:
+      - "1080:1080"
+      - "5905:5901"
+      - "6080:6080"
+      - "7681:7681"

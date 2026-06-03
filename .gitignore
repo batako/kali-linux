@@ -1,0 +1,14 @@
+tmp/*
+
+# Python
+__pycache__/
+*.pyc
+
+# workspace: exploits/recon gitignored; payloads = self-authored, tracked
+workspace/exploits/**
+!workspace/exploits/**/
+!workspace/exploits/**/.keep
+
+workspace/recon/**
+!workspace/recon/**/
+!workspace/recon/**/.keep
