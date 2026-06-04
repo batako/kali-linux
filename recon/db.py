@@ -1,5 +1,7 @@
+import fcntl
 import os
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 import json
 
@@ -29,6 +31,19 @@ def _default_db_path() -> str:
 DB_PATH = _default_db_path()
 
 SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("RECON_SQLITE_BUSY_TIMEOUT_MS", "5000"))
+
+
+@contextmanager
+def db_file_lock():
+    """Serialize recon.db writers (parallel scan ingest)."""
+    lock_path = Path(DB_PATH).resolve().parent / "recon.db.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
 
 
 def connect():

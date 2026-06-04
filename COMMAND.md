@@ -101,7 +101,8 @@ cs startup
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
-| `scan full [ip]` | **TCP 1–65535 を自動で最後まで**（1000 ポートずつ、1 コマンドで完走） |
+| `scan full [ip]` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
+| `scan full -j 4` | full を **4 並列**（1 wave あたり最大 4000 ポート、`recon.db.lock` でマージ） |
 | `scan -f` | 再スキャン（basic=top 1000、full=`-p-`） |
 | `scan -n` / `-q` | dry-run / ポート表なし |
 | `host-reset [ip]` | 当該 IP の ports / coverage / scan_ranges を削除（再テスト用） |
@@ -110,7 +111,8 @@ cs startup
 ```bash
 cs startup && ti 10.49.140.156
 scan              # 定番 1000。終わったら OPEN / CLOSED
-scan full         # 65535 完了まで自動（長い。Ctrl+C で途中停止可）
+scan full         # 65535 完了まで自動
+scan full -j 4    # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
 host-reset        # スキャン結果だけ消してやり直す
 host-view         # タスクや履歴が欲しいときだけ
 ```

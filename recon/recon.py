@@ -28,6 +28,8 @@ from scanner import host_scan
 from scan_run import run_basic_scan
 from scan_run import run_scan
 from scan_run import PROFILE_FULL
+from scan_run import clamp_full_jobs
+from scan_run import DEFAULT_FULL_JOBS
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -80,6 +82,7 @@ def main():
         force = False
         dry_run = False
         quiet_ports = False
+        jobs = DEFAULT_FULL_JOBS
 
         if args and args[0] == "full":
             profile = PROFILE_FULL
@@ -96,9 +99,20 @@ def main():
             elif a in ("-q", "--quiet"):
                 quiet_ports = True
                 args = args[1:]
+            elif a in ("-j", "--jobs"):
+                if len(args) < 2:
+                    print("usage: recon.py scan full <ip> -j <N>")
+                    sys.exit(1)
+                jobs = clamp_full_jobs(int(args[1]))
+                args = args[2:]
+            elif a.startswith("-j") and len(a) > 2 and a[2:].isdigit():
+                jobs = clamp_full_jobs(int(a[2:]))
+                args = args[1:]
             elif a.startswith("-"):
                 print(f"unknown option: {a}")
-                print("usage: recon.py scan [full] <ip> [--force] [-n] [-q]")
+                print(
+                    "usage: recon.py scan [full] <ip> [--force] [-n] [-q] [-j N]"
+                )
                 sys.exit(1)
             else:
                 ip = a
@@ -107,7 +121,11 @@ def main():
         if not ip:
             ip = os.environ.get("IP")
         if not ip:
-            print("usage: recon.py scan [full] <ip> [--force] [-n] [-q]")
+            print("usage: recon.py scan [full] <ip> [--force] [-n] [-q] [-j N]")
+            sys.exit(1)
+
+        if profile != PROFILE_FULL and jobs != DEFAULT_FULL_JOBS:
+            print("[-] -j is only for scan full")
             sys.exit(1)
 
         rc = run_scan(
@@ -116,6 +134,7 @@ def main():
             force=force,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
+            jobs=jobs,
         )
         sys.exit(0 if rc == 0 else 1)
 
