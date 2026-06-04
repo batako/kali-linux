@@ -100,6 +100,7 @@ cs startup
 | `case-sync` | `$PWD` が `cases/<name>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
+| `scout [ip]` | **初手**: `scan` → open **22/80** を **service** に応じてプローブ（`executions`） |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
 | `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
 | `scan -f -j 4` | full を **4 並列**（1 wave あたり最大 4000 ポート、`recon.db.lock` でマージ） |
@@ -111,7 +112,8 @@ cs startup
 
 ```bash
 cs startup && ti 10.49.140.156
-scan              # 定番 1000。終わったら OPEN / CLOSED
+scout             # 初手: scan + 22/80 プローブ → ev で確認
+scan              # ポートだけ（定番 1000）
 scan -f           # 65535 完了まで自動
 scan -f -j 4      # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
 host-reset        # スキャン結果だけ消してやり直す
@@ -242,6 +244,7 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | `recon-init` | `recon.db` 初期化 |
 | `net-scan <cidr>` | ネットワークスキャン → DB |
 | `net-view` | 登録ホスト一覧 |
+| `scout [ip]` | scan + service ベースプローブ（watch 22/80、`-n` dry-run） |
 | `host-view [ip]` | ホスト詳細 |
 | `host-summary [ip]` | JSON サマリ |
 | `task-view` | タスク一覧 |
@@ -378,7 +381,7 @@ hydraweb   # 引数不足時に usage 表示
 
 ## 索引（ユーザー向けコマンド一覧）
 
-`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scan` ·
+`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scan` ·
 `creds-add` `cl` `creds-rm` `hydrassh` `hydraftp` `hydraweb` ·
 `ssh` `ssh-list` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·

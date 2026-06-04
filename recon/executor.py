@@ -225,6 +225,7 @@ def run_command_or_cache(
     command: str,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     stream: bool = False,
+    task_type: str = "manual",
 ):
     """
     If a successful execution exists for ip+command, return it without re-running.
@@ -247,6 +248,7 @@ def run_command_or_cache(
         command=command,
         timeout_sec=timeout_sec,
         stream=stream,
+        task_type=task_type,
     )
     return exec_id, False
 

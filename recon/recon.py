@@ -30,6 +30,7 @@ from scan_run import run_scan
 from scan_run import PROFILE_FULL
 from scan_run import clamp_full_jobs
 from scan_run import DEFAULT_FULL_JOBS
+from scout_run import run_scout
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -151,6 +152,46 @@ def main():
         )
         sys.exit(0 if rc == 0 else 1)
 
+    elif cmd == "scout":
+        args = sys.argv[2:]
+        ip = None
+        force_scan = False
+        dry_run = False
+        quiet_ports = False
+
+        while args:
+            a = args[0]
+            if a == "--force":
+                force_scan = True
+                args = args[1:]
+            elif a in ("-n", "--dry-run"):
+                dry_run = True
+                args = args[1:]
+            elif a in ("-q", "--quiet"):
+                quiet_ports = True
+                args = args[1:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py scout [options] <ip>  (--force, -n, -q)")
+                sys.exit(1)
+            else:
+                ip = a
+                args = args[1:]
+
+        if not ip:
+            ip = os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py scout [options] <ip>  (--force, -n, -q)")
+            sys.exit(1)
+
+        rc = run_scout(
+            ip,
+            force_scan=force_scan,
+            dry_run=dry_run,
+            quiet_ports=quiet_ports,
+        )
+        sys.exit(0 if rc == 0 else 1)
+
     elif cmd == "host-reset":
         ip = sys.argv[2] if len(sys.argv) >= 3 else os.environ.get("IP")
         if not ip:
@@ -160,7 +201,7 @@ def main():
         print(f"[+] host-reset {ip}")
         for table, n in counts.items():
             print(f"    {table}: {n} row(s) deleted")
-        print("[i] re-test: scan  /  scan -f")
+        print("[i] re-test: scout  /  scan  /  scan -f")
 
     elif cmd == "host-view":
         if len(sys.argv) < 3:
