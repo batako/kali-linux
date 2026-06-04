@@ -119,7 +119,7 @@ scan -r           # 進捗だけ確認（軽い）
 host-view         # タスクや履歴が欲しいときだけ
 ```
 
-coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキップ）。`host-scan` は互換用（task 生成のみ推奨）。
+coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキップ）。ポート偵察は **`scan` / `scan -f` / `scan -r`** のみ。
 
 ---
 
@@ -242,7 +242,6 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | `recon-init` | `recon.db` 初期化 |
 | `net-scan <cidr>` | ネットワークスキャン → DB |
 | `net-view` | 登録ホスト一覧 |
-| `host-scan <ip> quick\|full` | ホストスキャン |
 | `host-view [ip]` | ホスト詳細 |
 | `host-summary [ip]` | JSON サマリ |
 | `task-view` | タスク一覧 |
@@ -382,7 +381,7 @@ hydraweb   # 引数不足時に usage 表示
 `cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scan` ·
 `creds-add` `cl` `creds-rm` `hydrassh` `hydraftp` `hydraweb` ·
 `ssh` `ssh-list` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
-`stegx` · `recon-init` `net-scan` `net-view` `host-scan` `host-view` `host-summary` ·
+`stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
 `gb-dir` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-web` `gb-set-dns` `gb-set-threads` ·

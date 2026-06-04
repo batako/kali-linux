@@ -831,7 +831,7 @@ def format_nmap_exclude_ports(ports, max_ports=800):
 
 
 def seed_coverage_from_ports(ip, profile="seed"):
-    """Backfill coverage from ports table (legacy scan / host-scan without coverage)."""
+    """Backfill coverage from ports table (legacy rows without port_scan_coverage)."""
     conn = connect()
     cur = conn.cursor()
     cur.execute(

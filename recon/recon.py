@@ -25,7 +25,6 @@ from creds import emit_import_results
 import json
 
 from scanner import network_scan
-from scanner import host_scan
 from scan_run import run_basic_scan
 from scan_run import run_scan
 from scan_run import PROFILE_FULL
@@ -68,13 +67,6 @@ def main():
 
     elif cmd == "net-view":
         show_hosts()
-
-    elif cmd == "host-scan":
-        if len(sys.argv) < 4:
-            print("usage: recon.py host-scan <ip> <quick|full>")
-            sys.exit(1)
-
-        host_scan(sys.argv[2], sys.argv[3])
 
     elif cmd == "scan":
         args = sys.argv[2:]

@@ -121,15 +121,6 @@ net-view() {
   python3 "$RECON_APP" net-view
 }
 
-host-scan() {
-  if [[ $# -lt 2 ]]; then
-    echo "usage: host-scan <ip> <quick|full>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" host-scan "$1" "$2"
-}
-
 host-view() {
   local ip="${1:-${IP:-}}"
   if [[ -z "$ip" ]]; then

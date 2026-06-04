@@ -2,9 +2,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 
 from db import upsert_host
-from db import upsert_port
 from db import add_task
-from db import add_scan_range
 
 
 def network_scan(cidr):
@@ -12,21 +10,6 @@ def network_scan(cidr):
     out = subprocess.getoutput(cmd)
 
     parse_hosts_xml(out)
-
-
-def host_scan(ip, mode):
-    if mode == "quick":
-        port_range = "1-1000"
-        cmd = f"nmap -sV --top-ports 1000 {ip} -oX -"
-    else:
-        port_range = "1-65535"
-        cmd = f"nmap -sV -p- {ip} -oX -"
-
-    add_scan_range(ip, mode, *parse_range(port_range))
-
-    out = subprocess.getoutput(cmd)
-
-    parse_ports_xml(out, ip, mode)
 
 
 def parse_hosts_xml(xml_data):
@@ -44,13 +27,6 @@ def parse_hosts_xml(xml_data):
         upsert_host(ip, status=status)
 
 
-def parse_ports_xml(xml_data, ip, mode):
-    from scan_run import ingest_nmap_ports_xml
-
-    profile = "quick" if mode == "quick" else "full"
-    ingest_nmap_ports_xml(xml_data, ip, profile, record_tasks=True)
-
-
 def generate_tasks(ip, port, service):
     service = (service or "").lower()
 
@@ -66,10 +42,3 @@ def generate_tasks(ip, port, service):
 
     elif port == 22 or "ssh" in service:
         add_task(ip, "ssh-audit", "check weak credentials / keys", priority=60, requires_human_ok=0)
-
-
-def parse_range(r):
-    parts = r.split("-")
-    if len(parts) != 2:
-        return (1, 1000)
-    return (int(parts[0]), int(parts[1]))
