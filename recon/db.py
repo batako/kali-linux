@@ -564,10 +564,13 @@ def show_host(ip):
     # -------------------------
     # scan ranges
     # -------------------------
+    reconcile_scan_ranges(ip)
+
     scans = cur.execute("""
     SELECT scan_type, range_start, range_end
     FROM scan_ranges
     WHERE ip = ?
+    ORDER BY range_start
     """, (ip,)).fetchall()
 
     # -------------------------
@@ -756,6 +759,29 @@ def has_scan_range(ip, scan_type, range_start, range_end):
     ).fetchone()
     conn.close()
     return row is not None
+
+
+def reconcile_scan_ranges(ip):
+    """
+    Remove scan_ranges rows that misrepresent coverage (legacy 1-1000 / 1-65535 markers).
+    Per-chunk rows from scan (actual min-max ports) are kept.
+    """
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        DELETE FROM scan_ranges
+        WHERE ip = ? AND (
+            (scan_type IN ('basic', 'quick') AND range_start = 1 AND range_end = 1000)
+            OR (scan_type = 'full' AND range_start = 1 AND range_end = 65535)
+        )
+        """,
+        (ip,),
+    )
+    deleted = int(cur.rowcount)
+    conn.commit()
+    conn.close()
+    return deleted
 
 
 # =========================

@@ -2,7 +2,6 @@ import xml.etree.ElementTree as ET
 
 from db import upsert_host
 from db import upsert_port
-from db import add_scan_range
 from db import add_task
 
 
@@ -128,9 +127,3 @@ def parse_ports_xml(path, ip, mode):
             )
 
     generate_tasks(ip, services)
-
-    if mode == "quick":
-        add_scan_range(ip, mode, 1, 1000)
-
-    elif mode == "full":
-        add_scan_range(ip, mode, 1, 65535)

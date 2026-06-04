@@ -15,14 +15,12 @@ from db import count_port_scan_coverage
 from db import count_tcp_coverage_in_ports
 from db import format_nmap_exclude_ports
 from db import get_scanned_ports
-from db import has_scan_range
+from db import reconcile_scan_ranges
 from db import mark_port_scanned
 from db import seed_coverage_from_ports
 from db import print_ports
 from db import upsert_host
 from db import upsert_port
-from port_sets import FULL_TCP_END
-from port_sets import FULL_TCP_START
 from port_sets import full_tcp_ports
 from port_sets import nmap_top1000_tcp
 from port_sets import profile_port_count
@@ -78,7 +76,9 @@ def is_profile_coverage_complete(ip, profile: str) -> bool:
     if profile == PROFILE_BASIC:
         return all(p in scanned for p in nmap_top1000_tcp())
     if profile == PROFILE_FULL:
-        return len(scanned) >= profile_port_count(PROFILE_FULL)
+        return count_tcp_coverage_in_ports(ip, full_tcp_ports()) >= profile_port_count(
+            PROFILE_FULL
+        )
     return False
 
 
@@ -360,16 +360,8 @@ def _print_scan_snapshot(ip, profile, quiet_ports=False):
 
 
 def _finish_scan_output(ip, quiet_ports=False, profile=None):
+    reconcile_scan_ranges(ip)
     _print_scan_snapshot(ip, profile, quiet_ports=quiet_ports)
-
-
-def _mark_scan_range_if_complete(ip, profile: str):
-    if not is_profile_coverage_complete(ip, profile):
-        return
-    if profile == PROFILE_BASIC and not has_scan_range(ip, PROFILE_BASIC, 1, 1000):
-        add_scan_range(ip, PROFILE_BASIC, 1, 1000)
-    elif profile == PROFILE_FULL and not has_scan_range(ip, PROFILE_FULL, FULL_TCP_START, FULL_TCP_END):
-        add_scan_range(ip, PROFILE_FULL, FULL_TCP_START, FULL_TCP_END)
 
 
 def _print_plan_header(ip, profile: str, info: dict, cmd):
@@ -421,7 +413,7 @@ def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
                 ports_planned=ports_run,
             )
             _record_chunk_range(ip, profile, ports_run)
-            _mark_scan_range_if_complete(ip, profile)
+            reconcile_scan_ranges(ip)
     except ET.ParseError as e:
         print(f"[-] failed to parse nmap XML: {e}")
         preview = xml_out.strip().replace("\n", " ")[:240]
