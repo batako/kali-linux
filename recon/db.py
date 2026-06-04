@@ -478,24 +478,42 @@ def _port_group_heading(name):
     return f"--- {name} ---"
 
 
-def _print_port_section(label, rows, show_coverage=False, ip=None, group=False):
-    print(_port_group_heading(label) if group else label)
+def format_port_section_lines(label, rows, group=True, show_coverage=False, ip=None):
+    lines = []
+    lines.append(_port_group_heading(label) if group else label)
     header = "PORT\tPROTO\tSTATE\tSERVICE\tVERSION"
     if show_coverage and ip:
         covered = count_port_scan_coverage(ip)
         header = f"{header}\t(coverage: {covered})"
-    print(header)
+    lines.append(header)
     if not rows:
-        print("(none)")
+        lines.append("(none)")
     else:
         for p in rows:
-            print(f"{p[0]}\t{p[1]}\t{p[2]}\t{p[3]}\t{p[4]}")
+            lines.append(f"{p[0]}\t{p[1]}\t{p[2]}\t{p[3]}\t{p[4]}")
+    return lines
+
+
+def format_scan_snapshot_lines(ip, progress_line):
+    """Lines for live-updating scan UI (progress + OPEN + CLOSED)."""
+    lines = [progress_line]
+    lines.extend(format_port_section_lines("OPEN", _fetch_ports(ip, "open")))
+    lines.extend(
+        format_port_section_lines("CLOSED", _fetch_ports(ip, closed_with_service=True))
+    )
+    return lines
+
+
+def _print_port_section(label, rows, show_coverage=False, ip=None, group=False):
+    for line in format_port_section_lines(label, rows, group=group, show_coverage=show_coverage, ip=ip):
+        print(line)
     print("")
 
 
-def print_ports(ip, open_only=True, show_coverage=False, split_open_closed=False):
+def print_ports(ip, open_only=True, show_coverage=False, split_open_closed=False, compact=False):
     """Compact port table for scan output and host-view."""
-    print("")
+    if not compact:
+        print("")
     if split_open_closed:
         open_rows = _fetch_ports(ip, "open")
         # closed but nmap attached service/version (not bare closed noise)
@@ -559,6 +577,13 @@ def show_host(ip):
     LIMIT 50
     """, (ip,)).fetchall()
 
+    ports = cur.execute("""
+    SELECT port, proto, state, service, version
+    FROM ports
+    WHERE ip = ?
+    ORDER BY port
+    """, (ip,)).fetchall()
+
     print("")
     print(f"HOST: {ip}")
     print("")
@@ -575,6 +600,22 @@ def show_host(ip):
             print(f"{s[0]}\t{s[1]}-{s[2]}")
     else:
         print("no scan data")
+
+    try:
+        from port_sets import nmap_top1000_tcp
+        from port_sets import FULL_TCP_START
+        from port_sets import FULL_TCP_END
+
+        basic_cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
+        full_cov = count_tcp_coverage_in_ports(ip, range(FULL_TCP_START, FULL_TCP_END + 1))
+        print(f"basic coverage: {basic_cov}/1000 (top ports)")
+        print(f"full coverage: {full_cov}/65535 (tcp)")
+        if full_cov > 0 and full_cov < 65535:
+            print("full status: in progress — run scan full until complete")
+        elif full_cov >= 65535:
+            print("full status: complete")
+    except FileNotFoundError:
+        pass
 
     print("")
 
@@ -627,7 +668,7 @@ def show_host(ip):
     # =========================
     print("ATTACK HINTS")
 
-    services = {p[3] for p in ports if p[3]}
+    services = {(p[3] or "").lower() for p in ports if p[3]}
 
     if "ftp" in services:
         print("- ftp anonymous check")
@@ -656,6 +697,23 @@ def show_host(ip):
 # =========================
 # scan tracking
 # =========================
+
+def reset_host_scan_data(ip):
+    """Remove ports, coverage, and scan history for one host (scan re-test)."""
+    conn = connect()
+    cur = conn.cursor()
+    counts = {}
+    for table in ("port_scan_coverage", "ports", "scan_ranges"):
+        n = cur.execute(
+            f"SELECT COUNT(*) AS c FROM {table} WHERE ip = ?",
+            (ip,),
+        ).fetchone()["c"]
+        cur.execute(f"DELETE FROM {table} WHERE ip = ?", (ip,))
+        counts[table] = int(n)
+    conn.commit()
+    conn.close()
+    return counts
+
 
 def add_scan_range(ip, scan_type, start, end):
     conn = connect()
@@ -721,6 +779,12 @@ def get_scanned_ports(ip, proto="tcp"):
     ).fetchall()
     conn.close()
     return [int(r["port"]) for r in rows]
+
+
+def count_tcp_coverage_in_ports(ip, port_iter):
+    """How many ports from port_iter appear in port_scan_coverage."""
+    scanned = set(get_scanned_ports(ip))
+    return sum(1 for p in port_iter if p in scanned)
 
 
 def count_port_scan_coverage(ip, proto="tcp"):

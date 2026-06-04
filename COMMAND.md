@@ -100,20 +100,22 @@ cs startup
 | `case-sync` | `$PWD` が `cases/<name>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
-| `scan [ip]` | `nmap -sC -sV` → DB。**終了時に OPEN + CLOSED**（closed は service/version 付きのみ） |
-| `scan -f` | 全ポート再スキャン |
-| `scan -n` | nmap コマンド表示 + ポート表 |
-| `scan -q` | ポート表なし |
+| `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
+| `scan full [ip]` | **TCP 1–65535 を自動で最後まで**（1000 ポートずつ、1 コマンドで完走） |
+| `scan -f` | 再スキャン（basic=top 1000、full=`-p-`） |
+| `scan -n` / `-q` | dry-run / ポート表なし |
+| `host-reset [ip]` | 当該 IP の ports / coverage / scan_ranges を削除（再テスト用） |
 | `host-view [ip]` | ポート全件・tasks・履歴・artifacts |
 
 ```bash
 cs startup && ti 10.49.140.156
-scan              # 終わったら OPEN / CLOSED がその場で出る
-scan              # coverage 済みなら nmap スキップ + 同じ表
+scan              # 定番 1000。終わったら OPEN / CLOSED
+scan full         # 65535 完了まで自動（長い。Ctrl+C で途中停止可）
+host-reset        # スキャン結果だけ消してやり直す
 host-view         # タスクや履歴が欲しいときだけ
 ```
 
-`host-scan` は従来どおり（task 生成あり、coverage は `scan` が正本）。
+coverage は **ポート番号単位**（`scan` 済みは `scan full` でもスキップ）。`host-scan` は互換用（task 生成のみ推奨）。
 
 ---
 

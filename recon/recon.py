@@ -4,6 +4,7 @@ import os
 from db import init_db
 from db import show_hosts
 from db import show_host
+from db import reset_host_scan_data
 from db import show_tasks
 from db import complete_task
 from db import print_host_summary_json
@@ -25,6 +26,8 @@ import json
 from scanner import network_scan
 from scanner import host_scan
 from scan_run import run_basic_scan
+from scan_run import run_scan
+from scan_run import PROFILE_FULL
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -73,9 +76,14 @@ def main():
     elif cmd == "scan":
         args = sys.argv[2:]
         ip = None
+        profile = "basic"
         force = False
         dry_run = False
         quiet_ports = False
+
+        if args and args[0] == "full":
+            profile = PROFILE_FULL
+            args = args[1:]
 
         while args:
             a = args[0]
@@ -90,7 +98,7 @@ def main():
                 args = args[1:]
             elif a.startswith("-"):
                 print(f"unknown option: {a}")
-                print("usage: recon.py scan <ip> [--force] [-n] [-q]")
+                print("usage: recon.py scan [full] <ip> [--force] [-n] [-q]")
                 sys.exit(1)
             else:
                 ip = a
@@ -99,16 +107,28 @@ def main():
         if not ip:
             ip = os.environ.get("IP")
         if not ip:
-            print("usage: recon.py scan <ip> [--force] [-n] [-q]")
+            print("usage: recon.py scan [full] <ip> [--force] [-n] [-q]")
             sys.exit(1)
 
-        rc = run_basic_scan(
+        rc = run_scan(
             ip,
+            profile=profile,
             force=force,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
         )
         sys.exit(0 if rc == 0 else 1)
+
+    elif cmd == "host-reset":
+        ip = sys.argv[2] if len(sys.argv) >= 3 else os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py host-reset <ip>")
+            sys.exit(1)
+        counts = reset_host_scan_data(ip)
+        print(f"[+] host-reset {ip}")
+        for table, n in counts.items():
+            print(f"    {table}: {n} row(s) deleted")
+        print("[i] re-test: scan  /  scan full")
 
     elif cmd == "host-view":
         if len(sys.argv) < 3:
