@@ -113,7 +113,9 @@ cs startup
 ```bash
 cs startup && ti 10.49.140.156
 scout             # 偵察初手（scan → プローブ → dirs をバックグラウンド起動）
-scout status      # dirs ジョブの状態
+scout -r          # 偵察サマリ（ポート + プローブ + PATHS、再実行なし）
+scout -s            # dirs 状態（1 回）
+scout -ws           # dirs 完了まで自動更新（-s の対）
 el && ev <id>     # 同期プローブの出力
 scan              # ポートだけ（定番 1000）
 scan -f           # 65535 完了まで自動
@@ -134,8 +136,10 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | コマンド | 説明 |
 |----------|------|
 | `scout [ip]` | Phase 1–3 を実行（Phase 3 はバックグラウンド起動のみ。完了は待たない） |
-| `scout --dirs [opts] [ip]` | Phase 3 のみ（gobuster dir）。ワードリスト・スレッド等はフラグで指定 |
-| `scout status [ip]` | Phase 3 ジョブの状態（実行中 / 完了、ログパス、ヒット概要） |
+| `scout -r` / `scout --report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS**）。再実行なし |
+| `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/` |
+| `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
+| `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了** |
 | `scout -n` | 実行せずコマンド計画を表示 |
 
 **前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout --dirs` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
@@ -163,21 +167,25 @@ Phase 1 後に Web 系 open ポートがあれば、**ポートごと**に gobus
 - **既定:** `$GB_WORDLIST`・`$GB_THREADS`（`gb-set-web` / `gb-set-threads` と同系）。上書きは `scout --dirs` のフラグ（詳細は `scout -h`）。
 - **ログ:** `cases/<case>/logs/`（`gb-dirs` と同様の命名規則）。
 - **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。
-- **コンソール:** gobuster のリアルタイム出力は出さない。進捗は **`scout status`**。完了後は 200 / 301 等の **ヒット概要**を status に表示。
+- **コンソール:** gobuster のリアルタイム出力は出さない。進捗は **`scout -s`** / **`scout -ws`**。
 
 ```bash
 scout
-scout status
+scout -r
+scout -s
+scout -ws
 scout --dirs -w /path/to/list.txt -t 20
-scout --dirs http://$IP:8080/
+scout -d /admin
+scout -d http://$IP:8080/
 ```
 
 ### 出力の見方
 
 | 種別 | 確認方法 |
 |------|----------|
+| 偵察サマリ（一覧） | **`scout -r`** |
 | スキャン・同期プローブ | コンソール、`el` / `ev` |
-| ディレクトリ探索 | `scout status`、ログファイル、status 上のヒット概要 |
+| ディレクトリ探索 | `scout -s` / `scout -ws`、ログファイル |
 
 手動で gobuster を回す場合は下記「Gobuster」の `gb-dir` / `gb-dirs` を使う。
 
@@ -302,7 +310,7 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | `recon-init` | `recon.db` 初期化 |
 | `net-scan <cidr>` | ネットワークスキャン → DB |
 | `net-view` | 登録ホスト一覧 |
-| `scout [ip]` | 偵察司令塔（scan → プローブ → dirs BG）。`scout --dirs` / `scout status` |
+| `scout [ip]` | 偵察司令塔。`scout -r` / `scout -d` / `scout -s` / `scout -ws` |
 | `host-view [ip]` | ホスト詳細 |
 | `host-summary [ip]` | JSON サマリ |
 | `task-view` | タスク一覧 |
@@ -441,7 +449,7 @@ hydraweb   # 引数不足時に usage 表示
 
 ## 索引（ユーザー向けコマンド一覧）
 
-`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scout status` `scout --dirs` `scan` ·
+`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scout -r` `scout -d` `scout -s` `scout -ws` `scan` ·
 `creds-add` `cl` `creds-rm` `hydrassh` `hydraftp` `hydraweb` ·
 `ssh` `ssh-list` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·

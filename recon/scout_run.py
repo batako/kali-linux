@@ -8,19 +8,25 @@ import os
 import re
 import shlex
 import subprocess
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urljoin
 from urllib.parse import urlparse
 
+from db import connect
 from db import find_running_scout_job
+from db import format_scan_snapshot_lines
 from db import get_scout_job
 from db import insert_scout_job
 from db import list_scout_jobs
 from db import update_scout_job
 from db import upsert_host
 from db import _fetch_ports
+from db import count_tcp_coverage_in_ports
 from executor import run_command_or_cache
 from scan_run import PROFILE_BASIC
 from scan_run import run_scan
@@ -29,6 +35,11 @@ from scan_run import run_scan
 SCOUT_WATCH_PORTS = frozenset({22, 80})
 
 PROBE_TIMEOUT_SEC = 30
+
+DEFAULT_WATCH_INTERVAL_SEC = 2.0
+
+# Status screen: show this many finished jobs (+ all running at bottom).
+SCOUT_STATUS_SLOTS = max(1, int(os.environ.get("SCOUT_STATUS_SLOTS", "4")))
 
 DEFAULT_GB_WORDLIST = os.environ.get(
     "GB_WORDLIST",
@@ -52,6 +63,13 @@ WEB_SERVICE_HINTS = (
 
 INTERESTING_HIT_STATUS = frozenset({200, 301, 302, 401})
 GOBUSTER_HIT_RE = re.compile(r"^\s*(\S+)\s+\(Status:\s*(\d+)\)")
+GOBUSTER_REDIRECT_RE = re.compile(r"\[-->\s*(https?://[^\]]+)\]")
+
+# Hidden paths worth showing when found (not extension-fuzz noise).
+_HIDDEN_DIR_OK = frozenset({".git", ".svn", ".well-known", ".env"})
+
+# Prefer 200 over redirect over 401 when deduplicating the same path.
+_STATUS_RANK = {200: 0, 301: 1, 302: 1, 401: 2}
 
 
 @dataclass(frozen=True)
@@ -101,6 +119,47 @@ def normalize_url(url_or_host: str) -> str:
     if not s.startswith(("http://", "https://")):
         s = f"http://{s}"
     return s
+
+
+def is_dirs_path_arg(s: str) -> bool:
+    """Path or URL for scout -d (not an IP or flag)."""
+    if not s or s.startswith("-"):
+        return False
+    if s.startswith(("http://", "https://", "/")):
+        return True
+    if re.match(r"^\d+\.\d+\.\d+\.\d+$", s):
+        return False
+    return True
+
+
+def resolve_dirs_target(ip: str, path_or_url: str) -> str:
+    """Turn /admin, admin, or full URL into a gobuster -u target."""
+    s = (path_or_url or "").strip()
+    if s.startswith(("http://", "https://")):
+        return normalize_url(s)
+
+    path = s if s.startswith("/") else f"/{s}/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+
+    # Prefer scheme/port from an open Web port when unambiguous.
+    web = discover_web_targets(ip)
+    if len(web) == 1:
+        base = web[0][1]
+    elif web:
+        base = build_web_url(ip, 80, "http")
+        for port, url in web:
+            if port == 80:
+                base = url
+                break
+    else:
+        base = f"http://{ip}/"
+
+    return urljoin(base, path.lstrip("/"))
+
+
+def resolve_dirs_targets(ip: str, raw_urls: list[str]) -> list[str]:
+    return [resolve_dirs_target(ip, u) for u in raw_urls]
 
 
 def discover_web_targets(ip: str) -> list[tuple[int, str]]:
@@ -245,12 +304,86 @@ def build_dirs_plan(
     )
 
 
-def parse_gobuster_hits(log_path: str, *, max_lines: int = 20) -> str:
+def _is_gobuster_noise(path_part: str) -> bool:
+    if path_part in (".", ""):
+        return True
+    base = path_part.rstrip("/")
+    if base in _HIDDEN_DIR_OK:
+        return False
+    if base.startswith("."):
+        return True
+    return False
+
+
+def _looks_like_file(path: str) -> bool:
+    name = path.rstrip("/").split("/")[-1]
+    if not name or name == "/":
+        return False
+    if name in _HIDDEN_DIR_OK:
+        return False
+    if name.startswith("."):
+        return True
+    return "." in name
+
+
+def _normalize_dir_path(path_part: str, full_line: str) -> Optional[str]:
+    redir_m = GOBUSTER_REDIRECT_RE.search(full_line)
+    if redir_m:
+        parsed = urlparse(redir_m.group(1))
+        p = parsed.path or "/"
+        if p == "/":
+            return None
+        if not p.startswith("/"):
+            p = f"/{p}"
+        if _looks_like_file(p) and not p.endswith("/"):
+            return None
+        if not p.endswith("/"):
+            p = f"{p}/"
+        return p
+
+    if _is_gobuster_noise(path_part):
+        return None
+
+    clean = path_part.strip("/")
+    if not clean:
+        return None
+
+    p = f"/{clean}/"
+    if _looks_like_file(p):
+        return None
+    return p
+
+
+def _base_path_from_url(url: str) -> str:
+    p = urlparse(normalize_url(url)).path or "/"
+    if not p.endswith("/"):
+        p = f"{p}/"
+    return p
+
+
+def resolve_site_path(base_url: str, path: str) -> str:
+    """Map a gobuster hit to a site-root path (respecting the scan base URL)."""
+    path = path if path.startswith("/") else f"/{path}"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    base_p = _base_path_from_url(base_url)
+    if base_p == "/":
+        return path
+    if path.startswith(base_p):
+        return path
+    return f"{base_p.rstrip('/')}{path}"
+
+
+def extract_dir_findings(
+    log_path: str,
+    base_url: Optional[str] = None,
+) -> list[tuple[str, int]]:
+    """Parse gobuster log → site-root paths as (/path/, status), deduped."""
     path = Path(log_path)
     if not path.is_file():
-        return ""
+        return []
 
-    hits = []
+    best: dict[str, int] = {}
     for line in path.read_text(errors="replace").splitlines():
         m = GOBUSTER_HIT_RE.match(line)
         if not m:
@@ -262,17 +395,41 @@ def parse_gobuster_hits(log_path: str, *, max_lines: int = 20) -> str:
             continue
         if status not in INTERESTING_HIT_STATUS:
             continue
-        if path_part.startswith(".ht"):
-            continue
-        hits.append(f"{path_part} (Status: {status})")
 
-    if not hits:
+        norm = _normalize_dir_path(path_part, line)
+        if not norm:
+            continue
+        if base_url:
+            norm = resolve_site_path(base_url, norm)
+
+        prev = best.get(norm)
+        if prev is None or _STATUS_RANK[status] < _STATUS_RANK[prev]:
+            best[norm] = status
+
+    return sorted(best.items(), key=lambda x: (x[0].lower(), x[1]))
+
+
+def format_dir_findings(findings: list[tuple[str, int]], *, max_lines: int = 30) -> str:
+    if not findings:
         return ""
-    if len(hits) > max_lines:
-        extra = len(hits) - max_lines
-        hits = hits[:max_lines]
-        hits.append(f"... +{extra} more (see log)")
-    return "\n".join(hits)
+    lines = [f"{p}  {status}" for p, status in findings]
+    if len(lines) > max_lines:
+        extra = len(lines) - max_lines
+        lines = lines[:max_lines]
+        lines.append(f"... +{extra} more (see log)")
+    return "\n".join(lines)
+
+
+def parse_gobuster_hits(
+    log_path: str,
+    *,
+    base_url: Optional[str] = None,
+    max_lines: int = 20,
+) -> str:
+    return format_dir_findings(
+        extract_dir_findings(log_path, base_url=base_url),
+        max_lines=max_lines,
+    )
 
 
 def _pid_alive(pid: Optional[int]) -> bool:
@@ -306,7 +463,7 @@ def reconcile_scout_job(job_id: int) -> None:
             pass
 
     log_path = row["log_path"] or ""
-    hits = parse_gobuster_hits(log_path) if log_path else ""
+    hits = parse_gobuster_hits(log_path, base_url=row["url"]) if log_path else ""
     failed = exit_code not in (None, 0)
     if failed and log_path and Path(log_path).is_file() and hits:
         failed = False
@@ -393,7 +550,7 @@ def _run_dirs_phase(
     targets: list[tuple[Optional[int], str]] = []
     if urls:
         for raw in urls:
-            targets.append((None, normalize_url(raw)))
+            targets.append((None, resolve_dirs_target(ip, raw)))
     else:
         for port, url in discover_web_targets(ip):
             targets.append((port, url))
@@ -499,55 +656,293 @@ def _run_probe_phase(ip: str, *, dry_run: bool = False) -> int:
     return rc
 
 
-def show_scout_status(ip: str) -> int:
-    reconcile_scout_jobs(ip)
-    rows = list_scout_jobs(ip, limit=30)
+def _fetch_scout_executions(ip: str):
+    conn = connect()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT id, task_type, command, status, exit_code, stdout, ended_at
+        FROM executions
+        WHERE ip = ? AND task_type LIKE 'scout-%'
+        ORDER BY id ASC
+        """,
+        (ip,),
+    ).fetchall()
+    conn.close()
+    return rows
 
-    print("========================")
-    print(f"[SCOUT STATUS] {ip}")
-    print("========================")
 
-    if not rows:
-        print("(no scout jobs)")
-        return 0
+def _probe_stdout_hint(stdout: str, *, max_len: int = 100) -> str:
+    if not stdout or not stdout.strip():
+        return "(no output)"
 
-    running = sum(1 for r in rows if r["status"] == "running")
-    print(f"jobs: {len(rows)} shown ({running} running)")
+    for line in stdout.splitlines():
+        s = line.strip()
+        if s.startswith("HTTP/"):
+            return s[:max_len]
+
+    for line in stdout.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("|") or s.startswith("SF-"):
+            continue
+        return s[:max_len]
+
+    return stdout.strip().splitlines()[0][:max_len]
+
+
+def _latest_dirs_jobs(jobs) -> list:
+    by_url = {}
+    for row in jobs:
+        if row["kind"] != "dirs":
+            continue
+        url = row["url"]
+        prev = by_url.get(url)
+        if prev is None or int(row["id"]) > int(prev["id"]):
+            by_url[url] = row
+    return sorted(by_url.values(), key=lambda r: r["url"])
+
+
+def _dirs_findings_for_job(row) -> list[tuple[str, int]]:
+    log_path = row["log_path"] or ""
+    base_url = row["url"] or ""
+    if log_path:
+        return extract_dir_findings(log_path, base_url=base_url)
+    hits = row["hits_summary"] or ""
+    if not hits:
+        return []
+    out = []
+    for line in hits.splitlines():
+        if line.startswith("... "):
+            continue
+        parts = line.rsplit("  ", 1)
+        if len(parts) == 2 and parts[1].isdigit():
+            out.append((parts[0], int(parts[1])))
+    return out
+
+
+def _merge_job_findings(rows) -> list[tuple[str, int]]:
+    best: dict[str, int] = {}
+    for row in rows:
+        for path, status in _dirs_findings_for_job(row):
+            prev = best.get(path)
+            if prev is None or _STATUS_RANK[status] < _STATUS_RANK[prev]:
+                best[path] = status
+    return sorted(best.items(), key=lambda x: x[0].lower())
+
+
+def _paths_tree_insert(tree: dict, parts: list[str], status: int) -> None:
+    node = tree
+    for i, part in enumerate(parts):
+        node = node.setdefault(part, {"status": None, "children": {}})
+        if i == len(parts) - 1:
+            prev = node["status"]
+            if prev is None or _STATUS_RANK[status] < _STATUS_RANK[prev]:
+                node["status"] = status
+        node = node["children"]
+
+
+def _paths_tree_lines(tree: dict, *, depth: int = 0) -> list[str]:
+    lines = []
+    for name in sorted(tree.keys(), key=str.lower):
+        entry = tree[name]
+        indent = "  " * (depth + 1)
+        st = entry["status"]
+        suffix = f"  {st}" if st is not None else ""
+        lines.append(f"{indent}{name}/{suffix}")
+        lines.extend(_paths_tree_lines(entry["children"], depth=depth + 1))
+    return lines
+
+
+def format_paths_tree(
+    findings: list[tuple[str, int]],
+    *,
+    root_label: str = "/",
+) -> list[str]:
+    tree: dict = {}
+    for path, status in findings:
+        parts = [p for p in path.strip("/").split("/") if p]
+        if not parts:
+            continue
+        _paths_tree_insert(tree, parts, status)
+
+    if not tree:
+        return []
+    lines = [root_label]
+    lines.extend(_paths_tree_lines(tree))
+    return lines
+
+
+def _paths_root_label(ip: str, rows) -> str:
+    for row in rows:
+        url = row["url"] or ""
+        if url:
+            parsed = urlparse(normalize_url(url))
+            if parsed.scheme and parsed.netloc:
+                return f"{parsed.scheme}://{parsed.netloc}/"
+    return f"http://{ip}/"
+
+
+def _print_paths_tree(rows, *, ip: str) -> None:
+    findings = _merge_job_findings(rows)
+    running = any(r["status"] == "running" for r in rows)
+    print("--- PATHS ---")
+    if findings:
+        for line in format_paths_tree(findings, root_label=_paths_root_label(ip, rows)):
+            print(line)
+    elif running:
+        print(_paths_root_label(ip, rows))
+        print("  (running)")
+    else:
+        print("(none)")
     print("")
 
-    for row in rows:
-        job_id = row["id"]
-        status = row["status"]
-        url = row["url"]
-        wl = Path(row["wordlist"] or "").name or "-"
-        pid = row["pid"]
-        log_path = row["log_path"] or "-"
-        started = row["started_at"] or "-"
 
-        line = f"id={job_id}  {status:7}  {url}  wl={wl}"
-        if pid:
-            line += f"  pid={pid}"
+def _job_sort_key(row) -> tuple:
+    started = row["started_at"] or ""
+    return (started, int(row["id"]))
+
+
+def _select_status_jobs(rows, *, max_finished: int = SCOUT_STATUS_SLOTS) -> list:
+    """
+    Finished jobs: oldest→newest (recent near bottom), cap at max_finished.
+    Running jobs: always last (bottom of screen), oldest→newest among themselves.
+    """
+    running = [r for r in rows if r["status"] == "running"]
+    finished = [r for r in rows if r["status"] != "running"]
+    finished.sort(key=_job_sort_key)
+    if len(finished) > max_finished:
+        finished = finished[-max_finished:]
+    running.sort(key=_job_sort_key)
+    return finished + running
+
+
+def _print_scout_job_row(row) -> None:
+    job_id = row["id"]
+    status = row["status"]
+    url = row["url"]
+    wl = Path(row["wordlist"] or "").name or "-"
+    pid = row["pid"]
+    log_path = row["log_path"] or "-"
+    started = row["started_at"] or "-"
+
+    line = f"id={job_id}  {status:7}  {url}  wl={wl}"
+    if pid:
+        line += f"  pid={pid}"
+    print(line)
+    print(f"         started={started}  log={log_path}")
+    print("")
+
+
+def show_scout_report(ip: str) -> int:
+    """DB snapshot: ports + scout probes + dirs hits (no nmap/curl/gobuster)."""
+    from port_sets import FULL_TCP_END
+    from port_sets import full_tcp_ports
+    from port_sets import nmap_top1000_tcp
+
+    reconcile_scout_jobs(ip)
+
+    basic_cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
+    full_cov = count_tcp_coverage_in_ports(ip, full_tcp_ports())
+    progress = f"[*] basic {basic_cov}/1000  full {full_cov}/{FULL_TCP_END}"
+
+    print("========================")
+    print(f"[SCOUT REPORT] {ip}")
+    print("========================")
+    print("")
+    for line in format_scan_snapshot_lines(ip, progress):
         print(line)
-        print(f"         started={started}  log={log_path}")
+    print("")
 
-        hits = row["hits_summary"]
-        if hits:
-            print("         hits:")
-            for hit_line in hits.splitlines():
-                print(f"           {hit_line}")
-        elif status == "running":
-            print("         hits: (running)")
-        elif log_path and log_path != "-":
-            parsed = parse_gobuster_hits(log_path)
-            if parsed:
-                print("         hits:")
-                for hit_line in parsed.splitlines():
-                    print(f"           {hit_line}")
-            else:
-                print("         hits: (none yet)")
-        print("")
+    print("--- PROBES ---")
+    execs = _fetch_scout_executions(ip)
+    if not execs:
+        print("(none)")
+    else:
+        for row in execs:
+            exec_id = row["id"]
+            task_type = row["task_type"] or "-"
+            status = row["status"] or "-"
+            exit_code = row["exit_code"]
+            code = "-" if exit_code is None else str(exit_code)
+            hint = _probe_stdout_hint(row["stdout"] or "")
+            print(f"ev {exec_id}  {task_type}  {status}  exit={code}  {hint}")
+            print(f"         $ {row['command']}")
+    print("")
 
+    print("--- PATHS ---")
+    jobs = list_scout_jobs(ip, kind="dirs", limit=100)
+    latest = _latest_dirs_jobs(jobs)
+    if not latest:
+        print("(none)")
+    else:
+        findings = _merge_job_findings(latest)
+        running = any(r["status"] == "running" for r in latest)
+        if findings:
+            for line in format_paths_tree(findings, root_label=_paths_root_label(ip, latest)):
+                print(line)
+        elif running:
+            print(_paths_root_label(ip, latest))
+            print("  (running)")
+        else:
+            print("(none)")
+    print("")
+    print("[i] detail: ev <id>  |  scout status")
     return 0
+
+
+def show_scout_status(
+    ip: str,
+    *,
+    wait_dirs: bool = False,
+    interval_sec: float = DEFAULT_WATCH_INTERVAL_SEC,
+) -> int:
+    interval_sec = max(0.5, float(interval_sec))
+
+    try:
+        while True:
+            if wait_dirs and sys.stdout.isatty():
+                print("\033[2J\033[H", end="")
+
+            reconcile_scout_jobs(ip)
+            all_rows = list_scout_jobs(ip, limit=200)
+            running_total = sum(1 for r in all_rows if r["status"] == "running")
+            rows = _select_status_jobs(all_rows)
+
+            print("========================")
+            print(f"[SCOUT STATUS] {ip}")
+            if wait_dirs:
+                print(f"[*] -ws ({interval_sec:g}s) — Ctrl+C to stop")
+            print("========================")
+
+            if not all_rows:
+                print("(no scout jobs)")
+                return 0
+
+            finished_total = len(all_rows) - running_total
+            finished_shown = sum(1 for r in rows if r["status"] != "running")
+            hidden = max(0, finished_total - finished_shown)
+            line = f"jobs: {len(rows)} shown ({running_total} running)"
+            if hidden:
+                line += f", {hidden} older hidden"
+            print(line)
+            print("")
+
+            for row in rows:
+                _print_scout_job_row(row)
+
+            _print_paths_tree(rows, ip=ip)
+
+            if not wait_dirs or running_total == 0:
+                if wait_dirs and running_total == 0:
+                    print("[*] all dirs jobs finished")
+                return 0
+
+            time.sleep(interval_sec)
+    except KeyboardInterrupt:
+        print("\n[*] wait-dirs stopped")
+        return 0
 
 
 def run_scout(

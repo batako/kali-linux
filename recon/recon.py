@@ -31,7 +31,9 @@ from scan_run import PROFILE_FULL
 from scan_run import clamp_full_jobs
 from scan_run import DEFAULT_FULL_JOBS
 from scout_run import run_scout
+from scout_run import show_scout_report
 from scout_run import show_scout_status
+from scout_run import is_dirs_path_arg
 from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_GB_WORDLIST
 from executor import run_task
@@ -158,23 +160,36 @@ def main():
     elif cmd == "scout":
         args = sys.argv[2:]
 
+        # legacy: scout status → --status; scout status --watch → --wait-dirs
         if args and args[0] == "status":
+            args = args[1:]
+            if args and args[0] in ("--watch", "-W", "--wait-dirs", "-ws", "-wd"):
+                flag = args[0]
+                if flag in ("--watch", "-W", "-wd"):
+                    flag = "--wait-dirs"
+                elif flag == "-ws":
+                    flag = "--wait-dirs"
+                args = [flag, *args[1:]]
+            else:
+                args = ["--status", *args]
+
+        if args and args[0] in ("-r", "--report"):
             args = args[1:]
             ip = None
             while args:
                 a = args[0]
                 if a.startswith("-"):
                     print(f"unknown option: {a}")
-                    print("usage: recon.py scout status [ip]")
+                    print("usage: recon.py scout -r [ip]")
                     sys.exit(1)
                 ip = a
                 args = args[1:]
             if not ip:
                 ip = os.environ.get("IP")
             if not ip:
-                print("usage: recon.py scout status [ip]")
+                print("usage: recon.py scout -r [ip]")
                 sys.exit(1)
-            rc = show_scout_status(ip)
+            rc = show_scout_report(ip)
             sys.exit(0 if rc == 0 else 1)
 
         ip = None
@@ -183,6 +198,9 @@ def main():
         dry_run = False
         quiet_ports = False
         dirs_only = False
+        status_mode = False
+        wait_dirs_mode = False
+        wait_dirs_interval_sec = 2.0
         wordlist = os.environ.get("GB_WORDLIST") or DEFAULT_GB_WORDLIST
         threads = DEFAULT_GB_THREADS
         if os.environ.get("GB_THREADS"):
@@ -195,9 +213,33 @@ def main():
 
         while args:
             a = args[0]
-            if a == "--dirs":
+            if a in ("-s", "--status"):
+                if wait_dirs_mode:
+                    print("[-] use -s or -ws, not both")
+                    sys.exit(1)
+                status_mode = True
+                args = args[1:]
+            elif a in ("--wait-dirs", "-ws", "-wd"):
+                if status_mode:
+                    print("[-] use -s or -ws, not both")
+                    sys.exit(1)
+                wait_dirs_mode = True
+                args = args[1:]
+                if args and not args[0].startswith("-"):
+                    try:
+                        wait_dirs_interval_sec = float(args[0])
+                        args = args[1:]
+                    except ValueError:
+                        pass
+            elif a in ("--watch", "-W"):
+                print("[-] use -ws (or --wait-dirs), not --watch")
+                sys.exit(1)
+            elif a in ("-d", "--dirs"):
                 dirs_only = True
                 args = args[1:]
+                if args and is_dirs_path_arg(args[0]):
+                    dirs_urls.append(args[0])
+                    args = args[1:]
             elif a == "--force":
                 force_scan = True
                 force_dirs = True
@@ -229,11 +271,14 @@ def main():
             elif a.startswith("http://") or a.startswith("https://"):
                 dirs_urls.append(a)
                 args = args[1:]
+            elif dirs_only and is_dirs_path_arg(a):
+                dirs_urls.append(a)
+                args = args[1:]
             elif a.startswith("-"):
                 print(f"unknown option: {a}")
                 print(
-                    "usage: recon.py scout [options] [ip|url...]"
-                    "  (--dirs, --force, -n, -q, -w, -t, -x)"
+                    "usage: recon.py scout [options] [ip|path|url...]"
+                    "  (-r|--report, -s|--status, -ws|--wait-dirs [sec], -d|--dirs, ...)"
                 )
                 sys.exit(1)
             else:
@@ -245,9 +290,23 @@ def main():
         if not ip:
             print(
                 "usage: recon.py scout [options] <ip>"
-                "  (--dirs, status, --force, -n, -q, -w, -t, -x)"
+                "  (-r|--report, -s|--status, -ws|--wait-dirs [sec], -d|--dirs, ...)"
             )
             sys.exit(1)
+
+        if status_mode or wait_dirs_mode:
+            if dirs_only or force_scan or force_dirs or dry_run or quiet_ports:
+                print("[-] --status/--wait-dirs does not take --dirs, --force, -n, or -q")
+                sys.exit(1)
+            if dirs_urls or extensions is not None:
+                print("[-] --status/--wait-dirs does not take paths, -w, -t, or -x")
+                sys.exit(1)
+            rc = show_scout_status(
+                ip,
+                wait_dirs=wait_dirs_mode,
+                interval_sec=wait_dirs_interval_sec,
+            )
+            sys.exit(0 if rc == 0 else 1)
 
         rc = run_scout(
             ip,
