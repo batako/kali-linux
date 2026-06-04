@@ -20,7 +20,12 @@ gb-normalize-url() {
 }
 
 gb-resolve-target() {
-  local target="${1:-${IP:-}}"
+  local target="${1:-}"
+
+  if [[ -z "$target" ]]; then
+    target="${IP:-}"
+    [[ -z "$target" ]] && target="$(target-current 2>/dev/null)"
+  fi
 
   if [[ -z "$target" ]]; then
     echo "usage: target-set <ip>  or pass url/ip as argument" >&2

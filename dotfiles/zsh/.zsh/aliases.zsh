@@ -9,9 +9,9 @@ alias http='python3 -m http.server 8000'
 # =========================
 
 scan() {
-  local target="${1:-${IP:-}}"
+  local target="${1:-$(target-current 2>/dev/null)}"
   if [[ -z "$target" ]]; then
-    echo "usage: scan [ip]  (or: target-set <ip> first)"
+    echo "usage: scan [ip]  (or: cs <case> / ts <ip>)"
     return 1
   fi
 

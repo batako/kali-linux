@@ -24,6 +24,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     \
     # === forensics ===
     exiftool \
+    stegcracker \
+    steghide \
     \
     # === network ===
     ftp \

@@ -816,6 +816,43 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
     return status
 
 
+def creds_delete(ip: str, username: str = None) -> int:
+    """
+    Remove stored credentials for ip (optional: single username).
+    Deletes password/username rows and ssh_last_user when applicable.
+    """
+    if not ip:
+        raise ValueError("ip required")
+
+    conn = connect()
+    cur = conn.cursor()
+
+    if username:
+        cur.execute(
+            """
+            DELETE FROM artifacts
+            WHERE ip = ? AND (
+                (kind IN ('password', 'username') AND (key = ? OR value = ?))
+                OR (kind = 'ssh_last_user' AND value = ?)
+            )
+            """,
+            (ip, username, username, username),
+        )
+    else:
+        cur.execute(
+            """
+            DELETE FROM artifacts
+            WHERE ip = ? AND kind IN ('password', 'username', 'ssh_last_user')
+            """,
+            (ip,),
+        )
+
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
 # Stored for creds/ssh; hidden from artifact-list (use creds-list / cl)
 _ARTIFACT_CRED_KINDS = ("username", "password", "ssh_last_user")
 

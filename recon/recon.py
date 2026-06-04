@@ -8,6 +8,7 @@ from db import show_tasks
 from db import complete_task
 from db import print_host_summary_json
 from db import add_artifact
+from db import creds_delete
 from db import creds_upsert
 from db import list_ssh_creds
 from db import get_ssh_last_user
@@ -309,6 +310,19 @@ def main():
 
         status = creds_upsert(ip=ip, username=username, password=password)
         print(status)
+
+    elif cmd == "creds-rm":
+        if len(sys.argv) < 3:
+            print("usage: recon.py creds-rm <ip> [username]")
+            sys.exit(1)
+
+        ip = sys.argv[2]
+        username = sys.argv[3] if len(sys.argv) > 3 else None
+        n = creds_delete(ip=ip, username=username)
+        if username:
+            print(f"removed {n} row(s) for {username}@{ip}")
+        else:
+            print(f"removed {n} row(s) for {ip}")
 
     elif cmd == "creds-list":
         args = sys.argv[2:]

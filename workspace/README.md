@@ -19,8 +19,10 @@
 |------|----------|
 | hydra SSH / FTP 成功後に自動保存 | `hydrassh` / `hydraftp`（または `x` 経由） |
 | 手動登録 | `creds-add [ip] <user> <pass>` |
+| 削除 | `creds-rm [ip] [user]`（user 省略でその IP の creds すべて） |
 | 一覧 | `creds-list` / `cl` / `ssh-list` |
 | パスワード入力なしで接続 | `ssh` / `ftp`（DB に creds あり。`ssh` は `sshpass`） |
+| SSH セッションログ | `ssh -l` / `ssh --log`（`ftp -l` と同様。ユーザーは `ssh james` 等） |
 | 匿名 FTP | `ftpa` / `ftp -A <host>` |
 | 素のクライアント | `command ssh ...` / `command ftp ...` |
 
@@ -32,7 +34,8 @@
 | `gb-dirs` | 重複しにくい複数リストを並列（ログは `cases/.../logs/`） |
 
 ```bash
-cs <name>
+cs overpass          # cases/<name>/target があれば $IP 自動復元
+ts 10.48.160.112     # target-set の短縮（案件内なら target に保存）
 gb-dirs              # preset ctf: common + raft-small-directories + quickhits
 gb-dirs -p fast      # 2 本
 gb-dirs -n http://$IP   # dry-run
@@ -71,7 +74,8 @@ ReconOS の永続化層。ここに置くのは `recon.db` のみ。
 
 ```
 cases/<name>/
-├── logs/       # listen -l, ftpa -l, ftp -l など
+├── target      # 調査対象 IP（ts で保存、cs で自動 $IP）
+├── logs/       # listen -l, ftpa -l, ftp -l, ssh -l など
 ├── exports/    # ハッシュ・クラック結果など
 ├── memo.md     # 任意
 ├── task.txt    # 任意

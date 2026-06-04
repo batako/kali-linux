@@ -8,30 +8,95 @@ export RECON_DB="$RECON_HOME/recon.db"
 export RECON_DB_PATH="$RECON_DB"
 export RECON_APP="/opt/recon/recon.py"
 
+_case-target-file() {
+  [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/target"
+}
+
+# Load IP from cases/<case>/target into $IP
+target-load() {
+  local f ip
+  f="$(_case-target-file)" || return 1
+  [[ -f "$f" ]] || return 1
+  ip="$(head -1 "$f" | tr -d '[:space:]')"
+  [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
+  export IP="$ip"
+  return 0
+}
+
+# Persist $IP for current case
+target-save() {
+  local ip="${1:-${IP:-}}"
+  local f
+  [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
+  f="$(_case-target-file)" || return 1
+  print -r -- "$ip" >"$f"
+  return 0
+}
+
+# Resolve target IP: $IP, else cases/<case>/target
+target-current() {
+  if [[ -n "${IP:-}" ]]; then
+    echo "$IP"
+    return 0
+  fi
+  target-load && echo "$IP"
+}
+
+_case-on-enter() {
+  if (( $+functions[_ftp-shell-reset-case] )); then
+    _ftp-shell-reset-case
+  fi
+  if target-load; then
+    echo "[+] target: $IP  ($CASE_HOME/target)"
+  fi
+  if [[ -f "${CASE_HOME:-}/ftp-shell" ]]; then
+    echo "[+] ftp-shell: $CASE_HOME/ftp-shell"
+  fi
+}
+
 target-set() {
   if [[ $# -lt 1 ]]; then
-    echo "usage: target-set <ip>"
+    echo "usage: target-set <ip>  (alias: ts)"
+    echo "  with cs <case>: saved to cases/<case>/target"
+    return 1
+  fi
+
+  if [[ ! "$1" =~ $(_recon-ip-re) ]]; then
+    echo "usage: target-set <ipv4>"
     return 1
   fi
 
   export IP="$1"
 
-  echo "[+] target set: $1"
+  if [[ -n "${CASE_HOME:-}" ]]; then
+    target-save "$1"
+    echo "[+] target set: $1  (saved → $CASE_HOME/target)"
+  else
+    echo "[+] target set: $1  (session only — cs <case> to persist)"
+  fi
 }
 
 target-show() {
-  if [[ -n "${IP:-}" ]]; then
+  local f
+  if target-current >/dev/null; then
     echo "$IP"
+    f="$(_case-target-file 2>/dev/null)"
+    [[ -n "$f" && -f "$f" ]] && echo "[*] file: $f"
     return 0
   fi
-  echo "(no target set)"
+  echo "(no target — ts <ip> or cs <case> with cases/<case>/target)"
   return 1
 }
 
 target-clear() {
+  local f
   unset IP
+  f="$(_case-target-file 2>/dev/null)"
+  [[ -n "$f" && -f "$f" ]] && rm -f "$f"
   echo "[+] target cleared"
 }
+
+ts() { target-set "$@" }
 
 recon-init() {
   mkdir -p "$RECON_HOME"
@@ -257,6 +322,36 @@ creds-list() {
     return 1
   fi
   python3 "$RECON_APP" creds-list "$ip"
+}
+
+# usage: creds-rm [ip] [username]   (no username → all creds for ip)
+creds-rm() {
+  local ip="" user=""
+
+  if [[ $# -ge 2 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+    ip="$1"
+    user="${2:-}"
+  elif [[ $# -ge 1 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+    ip="$1"
+  elif [[ $# -ge 1 ]]; then
+    ip="${IP:-}"
+    user="$1"
+  else
+    ip="${IP:-}"
+  fi
+
+  if [[ -z "$ip" ]]; then
+    echo "usage: creds-rm [ip] [username]"
+    echo "  creds-rm              # delete all creds for \$IP"
+    echo "  creds-rm anonymous    # delete one user on \$IP"
+    return 1
+  fi
+
+  if [[ -n "$user" ]]; then
+    python3 "$RECON_APP" creds-rm "$ip" "$user"
+  else
+    python3 "$RECON_APP" creds-rm "$ip"
+  fi
 }
 
 cl() {

@@ -36,6 +36,10 @@ case-set() {
   echo "[+] case: $name"
   echo "[+] path: $CASE_HOME"
   cd "$CASE_HOME" || return 1
+
+  if (( $+functions[_case-on-enter] )); then
+    _case-on-enter
+  fi
 }
 
 case-show() {

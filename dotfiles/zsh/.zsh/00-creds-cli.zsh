@@ -6,8 +6,37 @@ _recon-ip-re() {
   echo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
+# $IP → cases/<case>/target (lazy load when case is set)
+_recon-ip-default() {
+  if [[ -n "${IP:-}" ]]; then
+    echo "$IP"
+    return 0
+  fi
+  if (( $+functions[target-load] )) && target-load; then
+    echo "$IP"
+    return 0
+  fi
+  return 1
+}
+
 _recon-creds-json() {
   python3 "$RECON_APP" creds-list --json "$1" 2>/dev/null
+}
+
+# FTP anonymous — stored for cl / ftp; not used for ssh auto-login
+export FTP_ANON_USER="${FTP_ANON_USER:-anonymous}"
+export FTP_ANON_PASS="${FTP_ANON_PASS:-anonymous@}"
+
+_recon-creds-json-filter() {
+  local exclude_anon="${1:-0}"
+  python3 -c "
+import json, sys
+exclude_anon = sys.argv[1] == '1'
+rows = json.load(sys.stdin)
+if exclude_anon:
+    rows = [r for r in rows if r.get('username') != 'anonymous']
+print(json.dumps(rows))
+" "$exclude_anon"
 }
 
 _recon-has-creds() {
@@ -16,11 +45,18 @@ _recon-has-creds() {
   [[ -n "$json" && "$json" != "[]" ]]
 }
 
+_recon-has-ssh-creds() {
+  local ip="$1" json
+  json="$(_recon-creds-json "$ip" | _recon-creds-json-filter 1)"
+  [[ -n "$json" && "$json" != "[]" ]]
+}
+
 _recon-pick-user() {
   local ip="$1"
+  local exclude_anon="${2:-0}"
   local json users i choice last idx
 
-  json="$(_recon-creds-json "$ip")"
+  json="$(_recon-creds-json "$ip" | _recon-creds-json-filter "$exclude_anon")"
   if [[ -z "$json" || "$json" == "[]" ]]; then
     return 1
   fi
@@ -91,7 +127,7 @@ _recon-parse-user-ip() {
 
   case ${#pos[@]} in
     0)
-      _RECON_IP="${IP:-}"
+      _RECON_IP="$(_recon-ip-default 2>/dev/null)"
       ;;
     1)
       if [[ "${pos[1]}" == *@* ]]; then
@@ -101,7 +137,7 @@ _recon-parse-user-ip() {
         _RECON_IP="${pos[1]}"
       else
         _RECON_USER="${pos[1]}"
-        _RECON_IP="${IP:-}"
+        _RECON_IP="$(_recon-ip-default 2>/dev/null)"
       fi
       ;;
     2)
@@ -120,4 +156,18 @@ _recon-parse-user-ip() {
   esac
 
   [[ -n "$_RECON_IP" ]]
+}
+
+# james_rsa -> james; id_rsa needs explicit user elsewhere
+_recon-guess-user-from-key() {
+  local key="$1"
+  local base="${key:t}"
+  base="${base%.pem}"
+  base="${base%_rsa}"
+  base="${base%_dsa}"
+  base="${base%_ed25519}"
+  base="${base%_ecdsa}"
+  [[ "$base" == id || "$base" == identity ]] && return 1
+  [[ -n "$base" ]] && { echo "$base"; return 0 }
+  return 1
 }

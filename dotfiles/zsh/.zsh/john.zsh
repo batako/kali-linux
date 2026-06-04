@@ -13,19 +13,84 @@ _ssh2john_path() {
   return 1
 }
 
-# ssh2john + john wordlist crack for private keys
-# usage: sshkey-crack [-f] <keyfile> [wordlist]
-#   x "sshkey-crack id_rsa"
-# -f: ignore prior crack in this hash's pot and run wordlist again
-sshkey-crack() {
-  local force=0
-  if [[ "${1:-}" == "-f" ]]; then
-    force=1
-    shift
+_sshkey_pass_from_show() {
+  local show="$1"
+  print -r -- "$show" | python3 -c "
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line or '0 password hashes' in line:
+        continue
+    if ':' in line:
+        print(line.split(':', 1)[1])
+        break
+"
+}
+
+_sshkey_import_creds() {
+  local key="$1" user="$2" pass="$3"
+  local ip="${IP:-}"
+  local creds_status
+  local key_abs
+
+  if [[ -f "$key" ]]; then
+    chmod 600 "$key" 2>/dev/null
+    key_abs="$(realpath "$key" 2>/dev/null || echo "$key")"
+  else
+    key_abs="$key"
   fi
 
+  if [[ -z "$ip" ]]; then
+    echo "[-] creds not saved: ts <ip> first, or cs <case> (cases/<case>/target)" >&2
+    return 1
+  fi
+  if [[ -z "$user" || -z "$pass" ]]; then
+    return 1
+  fi
+
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+
+  echo ""
+  echo "----- recon -----"
+  case "$creds_status" in
+    unchanged) echo "[=] creds unchanged: ${user}@${ip}" ;;
+    updated)   echo "[~] creds updated: ${user}@${ip}" ;;
+    *)         echo "[+] creds saved: ${user}@${ip}" ;;
+  esac
+  echo "    login:    $user"
+  echo "    password: $pass"
+  echo "    key:      $key_abs"
+  echo "[i] connect: ssh -i $key_abs ${user}@${ip}  (passphrase from cl)"
+}
+
+# ssh2john + john wordlist crack for private keys
+# usage: sshkey-crack [-f] [-u user] <keyfile> [wordlist]
+#   x "sshkey-crack id_rsa"
+# -f: ignore prior crack in this hash's pot and run wordlist again
+# -u: username for creds (default: guess from key name, e.g. james_rsa -> james)
+# on success: creds-add for $IP (cl / ssh)
+sshkey-crack() {
+  local force=0
+  local creds_user=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) force=1; shift ;;
+      -u) creds_user="$2"; shift 2 ;;
+      -h|--help)
+        echo "usage: sshkey-crack [-f] [-u user] <keyfile> [wordlist]"
+        echo "  default wordlist: \$RECON_PASSLIST"
+        echo "  on crack: creds-add for \$IP (shows in cl)"
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
   if [[ $# -lt 1 ]]; then
-    echo "usage: sshkey-crack [-f] <keyfile> [wordlist]"
+    echo "usage: sshkey-crack [-f] [-u user] <keyfile> [wordlist]"
     echo "  default wordlist: \$RECON_PASSLIST"
     return 1
   fi
@@ -71,15 +136,35 @@ sshkey-crack() {
   python3 "$ssh2john" "$key" >"$hash_file" || return 1
 
   _sshkey_show() {
-    john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d'
+    local show
+    show="$(john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    fi
+    print -r -- "$show"
+  }
+
+  _sshkey_apply_creds() {
+    local show="$1"
+    local pass user
+
+    pass="$(_sshkey_pass_from_show "$show")"
+    [[ -z "$pass" ]] && return 0
+
+    user="${creds_user:-$(_recon-guess-user-from-key "$key")}" || {
+      echo "[-] creds not saved: could not guess username (use: sshkey-crack -u <user> $key)" >&2
+      return 0
+    }
+    _sshkey_import_creds "$key" "$user" "$pass"
   }
 
   # Global ~/.john/john.pot may already have this hash (manual john hash.txt runs).
   local global_show
   global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
-  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* ]]; then
+  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
     echo "[+] already cracked (global john pot):"
     echo "$global_show"
+    _sshkey_apply_creds "$global_show"
     echo ""
     echo "[i] isolated re-crack: sshkey-crack -f $key"
     echo "[i] or show manual hash: john --show hash.txt"
@@ -91,6 +176,7 @@ sshkey-crack() {
   if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
     echo "[+] already cracked (this key's pot):"
     echo "$prior"
+    _sshkey_apply_creds "$prior"
     echo ""
     echo "[i] run again: sshkey-crack -f $key"
     return 0
@@ -102,8 +188,14 @@ sshkey-crack() {
   local rc=$?
 
   echo ""
+  local cracked
+  cracked="$(_sshkey_show)"
   echo "[+] cracked (if any):"
-  _sshkey_show
+  print -r -- "$cracked"
+
+  if [[ -n "$cracked" && "$cracked" != *"0 password hashes cracked"* ]]; then
+    _sshkey_apply_creds "$cracked"
+  fi
 
   echo ""
   echo "[+] hash file: $hash_file"
