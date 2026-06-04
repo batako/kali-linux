@@ -31,9 +31,6 @@ from executor import run_command_or_cache
 from scan_run import PROFILE_BASIC
 from scan_run import run_scan
 
-# Which open ports enter the probe pipeline (expand over time).
-SCOUT_WATCH_PORTS = frozenset({22, 80})
-
 PROBE_TIMEOUT_SEC = 30
 
 DEFAULT_WATCH_INTERVAL_SEC = 2.0
@@ -194,17 +191,18 @@ def resolve_probe_plan(ip: str, port: int, service: str) -> Optional[ProbePlan]:
             command=f"curl -sS -m 10 ftp://{ip}:{port}/",
         )
 
-    if "http" in svc or "https" in svc:
-        if "https" in svc or svc.startswith("ssl/"):
+    if is_web_service(service):
+        url = build_web_url(ip, port, service)
+        if url.startswith("https://"):
             return ProbePlan(
                 probe_id="https",
                 task_type="scout-https",
-                command=f"curl -sSk -m 10 -D- https://{ip}:{port}/",
+                command=f"curl -sSk -m 10 -D- {url}",
             )
         return ProbePlan(
             probe_id="http",
             task_type="scout-http",
-            command=f"curl -sS -m 10 -D- http://{ip}:{port}/",
+            command=f"curl -sS -m 10 -D- {url}",
         )
 
     return None
@@ -594,13 +592,9 @@ def _run_dirs_phase(
     return rc
 
 
-def _watched_open_rows(ip: str):
-    rows = []
-    for row in _fetch_ports(ip, "open"):
-        port = int(row[0])
-        if port in SCOUT_WATCH_PORTS:
-            rows.append(row)
-    return sorted(rows, key=lambda r: int(r[0]))
+def _probe_open_rows(ip: str):
+    """All open ports; resolve_probe_plan filters by service (ssh / web / ftp)."""
+    return sorted(_fetch_ports(ip, "open"), key=lambda r: int(r[0]))
 
 
 def _format_port_row(row) -> str:
@@ -613,12 +607,12 @@ def _format_port_row(row) -> str:
 
 
 def _run_probe_phase(ip: str, *, dry_run: bool = False) -> int:
-    rows = _watched_open_rows(ip)
+    rows = _probe_open_rows(ip)
     print("")
-    print(f"[*] phase 2: probes (watch {sorted(SCOUT_WATCH_PORTS)}, by service)")
+    print("[*] phase 2: probes (all open ports, ssh + web by service)")
 
     if not rows:
-        print("[*] no open ports in watch set — skip")
+        print("[*] no open ports — skip")
         return 0
 
     rc = 0

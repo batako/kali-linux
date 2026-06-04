@@ -150,13 +150,13 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 
 ### Phase 2 — サービスプローブ（同期）
 
-open かつ **監視ポート**（既定 **22, 80**）について、DB の **service** 名に応じて短いプローブを実行する。
+**open の全ポート**を走査し、DB の **service** 名が **SSH / Web 系**（および ftp）に合うものだけ短いプローブを実行する（22 / 80 固定ではない。8080 の tomcat 等も対象）。
 
 | service（例） | プローブ |
 |---------------|----------|
 | `ssh` | nmap `ssh2-enum-algos` |
 | `ftp`（`sftp` 除く） | `curl` ftp |
-| `http` / `https` | `curl` |
+| Web 系（`http` / `nginx` / `apache` / `tomcat` 等） | `curl` |
 
 service 不明のポートはスキップ（プローブ結果で service を上書きしない）。出力はコンソールと **`executions`**（`el` / `ev`）。`task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`。
 
