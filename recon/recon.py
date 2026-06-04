@@ -4,6 +4,7 @@ import os
 from db import init_db
 from db import show_hosts
 from db import show_host
+from db import show_scan_report
 from db import reset_host_scan_data
 from db import show_tasks
 from db import complete_task
@@ -79,18 +80,21 @@ def main():
         args = sys.argv[2:]
         ip = None
         profile = "basic"
+        report = False
         force = False
         dry_run = False
         quiet_ports = False
         jobs = DEFAULT_FULL_JOBS
 
-        if args and args[0] == "full":
-            profile = PROFILE_FULL
-            args = args[1:]
-
         while args:
             a = args[0]
-            if a in ("-f", "--force"):
+            if a in ("-f", "--full"):
+                profile = PROFILE_FULL
+                args = args[1:]
+            elif a in ("-r", "--report"):
+                report = True
+                args = args[1:]
+            elif a == "--force":
                 force = True
                 args = args[1:]
             elif a in ("-n", "--dry-run"):
@@ -101,7 +105,7 @@ def main():
                 args = args[1:]
             elif a in ("-j", "--jobs"):
                 if len(args) < 2:
-                    print("usage: recon.py scan full <ip> -j <N>")
+                    print("usage: recon.py scan --full <ip> -j <N>")
                     sys.exit(1)
                 jobs = clamp_full_jobs(int(args[1]))
                 args = args[2:]
@@ -111,8 +115,12 @@ def main():
             elif a.startswith("-"):
                 print(f"unknown option: {a}")
                 print(
-                    "usage: recon.py scan [full] <ip> [--force] [-n] [-q] [-j N]"
+                    "usage: recon.py scan [options] <ip>"
+                    "  (-f|--full, -r|--report, --force, -n, -q, -j N)"
                 )
+                sys.exit(1)
+            elif a in ("full", "report"):
+                print(f"[-] use scan -f or scan --{a} (positional '{a}' removed)")
                 sys.exit(1)
             else:
                 ip = a
@@ -121,11 +129,24 @@ def main():
         if not ip:
             ip = os.environ.get("IP")
         if not ip:
-            print("usage: recon.py scan [full] <ip> [--force] [-n] [-q] [-j N]")
+            print(
+                "usage: recon.py scan [options] <ip>"
+                "  (-f|--full, -r|--report, --force, -n, -q, -j N)"
+            )
             sys.exit(1)
 
+        if report and profile == PROFILE_FULL:
+            print("[-] use either --full/-f or --report/-r, not both")
+            sys.exit(1)
+        if report:
+            if force or dry_run or quiet_ports or jobs != DEFAULT_FULL_JOBS:
+                print("[-] --report does not take --force, -n, -q, or -j")
+                sys.exit(1)
+            show_scan_report(ip)
+            sys.exit(0)
+
         if profile != PROFILE_FULL and jobs != DEFAULT_FULL_JOBS:
-            print("[-] -j is only for scan full")
+            print("[-] -j is only for scan --full")
             sys.exit(1)
 
         rc = run_scan(
@@ -147,7 +168,7 @@ def main():
         print(f"[+] host-reset {ip}")
         for table, n in counts.items():
             print(f"    {table}: {n} row(s) deleted")
-        print("[i] re-test: scan  /  scan full")
+        print("[i] re-test: scan  /  scan -f")
 
     elif cmd == "host-view":
         if len(sys.argv) < 3:

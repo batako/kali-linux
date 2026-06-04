@@ -626,7 +626,7 @@ def show_host(ip):
         print(f"basic coverage: {basic_cov}/1000 (top ports)")
         print(f"full coverage: {full_cov}/65535 (tcp)")
         if full_cov > 0 and full_cov < 65535:
-            print("full status: in progress — run scan full until complete")
+            print("full status: in progress — run scan -f until complete")
         elif full_cov >= 65535:
             print("full status: complete")
     except FileNotFoundError:
@@ -862,6 +862,120 @@ def count_open_ports(ip):
     ).fetchone()
     conn.close()
     return int(row["n"]) if row else 0
+
+
+def _compress_sorted_ports(ports):
+    """Sorted unique ints -> [(start, end), ...] inclusive ranges."""
+    ports = sorted(set(int(p) for p in ports))
+    if not ports:
+        return []
+    ranges = []
+    start = prev = ports[0]
+    for p in ports[1:]:
+        if p == prev + 1:
+            prev = p
+            continue
+        ranges.append((start, prev))
+        start = prev = p
+    ranges.append((start, prev))
+    return ranges
+
+
+def _unscanned_ranges(port_iter, scanned_set):
+    missing = [int(p) for p in port_iter if int(p) not in scanned_set]
+    return _compress_sorted_ports(missing)
+
+
+def _format_gap_range_lines(ranges, max_lines=12):
+    """Human-readable gap ranges; truncate with summary if needed."""
+    if not ranges:
+        return ["(none)"]
+    lines = []
+    extra_ports = 0
+    for i, (start, end) in enumerate(ranges):
+        if i >= max_lines:
+            extra_ports += end - start + 1
+            continue
+        n = end - start + 1
+        if start == end:
+            lines.append(f"{start}\t(1 port)")
+        else:
+            lines.append(f"{start}-{end}\t({n} ports)")
+    if extra_ports or len(ranges) > max_lines:
+        hidden = len(ranges) - max_lines
+        if hidden > 0:
+            lines.append(f"... +{hidden} range(s), {extra_ports} more unscanned port(s)")
+    return lines
+
+
+def show_scan_report(ip):
+    """Light one-screen scan status (coverage, open ports, unscanned gaps)."""
+    from port_sets import FULL_TCP_END
+    from port_sets import FULL_TCP_START
+    from port_sets import nmap_top1000_tcp
+
+    scanned = set(get_scanned_ports(ip))
+    basic_ports = nmap_top1000_tcp()
+    basic_total = len(basic_ports)
+    basic_cov = sum(1 for p in basic_ports if p in scanned)
+    full_total = FULL_TCP_END - FULL_TCP_START + 1
+    full_cov = sum(
+        1 for p in range(FULL_TCP_START, FULL_TCP_END + 1) if p in scanned
+    )
+    open_n = count_open_ports(ip)
+
+    print("========================")
+    print(f"[SCAN REPORT] {ip}")
+    print("========================")
+    print("")
+
+    print("COVERAGE")
+    if basic_cov >= basic_total:
+        basic_status = "complete"
+    elif basic_cov == 0:
+        basic_status = "not started"
+    else:
+        basic_status = "partial"
+    print(f"  basic (top 1000):  {basic_cov}/{basic_total}  {basic_status}")
+
+    if full_cov >= full_total:
+        full_status = "complete"
+    elif full_cov == 0:
+        full_status = "not started"
+    else:
+        full_status = "in progress"
+    print(f"  full (tcp 1-65535): {full_cov}/{full_total}  {full_status}")
+    print(f"  open ports: {open_n}")
+    print("")
+
+    for line in format_port_section_lines("OPEN", _fetch_ports(ip, "open"), group=True):
+        print(line)
+    print("")
+
+    basic_gaps = _unscanned_ranges(basic_ports, scanned)
+    if basic_gaps:
+        print("GAPS — basic (top 1000, unscanned)")
+        for line in _format_gap_range_lines(basic_gaps, max_lines=8):
+            print(f"  {line}")
+        print("")
+
+    if full_cov < full_total:
+        full_gaps = _unscanned_ranges(
+            range(FULL_TCP_START, FULL_TCP_END + 1), scanned
+        )
+        print("GAPS — full (tcp 1-65535, unscanned)")
+        for line in _format_gap_range_lines(full_gaps, max_lines=10):
+            print(f"  {line}")
+        print("")
+
+    print("NEXT")
+    if basic_cov < basic_total:
+        print("  scan")
+    elif full_cov < full_total:
+        print("  scan -f     (or scan -f -j 4)")
+    else:
+        print("  (coverage complete — host-view for tasks/history)")
+    print("")
 
 
 # =========================

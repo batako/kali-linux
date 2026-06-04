@@ -1,5 +1,5 @@
 """
-Port scan: nmap -sC -sV with port_scan_coverage (scan = top 1000, scan full = TCP 1-65535).
+Port scan: nmap -sC -sV with port_scan_coverage (scan = top 1000, scan -f = TCP 1-65535).
 """
 
 import subprocess
@@ -140,7 +140,7 @@ def _nmap_cmd(
 def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
     """
     Returns (cmd_or_none, info dict).
-    Each scan full invocation scans at most FULL_CHUNK_PORTS unscanned ports.
+    Each scan --full invocation scans at most FULL_CHUNK_PORTS unscanned ports.
     """
     total = profile_port_count(profile)
     port_set = profile_port_set(profile)
@@ -516,7 +516,7 @@ def _run_full_auto(
     jobs: int = 1,
     force: bool = False,
 ) -> int:
-    """scan full: TCP 1-65535 until covered (sequential or parallel -j)."""
+    """scan -f / --full: TCP 1-65535 until covered (sequential or parallel -j)."""
     jobs = clamp_full_jobs(jobs)
     _reset_live_snapshot()
     subtitle = "auto → 65535/65535"
