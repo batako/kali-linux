@@ -16,7 +16,7 @@ from db import list_executions
 from db import get_execution
 from db import list_artifacts
 from db import delete_artifact
-from creds import import_hydra_ssh
+from creds import import_hydra
 from creds import RECON_CREDS_BANNER
 from creds import emit_import_results
 import json
@@ -355,7 +355,7 @@ def main():
         else:
             text = sys.stdin.read()
 
-        results = import_hydra_ssh(text, ip=ip)
+        results = import_hydra(text, ip=ip)
         emit_import_results(results)
         if not results:
             print("", file=sys.stdout)

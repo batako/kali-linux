@@ -17,11 +17,26 @@
 
 | 操作 | コマンド |
 |------|----------|
-| hydra SSH 成功後に自動保存 | `hydrassh`（または `x hydrassh`） |
+| hydra SSH / FTP 成功後に自動保存 | `hydrassh` / `hydraftp`（または `x` 経由） |
 | 手動登録 | `creds-add [ip] <user> <pass>` |
 | 一覧 | `creds-list` / `cl` / `ssh-list` |
-| パスワード入力なしで接続 | `ssh` / `ssh <user>` / `ssh user@ip`（要 `sshpass`、DB に creds あり） |
-| 通常の OpenSSH | `command ssh ...` |
+| パスワード入力なしで接続 | `ssh` / `ftp`（DB に creds あり。`ssh` は `sshpass`） |
+| 匿名 FTP | `ftpa` / `ftp -A <host>` |
+| 素のクライアント | `command ssh ...` / `command ftp ...` |
+
+### Gobuster 並列（dir）
+
+| コマンド | 用途 |
+|----------|------|
+| `gb-dir` | 1 ワードリスト（`GB_WORDLIST`） |
+| `gb-dirs` | 重複しにくい複数リストを並列（ログは `cases/.../logs/`） |
+
+```bash
+cs <name>
+gb-dirs              # preset ctf: common + raft-small-directories + quickhits
+gb-dirs -p fast      # 2 本
+gb-dirs -n http://$IP   # dry-run
+```
 
 ## レイアウト
 

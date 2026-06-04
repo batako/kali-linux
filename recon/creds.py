@@ -2,26 +2,28 @@ import re
 
 from db import creds_upsert
 
-# hydra ssh success: host/login/password with optional fields (e.g. misc: (null))
+# hydra success: host/login/password with optional fields (e.g. misc: (null))
 HYDRA_SSH_FOUND = re.compile(
-    r"\[\d+\]\[ssh\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s+(\S+)",
+    r"\[\d+\]\[ssh\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
+HYDRA_FTP_FOUND = re.compile(
+    r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
 
 
-def import_hydra_ssh(text: str, ip: str = None, execution_id=None):
-    """
-    Parse hydra stdout/stderr for ssh valid pairs and upsert creds.
-    Returns list of dicts: {ip, username, password, status}
-    """
+def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None):
     if not text:
         return []
 
     results = []
     seen = set()
 
-    for m in HYDRA_SSH_FOUND.finditer(text):
+    for m in pattern.finditer(text):
         host, username, password = m.group(1), m.group(2), m.group(3)
+        if not username:
+            continue
         target_ip = ip or host
         dedupe_key = (target_ip, username, password)
         if dedupe_key in seen:
@@ -44,6 +46,33 @@ def import_hydra_ssh(text: str, ip: str = None, execution_id=None):
         )
 
     return results
+
+
+def import_hydra_ssh(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for ssh valid pairs."""
+    return _import_hydra_matches(text, HYDRA_SSH_FOUND, ip=ip, execution_id=execution_id)
+
+
+def import_hydra_ftp(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for ftp valid pairs."""
+    return _import_hydra_matches(text, HYDRA_FTP_FOUND, ip=ip, execution_id=execution_id)
+
+
+def import_hydra(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for ssh and ftp valid pairs."""
+    combined = []
+    seen = set()
+    for row in import_hydra_ssh(text, ip=ip, execution_id=execution_id):
+        key = (row["ip"], row["username"], row["password"])
+        if key not in seen:
+            seen.add(key)
+            combined.append(row)
+    for row in import_hydra_ftp(text, ip=ip, execution_id=execution_id):
+        key = (row["ip"], row["username"], row["password"])
+        if key not in seen:
+            seen.add(key)
+            combined.append(row)
+    return combined
 
 
 RECON_CREDS_BANNER = "----- recon -----"
