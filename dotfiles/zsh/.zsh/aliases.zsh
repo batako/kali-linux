@@ -4,20 +4,7 @@
 alias ports='ss -tulnp'
 alias http='python3 -m http.server 8000'
 
-# ========================
-# recon / scanning
-# =========================
-
-scan() {
-  local target="${1:-$(target-current 2>/dev/null)}"
-  if [[ -z "$target" ]]; then
-    echo "usage: scan [ip]  (or: cs <case> / ts <ip>)"
-    return 1
-  fi
-
-  # stdout only; persist with: x scan
-  nmap -sC -sV "$target"
-}
+# scan → dotfiles/zsh/.zsh/scan.zsh
 
 alias ss='searchsploit'
 alias msf='msfconsole'

@@ -45,26 +45,10 @@ def parse_hosts_xml(xml_data):
 
 
 def parse_ports_xml(xml_data, ip, mode):
-    root = ET.fromstring(xml_data)
+    from scan_run import ingest_nmap_ports_xml
 
-    for host in root.findall("host"):
-        ports = host.find("ports")
-        if ports is None:
-            continue
-
-        for p in ports.findall("port"):
-            portid = int(p.attrib["portid"])
-            proto = p.attrib["protocol"]
-
-            state = p.find("state").attrib["state"]
-
-            service_elem = p.find("service")
-            service = service_elem.attrib.get("name", "") if service_elem is not None else ""
-            version = service_elem.attrib.get("version", "") if service_elem is not None else ""
-
-            upsert_port(ip, portid, proto, state, service, version)
-
-            generate_tasks(ip, portid, service)
+    profile = "quick" if mode == "quick" else "full"
+    ingest_nmap_ports_xml(xml_data, ip, profile, record_tasks=True)
 
 
 def generate_tasks(ip, port, service):

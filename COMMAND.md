@@ -100,7 +100,20 @@ cs startup
 | `case-sync` | `$PWD` が `cases/<name>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
-| `scan [ip]` | nmap（`$IP` または引数） |
+| `scan [ip]` | `nmap -sC -sV` → DB。**終了時に OPEN + CLOSED**（closed は service/version 付きのみ） |
+| `scan -f` | 全ポート再スキャン |
+| `scan -n` | nmap コマンド表示 + ポート表 |
+| `scan -q` | ポート表なし |
+| `host-view [ip]` | ポート全件・tasks・履歴・artifacts |
+
+```bash
+cs startup && ti 10.49.140.156
+scan              # 終わったら OPEN / CLOSED がその場で出る
+scan              # coverage 済みなら nmap スキップ + 同じ表
+host-view         # タスクや履歴が欲しいときだけ
+```
+
+`host-scan` は従来どおり（task 生成あり、coverage は `scan` が正本）。
 
 ---
 

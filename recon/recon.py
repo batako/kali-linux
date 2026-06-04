@@ -24,6 +24,7 @@ import json
 
 from scanner import network_scan
 from scanner import host_scan
+from scan_run import run_basic_scan
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -68,6 +69,46 @@ def main():
             sys.exit(1)
 
         host_scan(sys.argv[2], sys.argv[3])
+
+    elif cmd == "scan":
+        args = sys.argv[2:]
+        ip = None
+        force = False
+        dry_run = False
+        quiet_ports = False
+
+        while args:
+            a = args[0]
+            if a in ("-f", "--force"):
+                force = True
+                args = args[1:]
+            elif a in ("-n", "--dry-run"):
+                dry_run = True
+                args = args[1:]
+            elif a in ("-q", "--quiet"):
+                quiet_ports = True
+                args = args[1:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py scan <ip> [--force] [-n] [-q]")
+                sys.exit(1)
+            else:
+                ip = a
+                args = args[1:]
+
+        if not ip:
+            ip = os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py scan <ip> [--force] [-n] [-q]")
+            sys.exit(1)
+
+        rc = run_basic_scan(
+            ip,
+            force=force,
+            dry_run=dry_run,
+            quiet_ports=quiet_ports,
+        )
+        sys.exit(0 if rc == 0 else 1)
 
     elif cmd == "host-view":
         if len(sys.argv) < 3:

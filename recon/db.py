@@ -99,6 +99,18 @@ def ensure_schema(conn):
     """)
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS port_scan_coverage (
+        ip TEXT NOT NULL,
+        port INTEGER NOT NULL,
+        proto TEXT NOT NULL DEFAULT 'tcp',
+        last_state TEXT,
+        scan_profile TEXT,
+        last_scan_at TEXT,
+        PRIMARY KEY (ip, port, proto)
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         ip TEXT,
@@ -420,19 +432,91 @@ def upsert_port(ip, port, proto, state, service, version):
     conn.close()
 
 
+def _fetch_ports(ip, state=None, closed_with_service=False):
+    conn = connect()
+    cur = conn.cursor()
+    if closed_with_service:
+        rows = cur.execute(
+            """
+            SELECT port, proto, state, service, version
+            FROM ports
+            WHERE ip = ? AND state = 'closed'
+              AND (
+                TRIM(COALESCE(service, '')) != ''
+                OR TRIM(COALESCE(version, '')) != ''
+              )
+            ORDER BY port
+            """,
+            (ip,),
+        ).fetchall()
+    elif state is None:
+        rows = cur.execute(
+            """
+            SELECT port, proto, state, service, version
+            FROM ports
+            WHERE ip = ?
+            ORDER BY port
+            """,
+            (ip,),
+        ).fetchall()
+    else:
+        rows = cur.execute(
+            """
+            SELECT port, proto, state, service, version
+            FROM ports
+            WHERE ip = ? AND state = ?
+            ORDER BY port
+            """,
+            (ip, state),
+        ).fetchall()
+    conn.close()
+    return rows
+
+
+def _port_group_heading(name):
+    """Section title distinct from tabular column header."""
+    return f"--- {name} ---"
+
+
+def _print_port_section(label, rows, show_coverage=False, ip=None, group=False):
+    print(_port_group_heading(label) if group else label)
+    header = "PORT\tPROTO\tSTATE\tSERVICE\tVERSION"
+    if show_coverage and ip:
+        covered = count_port_scan_coverage(ip)
+        header = f"{header}\t(coverage: {covered})"
+    print(header)
+    if not rows:
+        print("(none)")
+    else:
+        for p in rows:
+            print(f"{p[0]}\t{p[1]}\t{p[2]}\t{p[3]}\t{p[4]}")
+    print("")
+
+
+def print_ports(ip, open_only=True, show_coverage=False, split_open_closed=False):
+    """Compact port table for scan output and host-view."""
+    print("")
+    if split_open_closed:
+        open_rows = _fetch_ports(ip, "open")
+        # closed but nmap attached service/version (not bare closed noise)
+        closed_rows = _fetch_ports(ip, closed_with_service=True)
+        _print_port_section("OPEN", open_rows, show_coverage=show_coverage, ip=ip, group=True)
+        _print_port_section("CLOSED", closed_rows, group=True)
+        return
+
+    if open_only:
+        rows = _fetch_ports(ip, "open")
+        label = "PORTS"
+    else:
+        rows = _fetch_ports(ip)
+        label = "PORTS"
+
+    _print_port_section(label, rows, show_coverage=show_coverage, ip=ip if show_coverage else None)
+
+
 def show_host(ip):
     conn = connect()
     cur = conn.cursor()
-
-    # -------------------------
-    # ports
-    # -------------------------
-    ports = cur.execute("""
-    SELECT port, proto, state, service, version
-    FROM ports
-    WHERE ip = ?
-    ORDER BY port
-    """, (ip,)).fetchall()
 
     # -------------------------
     # tasks
@@ -479,16 +563,7 @@ def show_host(ip):
     print(f"HOST: {ip}")
     print("")
 
-    # =========================
-    # PORT VIEW
-    # =========================
-    print("PORTS")
-    print("PORT\tPROTO\tSTATE\tSERVICE\tVERSION")
-
-    for p in ports:
-        print(f"{p[0]}\t{p[1]}\t{p[2]}\t{p[3]}\t{p[4]}")
-
-    print("")
+    print_ports(ip, open_only=False, show_coverage=True)
 
     # =========================
     # SCAN PROGRESS
@@ -594,6 +669,120 @@ def add_scan_range(ip, scan_type, start, end):
 
     conn.commit()
     conn.close()
+
+
+def has_scan_range(ip, scan_type, range_start, range_end):
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        """
+        SELECT 1 FROM scan_ranges
+        WHERE ip = ? AND scan_type = ? AND range_start = ? AND range_end = ?
+        """,
+        (ip, scan_type, range_start, range_end),
+    ).fetchone()
+    conn.close()
+    return row is not None
+
+
+# =========================
+# port scan coverage (偵察済みポート)
+# =========================
+
+def mark_port_scanned(ip, port, proto, state, scan_profile):
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO port_scan_coverage (
+            ip, port, proto, last_state, scan_profile, last_scan_at
+        ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(ip, port, proto) DO UPDATE SET
+            last_state = excluded.last_state,
+            scan_profile = excluded.scan_profile,
+            last_scan_at = datetime('now')
+        """,
+        (ip, int(port), proto, state, scan_profile),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_scanned_ports(ip, proto="tcp"):
+    conn = connect()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT port FROM port_scan_coverage
+        WHERE ip = ? AND proto = ?
+        ORDER BY port
+        """,
+        (ip, proto),
+    ).fetchall()
+    conn.close()
+    return [int(r["port"]) for r in rows]
+
+
+def count_port_scan_coverage(ip, proto="tcp"):
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        """
+        SELECT COUNT(*) AS n FROM port_scan_coverage
+        WHERE ip = ? AND proto = ?
+        """,
+        (ip, proto),
+    ).fetchone()
+    conn.close()
+    return int(row["n"]) if row else 0
+
+
+def format_nmap_port_list(ports, max_ports=800):
+    """Comma-separated port list for nmap -p / --exclude-ports (argv limit)."""
+    if not ports:
+        return ""
+    ports = sorted(set(int(p) for p in ports))
+    if len(ports) > max_ports:
+        ports = ports[:max_ports]
+    return ",".join(str(p) for p in ports)
+
+
+def format_nmap_exclude_ports(ports, max_ports=800):
+    return format_nmap_port_list(ports, max_ports=max_ports)
+
+
+def seed_coverage_from_ports(ip, profile="seed"):
+    """Backfill coverage from ports table (legacy scan / host-scan without coverage)."""
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO port_scan_coverage (
+            ip, port, proto, last_state, scan_profile, last_scan_at
+        )
+        SELECT ip, port, proto, COALESCE(state, 'unknown'), ?, datetime('now')
+        FROM ports
+        WHERE ip = ?
+        ON CONFLICT(ip, port, proto) DO NOTHING
+        """,
+        (profile, ip),
+    )
+    conn.commit()
+    conn.close()
+
+
+def count_open_ports(ip):
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        """
+        SELECT COUNT(*) AS n FROM ports
+        WHERE ip = ? AND state = 'open'
+        """,
+        (ip,),
+    ).fetchone()
+    conn.close()
+    return int(row["n"]) if row else 0
 
 
 # =========================
