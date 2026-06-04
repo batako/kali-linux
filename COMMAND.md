@@ -104,7 +104,7 @@ cs startup
 | `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
 | `scan -f -j 4` | full を **4 並列**（1 wave あたり最大 4000 ポート、`recon.db.lock` でマージ） |
 | `scan --force` | 再スキャン（basic=top 1000、full=`-p-`） |
-| `scan -r` / `scan --report` | coverage・OPEN・未スキャン帯（nmap なし） |
+| `scan -r` / `scan --report` | DB の OPEN + CLOSED（`scan` 終了時と同型・nmap なし） |
 | `scan -n` / `-q` | dry-run / ポート表なし |
 | `host-reset [ip]` | 当該 IP の ports / coverage / scan_ranges を削除（再テスト用） |
 | `host-view [ip]` | ポート全件・tasks・履歴・artifacts |
@@ -115,7 +115,7 @@ scan              # 定番 1000。終わったら OPEN / CLOSED
 scan -f           # 65535 完了まで自動
 scan -f -j 4      # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
 host-reset        # スキャン結果だけ消してやり直す
-scan -r           # 進捗だけ確認（軽い）
+scan -r           # ポート表だけ再表示（軽い）
 host-view         # タスクや履歴が欲しいときだけ
 ```
 
