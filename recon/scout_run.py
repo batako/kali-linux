@@ -18,6 +18,7 @@ from urllib.parse import urljoin
 from urllib.parse import urlparse
 
 from db import connect
+from db import find_done_scout_job
 from db import find_running_scout_job
 from db import format_scan_snapshot_lines
 from db import get_scout_job
@@ -30,6 +31,7 @@ from db import count_tcp_coverage_in_ports
 from executor import run_command_or_cache
 from scan_run import PROFILE_BASIC
 from scan_run import run_scan
+from url_util import canonicalize_url
 
 PROBE_TIMEOUT_SEC = 30
 
@@ -185,10 +187,11 @@ def resolve_probe_plan(ip: str, port: int, service: str) -> Optional[ProbePlan]:
         )
 
     if "ftp" in svc and "sftp" not in svc:
+        url = canonicalize_url(f"ftp://{ip}:{port}/")
         return ProbePlan(
             probe_id="ftp",
             task_type="scout-ftp",
-            command=f"curl -sS -m 10 ftp://{ip}:{port}/",
+            command=f"curl -sS -m 10 {url}",
         )
 
     if is_web_service(service):
@@ -487,13 +490,22 @@ def _dispatch_dirs_job(
     dry_run: bool = False,
     force: bool = False,
 ) -> Optional[int]:
-    running = find_running_scout_job(ip, "dirs", plan.url, plan.wordlist)
-    if running and not force:
-        print(
-            f"    -> skip (running job id={running['id']} pid={running['pid']})"
-            " — use --force to start another"
-        )
-        return None
+    if not force:
+        running = find_running_scout_job(ip, "dirs", plan.url, plan.wordlist)
+        if running:
+            print(
+                f"    -> skip (running job id={running['id']} pid={running['pid']})"
+                " — use --force to start another"
+            )
+            return None
+
+        done = find_done_scout_job(ip, "dirs", plan.url, plan.wordlist)
+        if done:
+            print(
+                f"    -> skip (done job id={done['id']})"
+                " — use --force to rerun"
+            )
+            return None
 
     print(f"    -> dirs {plan.url}")
     print(f"    $ {plan.command}")

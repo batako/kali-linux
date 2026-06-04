@@ -166,7 +166,7 @@ Phase 1 後に Web 系 open ポートがあれば、**ポートごと**に gobus
 
 - **既定:** `$GB_WORDLIST`・`$GB_THREADS`（`gb-set-web` / `gb-set-threads` と同系）。上書きは `scout --dirs` のフラグ（詳細は `scout -h`）。
 - **ログ:** `cases/<case>/logs/`（`gb-dirs` と同様の命名規則）。
-- **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。
+- **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。同一 **URL + ワードリスト**で **done** のジョブがあれば再 dispatch しない（`scout --force` で再実行）。
 - **コンソール:** gobuster のリアルタイム出力は出さない。進捗は **`scout -s`** / **`scout -ws`**。
 
 ```bash

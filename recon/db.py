@@ -848,7 +848,7 @@ def list_scout_jobs(ip, *, kind=None, status=None, limit=50):
     return rows
 
 
-def find_running_scout_job(ip, kind, url, wordlist):
+def _find_scout_job(ip, kind, url, wordlist, *, status):
     conn = connect()
     cur = conn.cursor()
     row = cur.execute(
@@ -857,14 +857,22 @@ def find_running_scout_job(ip, kind, url, wordlist):
                status, pid, exit_code, hits_summary, started_at, ended_at
         FROM scout_jobs
         WHERE ip = ? AND kind = ? AND url = ? AND wordlist = ?
-          AND status = 'running'
+          AND status = ?
         ORDER BY id DESC
         LIMIT 1
         """,
-        (ip, kind, url, wordlist),
+        (ip, kind, url, wordlist, status),
     ).fetchone()
     conn.close()
     return row
+
+
+def find_running_scout_job(ip, kind, url, wordlist):
+    return _find_scout_job(ip, kind, url, wordlist, status="running")
+
+
+def find_done_scout_job(ip, kind, url, wordlist):
+    return _find_scout_job(ip, kind, url, wordlist, status="done")
 
 
 def get_scout_job(job_id):
@@ -1116,25 +1124,53 @@ def finish_execution(execution_id, status, exit_code=None, stdout="", stderr="")
 
 def find_done_execution(ip: str, command: str):
     """Return latest successful execution for ip+command, or None."""
+    from url_util import canonicalize_probe_command
+
     command = (command or "").strip()
     if not ip or not command:
         return None
 
+    canon = canonicalize_probe_command(command)
+
     conn = connect()
     cur = conn.cursor()
-    row = cur.execute(
-        """
-        SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
-        FROM executions
-        WHERE ip = ?
-          AND command = ?
-          AND status = 'done'
-          AND exit_code = 0
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (ip, command),
-    ).fetchone()
+
+    def _fetch(exact: str):
+        return cur.execute(
+            """
+            SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
+            FROM executions
+            WHERE ip = ?
+              AND command = ?
+              AND status = 'done'
+              AND exit_code = 0
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (ip, exact),
+        ).fetchone()
+
+    row = _fetch(canon)
+    if row is None and command != canon:
+        row = _fetch(command)
+    if row is None:
+        rows = cur.execute(
+            """
+            SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
+            FROM executions
+            WHERE ip = ?
+              AND status = 'done'
+              AND exit_code = 0
+            ORDER BY id DESC
+            LIMIT 200
+            """,
+            (ip,),
+        ).fetchall()
+        for candidate in rows:
+            if canonicalize_probe_command(candidate["command"]) == canon:
+                row = candidate
+                break
+
     conn.close()
     return row
 

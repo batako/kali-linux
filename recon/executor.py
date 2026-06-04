@@ -14,6 +14,7 @@ from creds import emit_import_results
 from db import add_execution
 from db import claim_task
 from db import find_done_execution
+from url_util import canonicalize_probe_command
 from db import finish_execution
 from db import get_task_by_id
 from db import set_task_status
@@ -233,7 +234,7 @@ def run_command_or_cache(
 
     Returns (exec_id, cached: bool).
     """
-    command = (command or "").strip()
+    command = canonicalize_probe_command((command or "").strip())
     if not ip:
         raise ValueError("ip required")
     if not command:
