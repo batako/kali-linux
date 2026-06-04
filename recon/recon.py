@@ -31,6 +31,9 @@ from scan_run import PROFILE_FULL
 from scan_run import clamp_full_jobs
 from scan_run import DEFAULT_FULL_JOBS
 from scout_run import run_scout
+from scout_run import show_scout_status
+from scout_run import DEFAULT_GB_THREADS
+from scout_run import DEFAULT_GB_WORDLIST
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -154,15 +157,50 @@ def main():
 
     elif cmd == "scout":
         args = sys.argv[2:]
+
+        if args and args[0] == "status":
+            args = args[1:]
+            ip = None
+            while args:
+                a = args[0]
+                if a.startswith("-"):
+                    print(f"unknown option: {a}")
+                    print("usage: recon.py scout status [ip]")
+                    sys.exit(1)
+                ip = a
+                args = args[1:]
+            if not ip:
+                ip = os.environ.get("IP")
+            if not ip:
+                print("usage: recon.py scout status [ip]")
+                sys.exit(1)
+            rc = show_scout_status(ip)
+            sys.exit(0 if rc == 0 else 1)
+
         ip = None
         force_scan = False
+        force_dirs = False
         dry_run = False
         quiet_ports = False
+        dirs_only = False
+        wordlist = os.environ.get("GB_WORDLIST") or DEFAULT_GB_WORDLIST
+        threads = DEFAULT_GB_THREADS
+        if os.environ.get("GB_THREADS"):
+            try:
+                threads = int(os.environ["GB_THREADS"])
+            except ValueError:
+                pass
+        extensions = None
+        dirs_urls = []
 
         while args:
             a = args[0]
-            if a == "--force":
+            if a == "--dirs":
+                dirs_only = True
+                args = args[1:]
+            elif a == "--force":
                 force_scan = True
+                force_dirs = True
                 args = args[1:]
             elif a in ("-n", "--dry-run"):
                 dry_run = True
@@ -170,9 +208,33 @@ def main():
             elif a in ("-q", "--quiet"):
                 quiet_ports = True
                 args = args[1:]
+            elif a in ("-w", "--wordlist"):
+                if len(args) < 2:
+                    print("usage: recon.py scout --dirs -w <wordlist> [ip|url]")
+                    sys.exit(1)
+                wordlist = args[1]
+                args = args[2:]
+            elif a in ("-t", "--threads"):
+                if len(args) < 2:
+                    print("usage: recon.py scout --dirs -t <N> [ip|url]")
+                    sys.exit(1)
+                threads = int(args[1])
+                args = args[2:]
+            elif a in ("-x", "--ext", "--extensions"):
+                if len(args) < 2:
+                    print("usage: recon.py scout --dirs -x <ext> [ip|url]")
+                    sys.exit(1)
+                extensions = args[1]
+                args = args[2:]
+            elif a.startswith("http://") or a.startswith("https://"):
+                dirs_urls.append(a)
+                args = args[1:]
             elif a.startswith("-"):
                 print(f"unknown option: {a}")
-                print("usage: recon.py scout [options] <ip>  (--force, -n, -q)")
+                print(
+                    "usage: recon.py scout [options] [ip|url...]"
+                    "  (--dirs, --force, -n, -q, -w, -t, -x)"
+                )
                 sys.exit(1)
             else:
                 ip = a
@@ -181,14 +243,23 @@ def main():
         if not ip:
             ip = os.environ.get("IP")
         if not ip:
-            print("usage: recon.py scout [options] <ip>  (--force, -n, -q)")
+            print(
+                "usage: recon.py scout [options] <ip>"
+                "  (--dirs, status, --force, -n, -q, -w, -t, -x)"
+            )
             sys.exit(1)
 
         rc = run_scout(
             ip,
             force_scan=force_scan,
+            force_dirs=force_dirs,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
+            dirs_only=dirs_only,
+            dirs_urls=dirs_urls or None,
+            wordlist=wordlist,
+            threads=threads,
+            extensions=extensions,
         )
         sys.exit(0 if rc == 0 else 1)
 

@@ -171,6 +171,30 @@ def ensure_schema(conn):
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS scout_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ip TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        url TEXT NOT NULL,
+        port INTEGER,
+        wordlist TEXT,
+        command TEXT,
+        log_path TEXT,
+        status TEXT NOT NULL,
+        pid INTEGER,
+        exit_code INTEGER,
+        hits_summary TEXT,
+        started_at TEXT,
+        ended_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_scout_jobs_ip_status
+    ON scout_jobs (ip, status, started_at DESC)
+    """)
+
     # Backward-compatible migrations for older DBs
     _migrate_tasks_table(cur)
     _backfill_task_defaults(cur)
@@ -717,11 +741,11 @@ def show_host(ip):
 # =========================
 
 def reset_host_scan_data(ip):
-    """Remove ports, coverage, and scan history for one host (scan re-test)."""
+    """Remove ports, coverage, scan history, and scout jobs for one host."""
     conn = connect()
     cur = conn.cursor()
     counts = {}
-    for table in ("port_scan_coverage", "ports", "scan_ranges"):
+    for table in ("port_scan_coverage", "ports", "scan_ranges", "scout_jobs"):
         n = cur.execute(
             f"SELECT COUNT(*) AS c FROM {table} WHERE ip = ?",
             (ip,),
@@ -731,6 +755,132 @@ def reset_host_scan_data(ip):
     conn.commit()
     conn.close()
     return counts
+
+
+# =========================
+# scout jobs
+# =========================
+
+def insert_scout_job(
+    ip,
+    kind,
+    url,
+    *,
+    port=None,
+    wordlist=None,
+    command=None,
+    log_path=None,
+    status="running",
+    pid=None,
+):
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO scout_jobs (
+            ip, kind, url, port, wordlist, command, log_path,
+            status, pid, started_at
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?, datetime('now')
+        )
+        """,
+        (ip, kind, url, port, wordlist, command, log_path, status, pid),
+    )
+    job_id = int(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return job_id
+
+
+def update_scout_job(job_id, **fields):
+    if not fields:
+        return
+    allowed = {
+        "status",
+        "pid",
+        "exit_code",
+        "hits_summary",
+        "ended_at",
+        "log_path",
+        "command",
+    }
+    parts = []
+    values = []
+    for key, val in fields.items():
+        if key not in allowed:
+            continue
+        parts.append(f"{key} = ?")
+        values.append(val)
+    if not parts:
+        return
+    values.append(job_id)
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        f"UPDATE scout_jobs SET {', '.join(parts)} WHERE id = ?",
+        values,
+    )
+    conn.commit()
+    conn.close()
+
+
+def list_scout_jobs(ip, *, kind=None, status=None, limit=50):
+    conn = connect()
+    cur = conn.cursor()
+    sql = """
+    SELECT id, ip, kind, url, port, wordlist, command, log_path,
+           status, pid, exit_code, hits_summary, started_at, ended_at
+    FROM scout_jobs
+    WHERE ip = ?
+    """
+    params = [ip]
+    if kind:
+        sql += " AND kind = ?"
+        params.append(kind)
+    if status:
+        sql += " AND status = ?"
+        params.append(status)
+    sql += " ORDER BY started_at DESC, id DESC LIMIT ?"
+    params.append(int(limit))
+    rows = cur.execute(sql, params).fetchall()
+    conn.close()
+    return rows
+
+
+def find_running_scout_job(ip, kind, url, wordlist):
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        """
+        SELECT id, ip, kind, url, port, wordlist, command, log_path,
+               status, pid, exit_code, hits_summary, started_at, ended_at
+        FROM scout_jobs
+        WHERE ip = ? AND kind = ? AND url = ? AND wordlist = ?
+          AND status = 'running'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, kind, url, wordlist),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def get_scout_job(job_id):
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        """
+        SELECT id, ip, kind, url, port, wordlist, command, log_path,
+               status, pid, exit_code, hits_summary, started_at, ended_at
+        FROM scout_jobs
+        WHERE id = ?
+        """,
+        (job_id,),
+    ).fetchone()
+    conn.close()
+    return row
 
 
 def add_scan_range(ip, scan_type, start, end):
