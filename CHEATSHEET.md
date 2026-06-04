@@ -41,6 +41,63 @@ grep -vE '(nologin|false)$' /etc/passwd
 cut -d: -f1 /etc/passwd
 ```
 
+### パスワード・認証情報の探し（Linux シェル後）
+
+別ユーザや SSH に進むときの定番。ルーム固有のパスは `cases/<name>/MEMO.md` に残す。
+
+#### まず当たる場所
+
+| 種類 | 例 |
+|------|-----|
+| 設定・履歴 | `~/.bash_history`, `~/.mysql_history`, `~/.ssh/id_rsa` |
+| Web / DB | `/var/www/`, `wp-config.php`, `.env`, `config.php` |
+| バックアップ | `*.bak`, `*.old`, `*~`, アーカイブ展開忘れ |
+| ログ | `/var/log/`, アプリの debug ログ |
+| 共有・一時 | `/tmp`, `/opt`, ルート直下の `*.txt` / `*.cfg` |
+
+```bash
+# 書き込み可能なファイル（アップロード先の手がかりにもなる）
+find / -writable -type f 2>/dev/null | grep -v '/proc\|/sys' | head -50
+
+# 最近更新されたファイル
+find / -type f -mtime -1 2>/dev/null | head -50
+```
+
+#### ファイル名・拡張子で探す
+
+```bash
+find / -type f \( \
+  -iname '*.pcap' -o -iname '*.pcapng' -o \
+  -iname '*.log' -o -iname '*.conf' -o -iname '*.config' -o \
+  -iname '*password*' -o -iname '*cred*' -o -iname '*.env' \
+\) 2>/dev/null
+```
+
+#### 中身をざっと見る
+
+```bash
+grep -riE 'password|passwd|pass=|pwd=|secret' /var/www /home /opt 2>/dev/null | head -30
+strings <file> | less          # バイナリ・pcap・画像付近
+grep -a password <file>        # テキスト混じりファイル向け
+```
+
+#### パケットキャプチャ
+
+平文プロトコル（FTP, HTTP Basic, Telnet 等）や `su` / `ssh` 試行が残っていることがある。
+
+```bash
+file capture.pcapng
+strings capture.pcapng | less
+# Kali 側: wireshark / tshark -r capture.pcapng
+#   フィルタ例: ftp / http / tcp.port==22
+#   Follow → TCP Stream
+```
+
+#### 取得したハッシュ
+
+`/etc/shadow` が読めない場合は、アプリ DB や `john` / `hashcat` 向けファイルを探す。  
+コンテナ内の自動化 → [COMMAND.md](COMMAND.md)（`sshkey-crack`, `hydrassh` など）。
+
 ## 権限昇格系
 
 ### SUIDが付与されているファイル検索
