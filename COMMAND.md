@@ -20,8 +20,13 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 ```bash
 cs startup
 ts 10.49.140.156    # target ファイルに保存
-target-show         # 現在の IP
+# 別タブ（cwd が cases/startup/ なら）:
+case-sync           # または ta だけ（target 再読込）
+ta 10.49.140.156    # CASE 未設定でも cwd から案件を推定
+target-show
 ```
+
+**注意:** oh-my-zsh **tmux プラグイン**も `ta`（= `tmux attach -t`）を定義する。`99-target-ta.zsh` で上書き。効かないときは `ti` か `ts` を使う。確認: `which ta` が `_target-attach` 経由であること。
 
 素の OpenSSH / ftp クライアント: `command ssh ...` / `command ftp ...`
 
@@ -91,6 +96,8 @@ cs startup
 | コマンド | 説明 |
 |----------|------|
 | `ts <ip>` | `target-set` の短縮。`cases/<case>/target` に保存し `$IP` 設定 |
+| `ta <ip>` / `ta` / `ti` | target 設定または `target` から `$IP` 再読込（**oh-my-zsh tmux の `ta` を上書き**） |
+| `case-sync` | `$PWD` が `cases/<name>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
 | `scan [ip]` | nmap（`$IP` または引数） |

@@ -71,6 +71,55 @@ case-open() {
 
 cs() { case-set "$@" }
 
+# Infer CASE / CASE_HOME when cwd is under cases/<name>/ (multi-tab / manual cd)
+_case-resolve-from-pwd() {
+  local name
+
+  [[ "$PWD" == "$CASE_ROOT"/* ]] || return 1
+  name="${PWD#$CASE_ROOT/}"
+  name="${name%%/*}"
+  [[ -n "$name" ]] || return 1
+  [[ "$name" == "$CASE_FALLBACK_NAME" ]] && return 1
+  [[ "$name" =~ '^[a-zA-Z0-9][a-zA-Z0-9._-]*$' ]] || return 1
+
+  export CASE="$name"
+  export CASE_HOME="$CASE_ROOT/$name"
+  return 0
+}
+
+# Reload case env + target from $PWD (no cd). For new shells in cases/<name>/
+case-sync() {
+  if _case-resolve-from-pwd; then
+    mkdir -p "$CASE_HOME"/{logs,exports}
+    echo "[+] case: $CASE  (from \$PWD)"
+    if (( $+functions[_case-on-enter] )); then
+      _case-on-enter
+    fi
+    return 0
+  fi
+  if [[ -n "${CASE:-}" ]]; then
+    echo "[+] case: $CASE  (already set)"
+    (( $+functions[_case-on-enter] )) && _case-on-enter
+    return 0
+  fi
+  echo "[-] not under $CASE_ROOT/<name>/ — use: cs <name>" >&2
+  return 1
+}
+
+_case-chpwd() {
+  [[ "$PWD" == "$CASE_ROOT"/* ]] || return 0
+  local name="${PWD#$CASE_ROOT/}"
+  name="${name%%/*}"
+  [[ -n "$name" && "$name" != "$CASE_FALLBACK_NAME" ]] || return 0
+  if [[ "${CASE:-}" != "$name" ]]; then
+    _case-resolve-from-pwd && (( $+functions[_case-on-enter] )) && _case-on-enter 2>/dev/null
+  elif [[ -z "${IP:-}" ]] && (( $+functions[target-load] )); then
+    target-load 2>/dev/null
+  fi
+}
+
+chpwd_functions+=(_case-chpwd)
+
 # Resolve cases/<name> for file outputs; strict unless CASE_LOOSE=1
 case-home() {
   if [[ -n "${CASE:-}" && -n "${CASE_HOME:-}" ]]; then
@@ -103,3 +152,8 @@ case-exports-dir() {
   home="$(case-home)" || return 1
   echo "$home/exports"
 }
+
+# New shell already cd'd into cases/<name>/ (e.g. after source ~/.zshrc)
+if [[ -o interactive && -z "${CASE:-}" ]]; then
+  _case-resolve-from-pwd 2>/dev/null && (( $+functions[_case-on-enter] )) && _case-on-enter 2>/dev/null
+fi

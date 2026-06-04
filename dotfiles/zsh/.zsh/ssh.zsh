@@ -305,8 +305,9 @@ ssh() {
       return 1
     }
     host="$_SSH_IP"
+    [[ -z "$host" ]] && host="$(_recon-ip-default 2>/dev/null)"
     user="${_SSH_USER:-session}"
-    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip" >&2; return 1; }
+    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip (ts/ta/cs)" >&2; return 1; }
     logfile="$(_ssh-log-path "$host" "$user")" || return 1
     _ssh-run-session "$logfile" command ssh "${_SSH_ARGS[@]}"
     return $?

@@ -182,7 +182,7 @@ ftp() {
         break
       fi
     done
-    [[ -z "$ip" ]] && ip="${IP:-}"
+    [[ -z "$ip" ]] && ip="$(_recon-ip-default 2>/dev/null)"
 
     if [[ -n "$ip" ]] && _recon-has-creds "$ip"; then
       local -a login_args=()
@@ -228,9 +228,9 @@ ftpa() {
     esac
   done
 
-  target="${target:-${IP:-}}"
+  target="${target:-$(_recon-ip-default 2>/dev/null)}"
   if [[ -z "$target" ]]; then
-    echo "usage: ftpa [-l] [ip]  (or: target-set <ip> first)"
+    echo "usage: ftpa [-l] [ip]  (or: ts <ip> / ta <ip> / cs <case> first)"
     return 1
   fi
 
