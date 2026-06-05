@@ -113,10 +113,10 @@ cs startup
 
 ```bash
 cs startup && ti 10.49.140.156
-scout             # 偵察初手（scan → プローブ → dirs をバックグラウンド起動）
+scout             # 偵察初手（scan → プローブ → dirs BG → dirs 完了まで自動 watch）
 scout -r          # 偵察サマリ（ポート + プローブ + PATHS、再実行なし）
 scout -s            # dirs 状態（1 回）
-scout -ws           # dirs 完了まで自動更新（-s の対）
+scout -ws           # dirs 完了まで自動更新のみ（-s の対）
 el && ev <id>     # 同期プローブの出力
 scan              # ポートだけ（定番 1000）
 scan -f           # 65535 完了まで自動
@@ -136,9 +136,9 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 
 | コマンド | 説明 |
 |----------|------|
-| `scout [ip]` | Phase 1–3 を実行（Phase 3 はバックグラウンド起動のみ。完了は待たない） |
+| `scout [ip]` | Phase 1–3 を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
 | `scout -r` / `scout --report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS**）。再実行なし |
-| `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/` |
+| `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -171,7 +171,7 @@ Phase 1 後に Web 系 open ポートがあれば、**ポートごと**に gobus
 - **既定:** `$GB_WORDLIST`・`$GB_THREADS`（`gb-set-web` / `gb-set-threads` と同系）。上書きは `scout --dirs` のフラグ（詳細は `scout -h`）。
 - **ログ:** `cases/<case>/logs/`（`gb-dirs` と同様の命名規則）。
 - **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。同一 **URL + ワードリスト**で **running** または **done** のジョブがあれば再 dispatch しない（`http://IP/` と `http://IP:80/` は同一扱い。**`scout --force`** で再実行）。
-- **コンソール:** gobuster のリアルタイム出力は出さない。進捗は **`scout -s`** / **`scout -ws`**。
+- **コンソール:** gobuster のリアルタイム出力は出さない。`scout` / `scout -d` 実行後は **自動で dirs watch**（`-ws` 相当）。単独確認は **`scout -s`** / **`scout -ws`**。
 
 ```bash
 scout
@@ -225,9 +225,9 @@ http://10.49.140.183/
 
 | コマンド | 説明 |
 |----------|------|
-| `creds-add [ip] <user> <pass>` | 手動登録 |
+| `creds-add [ip] <user> <pass>` / `ca` | 手動登録（`???` 等の仮置きは `noglob` 付き alias。更新後は `exec zsh`） |
 | `creds-list [ip]` / `cl` | 一覧 |
-| `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて） |
+| `creds-rm [ip] [user]` / `cr` | 削除（user 省略で IP の creds すべて。`?` 等は `noglob` 付き alias） |
 | `hydrassh [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
 | `hydraweb ...` | http-post-form 用（`hydraweb -h` 参照） |
@@ -402,7 +402,18 @@ gb-dns example.com
 | コマンド | 説明 |
 |----------|------|
 | `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john → 成功時 `creds-add` |
+| `hash-crack [-f] [-b] [-u user] <hash\|file\|url> [wordlist]` | ハッシュ文字列・ファイル・URL を john（htpasswd 等）。`-b` で creds を `borg@$IP` に保存 |
 | `zip-crack <zip> [wordlist]` | zip ハッシュ |
+| `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | フォルダ内の Borg リポジトリを検出 → 全アーカイブを `borg extract` |
+
+```bash
+hash-crack -b http://$IP/etc/squid/passwd   # cl: borg@$IP
+borg-crack <dir>                            # cl の borg を自動使用
+borg-crack -u <user> <dir>
+borg-crack -p <passphrase> <dir>
+```
+
+展開先: `exports/<repo名>/borg/`（`cs` 必須）。`borg-crack` は `-u` 省略時 **cl の `borg`**（`RECON_BORG_CREDS_USER`）を優先。
 
 ---
 
@@ -480,11 +491,11 @@ hydraweb   # 引数不足時に usage 表示
 ## 索引（ユーザー向けコマンド一覧）
 
 `cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scout -r` `scout -d` `scout -s` `scout -ws` `scan` ·
-`creds-add` `cl` `creds-rm` `hydrassh` `hydraftp` `hydraweb` ·
+`creds-add` `ca` `cl` `creds-rm` `cr` `hydrassh` `hydraftp` `hydraweb` ·
 `ssh` `ssh-list` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
 `gb-dir` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-web` `gb-set-dns` `gb-set-threads` ·
-`sshkey-crack` `zip-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
+`sshkey-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
 `b64d` `b64e` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

@@ -272,8 +272,13 @@ ssh() {
   $_SSH_HELP && return 0
 
   if [[ ${#_SSH_ARGS[@]} -eq 0 && "$_SSH_LOG" == false ]]; then
+    ip="$(target-current 2>/dev/null)"
+    if [[ -n "$ip" ]] && _recon-has-ssh-creds "$ip"; then
+      ssh-login
+      return $?
+    fi
     command ssh
-    return
+    return $?
   fi
 
   if [[ "${_SSH_ARGS[*]}" == *-i* ]]; then

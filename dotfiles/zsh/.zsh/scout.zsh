@@ -26,6 +26,8 @@ scout() {
       -h|--help)
         echo "usage: scout [options] [ip|path|url...]"
         echo ""
+        echo "  scout / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
+        echo ""
         echo "dirs job status (pair):"
         echo "  -s, --status [ip]         show once"
         echo "  -ws, --wait-dirs [sec]    refresh until all jobs finish (default 2s)"

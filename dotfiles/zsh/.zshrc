@@ -31,6 +31,7 @@ source $ZSH/oh-my-zsh.sh
 # ========================
 
 setopt AUTO_CD
+setopt ALIASES
 unsetopt CORRECT
 
 # ========================

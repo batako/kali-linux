@@ -23,6 +23,8 @@ _recon-creds-json() {
   python3 "$RECON_APP" creds-list --json "$1" 2>/dev/null
 }
 
+export RECON_BORG_CREDS_USER="${RECON_BORG_CREDS_USER:-borg}"
+
 # FTP anonymous — stored for cl / ftp; not used for ssh auto-login
 export FTP_ANON_USER="${FTP_ANON_USER:-anonymous}"
 export FTP_ANON_PASS="${FTP_ANON_PASS:-anonymous@}"

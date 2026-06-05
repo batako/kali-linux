@@ -23,6 +23,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     python3-pip \
     \
     # === forensics ===
+    borgbackup \
     exiftool \
     stegcracker \
     steghide \

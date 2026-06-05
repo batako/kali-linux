@@ -952,6 +952,18 @@ def show_scout_status(
         return 0
 
 
+def _auto_wait_dirs(ip: str, *, dry_run: bool = False) -> int:
+    """After scout dispatch, watch dirs until running jobs reach zero."""
+    if dry_run:
+        return 0
+    reconcile_scout_jobs(ip)
+    if not list_scout_jobs(ip, limit=1):
+        return 0
+    print("")
+    print("[*] dirs watch (-ws) — Ctrl+C to stop")
+    return show_scout_status(ip, wait_dirs=True)
+
+
 def run_scout(
     ip: str,
     *,
@@ -971,7 +983,7 @@ def run_scout(
         if not dirs_urls and not discover_web_targets(ip):
             print("[-] no Web targets in DB — run scout first, or pass a URL")
             return 1
-        return _run_dirs_phase(
+        rc = _run_dirs_phase(
             ip,
             urls=dirs_urls,
             wordlist=wordlist,
@@ -980,6 +992,8 @@ def run_scout(
             dry_run=dry_run,
             force=force_dirs,
         )
+        wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
+        return max(rc, wait_rc)
 
     print("========================")
     print(f"[SCOUT] {ip}")
@@ -1010,4 +1024,5 @@ def run_scout(
         dry_run=dry_run,
         force=force_dirs,
     )
-    return max(rc, dirs_rc)
+    wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
+    return max(rc, dirs_rc, wait_rc)

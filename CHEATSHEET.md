@@ -95,7 +95,7 @@ strings capture.pcapng | less
 
 #### 取得したハッシュ
 
-`/etc/shadow` が読めない場合は、アプリ DB や `john` / `hashcat` 向けファイルを探す。  
+`/etc/shadow` が読めない場合は、アプリ DB や `john` / `hashcat` 向けファイルを探す。
 コンテナ内の自動化 → [COMMAND.md](COMMAND.md)（`sshkey-crack`, `hydrassh` など）。
 
 ## 権限昇格系
@@ -153,3 +153,15 @@ steghide extract -sf <path> -p '<pass>'
 ```
 
 一括は [COMMAND.md](COMMAND.md) の `stegx`。
+
+## SUIDが付与された所有ファイルで昇格
+
+```bash
+FILE_PATH=shell.sh
+chmod u+wx $FILE_PATH
+cat > $FILE_PATH <<'EOF'
+#!/bin/bash
+/bin/bash
+EOF
+sudo $FILE_PATH
+```

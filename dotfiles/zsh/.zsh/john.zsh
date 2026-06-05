@@ -13,7 +13,7 @@ _ssh2john_path() {
   return 1
 }
 
-_sshkey_pass_from_show() {
+_john_pass_from_show() {
   local show="$1"
   print -r -- "$show" | python3 -c "
 import sys
@@ -25,6 +25,10 @@ for line in sys.stdin:
         print(line.split(':', 1)[1])
         break
 "
+}
+
+_sshkey_pass_from_show() {
+  _john_pass_from_show "$1"
 }
 
 _sshkey_import_creds() {
@@ -195,6 +199,227 @@ sshkey-crack() {
 
   if [[ -n "$cracked" && "$cracked" != *"0 password hashes cracked"* ]]; then
     _sshkey_apply_creds "$cracked"
+  fi
+
+  echo ""
+  echo "[+] hash file: $hash_file"
+
+  return $rc
+}
+
+_hash_crack_first_line() {
+  local raw="${1//$'\r'/}"
+  local line
+  while IFS= read -r line; do
+    line="${line%%#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [[ -n "$line" ]] && print -r -- "$line" && return 0
+  done <<<"$raw"
+  return 1
+}
+
+_hash_crack_slug() {
+  local line="$1"
+  local user="${line%%:*}"
+  if [[ "$line" == *:* && -n "$user" && "$user" != *'$'* && "$user" != *'/'* ]]; then
+    echo "${user//[^a-zA-Z0-9._-]/_}.john"
+  else
+    local slug="${line//[^a-zA-Z0-9._-]/_}"
+    echo "hash_${slug:0:48}.john"
+  fi
+}
+
+_hash_crack_apply_creds() {
+  local show="$1" user="$2"
+  local pass ip creds_status
+
+  pass="$(_john_pass_from_show "$show")"
+  [[ -z "$pass" ]] && return 0
+
+  user="${user:-${show%%:*}}"
+  [[ "$user" == '?' ]] && user=""
+  [[ -z "$user" || "$user" == *'$'* ]] && return 0
+
+  ip="${IP:-}"
+  if [[ -z "$ip" ]]; then
+    echo "[-] creds not saved: ts <ip> first (use: cl)" >&2
+    return 0
+  fi
+
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+  echo ""
+  echo "----- recon -----"
+  case "$creds_status" in
+    unchanged) echo "[=] creds unchanged: ${user}@${ip}" ;;
+    updated)   echo "[~] creds updated: ${user}@${ip}" ;;
+    *)         echo "[+] creds saved: ${user}@${ip}" ;;
+  esac
+  echo "    password: $pass"
+}
+
+# john wordlist crack for a hash line (htpasswd/shadow/etc.)
+# usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]
+#   hash-crack -b http://$IP/etc/squid/passwd   # creds-add as borg@$IP (borg-crack 用)
+#   hash-crack 'music_archive:$apr1$...'
+#   hash-crack squid.pass
+#   curl -sS ... | hash-crack -
+# -f: ignore this hash's pot and re-run wordlist
+# -b: creds-add ユーザを $RECON_BORG_CREDS_USER（既定 borg）にする
+# -u: username when hash is hash-only; also used for creds-add on success
+hash-crack() {
+  local force=0
+  local creds_user=""
+  local from_stdin=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) force=1; shift ;;
+      -b) creds_user="${RECON_BORG_CREDS_USER:-borg}"; shift ;;
+      -u) creds_user="$2"; shift 2 ;;
+      -h|--help)
+        echo "usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]"
+        echo "  default wordlist: \$RECON_PASSLIST"
+        echo "  -f  force re-crack (ignore this hash's pot)"
+        echo "  -b  save creds as \$RECON_BORG_CREDS_USER (default: borg) for borg-crack"
+        echo "  -u  username for hash-only input; creds-add on success"
+        echo "  -   read hash line from stdin"
+        echo ""
+        echo "examples:"
+        echo "  hash-crack -b http://\$IP/etc/squid/passwd"
+        echo "  hash-crack 'music_archive:\$apr1\$...'"
+        echo "  curl -sS http://\$IP/etc/shadow | hash-crack -"
+        return 0
+        ;;
+      -)
+        from_stdin=1
+        shift
+        break
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ $from_stdin -eq 0 && $# -lt 1 ]]; then
+    echo "usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]"
+    return 1
+  fi
+
+  local input="${1:-}"
+  local wordlist="${2:-$RECON_PASSLIST}"
+  if [[ $from_stdin -eq 0 && -f "$input" && $# -ge 2 && -f "$2" ]]; then
+    wordlist="$2"
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  if ! command -v john >/dev/null 2>&1; then
+    echo "john not found (install john)"
+    return 1
+  fi
+
+  local hash_src="" hash_line="" source_label=""
+  if (( from_stdin )); then
+    hash_src="$(cat)"
+    source_label="stdin"
+  elif [[ "$input" == http://* || "$input" == https://* ]]; then
+    hash_src="$(curl -fsSL "$input")" || {
+      echo "curl failed: $input" >&2
+      return 1
+    }
+    source_label="$input"
+  elif [[ -f "$input" ]]; then
+    hash_src="$(<"$input")"
+    source_label="$input"
+  else
+    hash_src="$input"
+    source_label="argument"
+  fi
+
+  hash_line="$(_hash_crack_first_line "$hash_src")" || {
+    echo "[-] empty hash input" >&2
+    return 1
+  }
+
+  if [[ -n "$creds_user" && "$hash_line" != *:* ]]; then
+    hash_line="${creds_user}:${hash_line}"
+  fi
+
+  local out_dir hash_file pot_file base
+  out_dir="$(case-exports-dir)" || return 1
+  mkdir -p "$out_dir"
+
+  if [[ -f "$input" && $from_stdin -eq 0 && "$input" != http://* && "$input" != https://* ]]; then
+    base="${input:t}.john"
+  else
+    base="$(_hash_crack_slug "$hash_line")"
+  fi
+  hash_file="${out_dir}/${base}"
+  pot_file="${hash_file}.pot"
+
+  print -r -- "$hash_line" >"$hash_file"
+
+  echo "[*] source:   $source_label"
+  echo "[*] hash:     $hash_file"
+  echo "[*] pot:      $pot_file"
+  echo "[*] wordlist: $wordlist"
+  echo ""
+
+  _hash_crack_show() {
+    local show
+    show="$(john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    fi
+    print -r -- "$show"
+  }
+
+  local global_show
+  global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (global john pot):"
+    echo "$global_show"
+    _hash_crack_apply_creds "$global_show" "$creds_user"
+    echo ""
+    echo "[i] isolated re-crack: hash-crack -f ${(q)hash_line}"
+    return 0
+  fi
+
+  local prior
+  prior="$(_hash_crack_show)"
+  if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (this hash's pot):"
+    echo "$prior"
+    _hash_crack_apply_creds "$prior" "$creds_user"
+    echo ""
+    echo "[i] run again: hash-crack -f ${(q)hash_line}"
+    return 0
+  fi
+
+  [[ $force -eq 1 ]] && rm -f "$pot_file"
+
+  john "$hash_file" --wordlist="$wordlist" --pot="$pot_file"
+  local rc=$?
+
+  echo ""
+  local cracked
+  cracked="$(_hash_crack_show)"
+  echo "[+] cracked (if any):"
+  print -r -- "$cracked"
+
+  if [[ -n "$cracked" && "$cracked" != *"0 password hashes cracked"* ]]; then
+    local pass
+    pass="$(_john_pass_from_show "$cracked")"
+    [[ -n "$pass" ]] && echo "[+] password: $pass"
+    _hash_crack_apply_creds "$cracked" "$creds_user"
+  elif (( rc == 0 )); then
+    echo "[-] john finished but no password found" >&2
+    rc=1
   fi
 
   echo ""

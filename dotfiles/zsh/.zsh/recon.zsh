@@ -285,7 +285,7 @@ artifact-add() {
   python3 "$RECON_APP" artifact-add "$ip" "$kind" "$value" "$key"
 }
 
-creds-add() {
+_creds-add() {
   local ip=""
   local user=""
   local pass=""
@@ -299,12 +299,18 @@ creds-add() {
   fi
 
   if [[ -z "$ip" || -z "$user" || -z "$pass" ]]; then
-    echo "usage: creds-add [ip] <username> <password>"
+    echo "usage: creds-add | ca [ip] <username> <password>"
     return 1
   fi
 
   python3 "$RECON_APP" creds-add "$ip" "$user" "$pass"
 }
+
+# noglob は関数内では遅い（呼び出し前に zsh が ? / ??? 等を展開する）→ alias で付与
+unfunction ca creds-add creds-rm cr 2>/dev/null
+setopt aliases
+alias creds-add='noglob _creds-add'
+alias ca='noglob _creds-add'
 
 creds-list() {
   local ip="${1:-${IP:-}}"
@@ -316,7 +322,7 @@ creds-list() {
 }
 
 # usage: creds-rm [ip] [username]   (no username → all creds for ip)
-creds-rm() {
+_creds-rm() {
   local ip="" user=""
 
   if [[ $# -ge 2 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
@@ -332,9 +338,9 @@ creds-rm() {
   fi
 
   if [[ -z "$ip" ]]; then
-    echo "usage: creds-rm [ip] [username]"
-    echo "  creds-rm              # delete all creds for \$IP"
-    echo "  creds-rm anonymous    # delete one user on \$IP"
+    echo "usage: creds-rm | cr [ip] [username]"
+    echo "  cr                    # delete all creds for \$IP"
+    echo "  cr anonymous          # delete one user on \$IP"
     return 1
   fi
 
@@ -344,6 +350,9 @@ creds-rm() {
     python3 "$RECON_APP" creds-rm "$ip"
   fi
 }
+
+alias creds-rm='noglob _creds-rm'
+alias cr='noglob _creds-rm'
 
 cl() {
   creds-list "$@"
