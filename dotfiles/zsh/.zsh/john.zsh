@@ -70,6 +70,15 @@ _sshkey_import_creds() {
 
   creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
 
+  local base="${key:t}"
+  if [[ -f "$key" && -w "${key:h}" ]]; then
+    print -r -- "$user" > "${key:h}/${base}.user"
+  fi
+  if out_dir="$(case-exports-dir 2>/dev/null)"; then
+    print -r -- "$user" > "${out_dir}/${base}.user"
+  fi
+  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+
   echo ""
   echo "----- recon -----"
   case "$creds_status" in
@@ -80,7 +89,7 @@ _sshkey_import_creds() {
   echo "    login:    $user"
   echo "    password: $pass"
   echo "    key:      $key_abs"
-  echo "[i] connect: ssh -i $key_abs ${user}@${ip}  (passphrase from cl)"
+  echo "[i] connect: ssh -i $key_abs  (passphrase from cl; user from .user sidecar or cl)"
 }
 
 # ssh2john + john wordlist crack for private keys

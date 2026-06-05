@@ -11,6 +11,10 @@ HYDRA_FTP_FOUND = re.compile(
     r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
+HYDRA_HTTP_FOUND = re.compile(
+    r"\[\d+\]\[(?:https?-(?:post|get)-form)\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
 
 
 def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None):
@@ -58,20 +62,21 @@ def import_hydra_ftp(text: str, ip: str = None, execution_id=None):
     return _import_hydra_matches(text, HYDRA_FTP_FOUND, ip=ip, execution_id=execution_id)
 
 
+def import_hydra_http(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for http(s)-form valid pairs."""
+    return _import_hydra_matches(text, HYDRA_HTTP_FOUND, ip=ip, execution_id=execution_id)
+
+
 def import_hydra(text: str, ip: str = None, execution_id=None):
-    """Parse hydra output for ssh and ftp valid pairs."""
+    """Parse hydra output for ssh, ftp, and http-form valid pairs."""
     combined = []
     seen = set()
-    for row in import_hydra_ssh(text, ip=ip, execution_id=execution_id):
-        key = (row["ip"], row["username"], row["password"])
-        if key not in seen:
-            seen.add(key)
-            combined.append(row)
-    for row in import_hydra_ftp(text, ip=ip, execution_id=execution_id):
-        key = (row["ip"], row["username"], row["password"])
-        if key not in seen:
-            seen.add(key)
-            combined.append(row)
+    for importer in (import_hydra_ssh, import_hydra_ftp, import_hydra_http):
+        for row in importer(text, ip=ip, execution_id=execution_id):
+            key = (row["ip"], row["username"], row["password"])
+            if key not in seen:
+                seen.add(key)
+                combined.append(row)
     return combined
 
 

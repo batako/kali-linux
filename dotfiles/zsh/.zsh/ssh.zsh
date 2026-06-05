@@ -37,6 +37,7 @@ _ssh-consume-flags() {
       -h|--help)
         echo "usage: ssh [-l] [-i key] [user] [ip]"
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
+        echo "  ssh -i keyfile  → \$IP + user from key name, .user sidecar, cl, or picker"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
         echo "  login name: ssh user / ssh user@ip (not ssh -l; use command ssh -l user for OpenSSH)"
         echo "  plain: command ssh ..."
@@ -143,15 +144,15 @@ ssh-key-login() {
   key_abs="$(realpath "$_SSH_IDENTITY" 2>/dev/null || echo "$_SSH_IDENTITY")"
 
   if [[ -z "$_SSH_IP" ]]; then
-    _SSH_IP="$(target-current 2>/dev/null)" || {
-      echo "[-] no target ip (ts <ip> or cs <case> with target file)" >&2
+    _SSH_IP="$(_recon-ip-default 2>/dev/null)" || {
+      echo "[-] no target ip (ta/ts or cs <case> with target file)" >&2
       return 1
     }
   fi
 
   if [[ -z "$_SSH_USER" ]]; then
-    _SSH_USER="$(_recon-guess-user-from-key "$_SSH_IDENTITY")" || {
-      echo "[-] could not guess user from key (try: ssh -i $_SSH_IDENTITY user@\$IP)" >&2
+    _SSH_USER="$(_recon-user-for-ssh-key "$_SSH_IP" "$_SSH_IDENTITY")" || {
+      echo "[-] could not resolve user (try: sshkey-crack -u user $_SSH_IDENTITY, or ssh -i $_SSH_IDENTITY user)" >&2
       return 1
     }
   fi
@@ -335,13 +336,15 @@ ssh-list() {
 }
 
 _ssh-get-help() {
-  echo "usage: ssh-get | sget [-o dir] [-r] [user] [ip] <remote> [remote...]"
+  echo "usage: ssh-get | sget [-i key] [-o dir] [-r] [user] [ip] <remote> [remote...]"
   echo "  download via scp using cl creds (sshpass)"
+  echo "  -i key   private key (passphrase from cl; user from .user sidecar or cl)"
   echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
   echo "  -o dir   local destination (default: .)"
   echo "  -r       scp -r (directory)"
   echo "examples:"
   echo "  sget tryhackme.asc credential.pgp"
+  echo "  sget -i id_rsa /etc/passwd /etc/shadow"
   echo "  sget -o workspace/cases/tomghost ~/tryhackme.asc"
   echo "  sget skyfuck ~/credential.pgp"
 }
@@ -383,7 +386,7 @@ _ssh-get-parse() {
 }
 
 ssh-get() {
-  local dest="." recursive=false
+  local dest="." recursive=false identity="" key_abs=""
   local -a pos=() a
   local ip="" user="" pass=""
   local -a scp_args=() remote_specs=() r
@@ -393,6 +396,10 @@ ssh-get() {
       -h|--help)
         _ssh-get-help
         return 0
+        ;;
+      -i)
+        identity="$2"
+        shift 2
         ;;
       -o)
         dest="$2"
@@ -433,12 +440,29 @@ ssh-get() {
     }
   fi
 
+  if [[ -n "$identity" ]]; then
+    if [[ ! -f "$identity" ]]; then
+      echo "[-] key not found: $identity" >&2
+      return 1
+    fi
+    chmod 600 "$identity" 2>/dev/null
+    key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
+    scp_args+=(-i "$key_abs")
+  fi
+
   if [[ -z "$user" ]]; then
-    local last=""
-    last="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
-    if [[ -n "$last" ]] && ! _recon-skip-ssh-user "$last" \
-        && _recon-creds-for-user "$ip" "$last" >/dev/null 2>&1; then
-      user="$last"
+    if [[ -n "$identity" ]]; then
+      user="$(_recon-user-for-ssh-key "$ip" "$identity")" || {
+        echo "[-] could not resolve user (try: sshkey-crack -u user $identity, or sget -i $identity user ...)" >&2
+        return 1
+      }
+    else
+      local last=""
+      last="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
+      if [[ -n "$last" ]] && ! _recon-skip-ssh-user "$last" \
+          && _recon-creds-for-user "$ip" "$last" >/dev/null 2>&1; then
+        user="$last"
+      fi
     fi
   fi
 
@@ -452,7 +476,7 @@ ssh-get() {
   fi
 
   if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
-    echo "[-] no saved creds for ${user}@${ip} (cl empty?)" >&2
+    echo "[-] no saved creds for ${user}@${ip} (cl empty? run sshkey-crack)" >&2
     return 1
   fi
   if [[ -z "$pass" ]]; then
@@ -476,10 +500,26 @@ ssh-get() {
     remote_specs+=("${user}@${ip}:${r}")
   done
 
+  if [[ -n "$identity" ]]; then
+    echo "[+] get (key): ${key_abs}" >&2
+  fi
   echo "[+] get: ${user}@${ip} → $dest" >&2
   for r in "${_SSH_GET_REMOTES[@]}"; do
     echo "    ${r}" >&2
   done
+
+  if [[ -n "$identity" ]]; then
+    sshpass -P "Enter passphrase for key" -p "$pass" "$(_scp-bin)" \
+      -o StrictHostKeyChecking=accept-new \
+      -o ConnectTimeout=15 \
+      -o PreferredAuthentications=publickey \
+      -o PasswordAuthentication=no \
+      -o KbdInteractiveAuthentication=no \
+      "${scp_args[@]}" \
+      "${remote_specs[@]}" \
+      "$dest/"
+    return $?
+  fi
 
   sshpass -p "$pass" "$(_scp-bin)" \
     -o StrictHostKeyChecking=accept-new \

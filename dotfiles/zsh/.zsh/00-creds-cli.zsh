@@ -189,3 +189,34 @@ _recon-guess-user-from-key() {
   [[ -n "$base" ]] && { echo "$base"; return 0 }
   return 1
 }
+
+# Resolve login user for ssh -i (key name, .user sidecar, ssh-last, cl picker)
+_recon-user-for-ssh-key() {
+  local ip="$1" key="$2"
+  local u base dir f
+
+  u="$(_recon-guess-user-from-key "$key" 2>/dev/null)"
+  [[ -n "$u" ]] && { echo "$u"; return 0 }
+
+  base="${key:t}"
+  local -a sidecars=()
+  [[ -n "${key:h}" && "${key:h}" != "." ]] && sidecars+=("${key:h}/${base}.user")
+  if (( $+functions[case-exports-dir] )); then
+    dir="$(case-exports-dir 2>/dev/null)" && [[ -n "$dir" ]] && sidecars+=("${dir}/${base}.user")
+  fi
+  for f in "${sidecars[@]}"; do
+    [[ -f "$f" ]] || continue
+    u="$(<"$f")"
+    u="${u//$'\n'/}"
+    [[ -n "$u" ]] && { echo "$u"; return 0 }
+  done
+
+  u="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
+  if [[ -n "$u" ]] && ! _recon-skip-ssh-user "$u" \
+      && _recon-creds-for-user "$ip" "$u" >/dev/null 2>&1; then
+    echo "$u"
+    return 0
+  fi
+
+  _recon-pick-user "$ip" 1
+}
