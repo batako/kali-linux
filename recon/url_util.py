@@ -39,3 +39,13 @@ def canonicalize_probe_command(command: str) -> str:
     if not command:
         return command
     return _URL_IN_COMMAND_RE.sub(lambda m: canonicalize_url(m.group(1)), command)
+
+
+def normalize_web_url(url_or_host: str) -> str:
+    """Add scheme if missing, then canonicalize default ports."""
+    s = (url_or_host or "").strip()
+    if not s:
+        return s
+    if not s.startswith(("http://", "https://")):
+        s = f"http://{s}"
+    return canonicalize_url(s)

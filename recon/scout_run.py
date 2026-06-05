@@ -32,6 +32,7 @@ from executor import run_command_or_cache
 from scan_run import PROFILE_BASIC
 from scan_run import run_scan
 from url_util import canonicalize_url
+from url_util import normalize_web_url
 
 PROBE_TIMEOUT_SEC = 30
 
@@ -107,8 +108,8 @@ def build_web_url(ip: str, port: int, service: str) -> str:
     use_https = "https" in svc or svc.startswith("ssl/")
     scheme = "https" if use_https else "http"
     if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
-        return f"{scheme}://{ip}/"
-    return f"{scheme}://{ip}:{port}/"
+        return canonicalize_url(f"{scheme}://{ip}/")
+    return canonicalize_url(f"{scheme}://{ip}:{port}/")
 
 
 def normalize_url(url_or_host: str) -> str:
@@ -135,7 +136,7 @@ def resolve_dirs_target(ip: str, path_or_url: str) -> str:
     """Turn /admin, admin, or full URL into a gobuster -u target."""
     s = (path_or_url or "").strip()
     if s.startswith(("http://", "https://")):
-        return normalize_url(s)
+        return normalize_web_url(s)
 
     path = s if s.startswith("/") else f"/{s}/"
     if not path.endswith("/"):
@@ -154,7 +155,7 @@ def resolve_dirs_target(ip: str, path_or_url: str) -> str:
     else:
         base = f"http://{ip}/"
 
-    return urljoin(base, path.lstrip("/"))
+    return canonicalize_url(urljoin(base, path.lstrip("/")))
 
 
 def resolve_dirs_targets(ip: str, raw_urls: list[str]) -> list[str]:
@@ -285,7 +286,7 @@ def build_dirs_plan(
     extensions: Optional[str] = None,
     dry_run: bool = False,
 ) -> DirsPlan:
-    url = normalize_url(url)
+    url = normalize_web_url(url)
     wl = wordlist or DEFAULT_GB_WORDLIST
     th = threads if threads is not None else DEFAULT_GB_THREADS
     if not dry_run and not Path(wl).is_file():

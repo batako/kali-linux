@@ -849,20 +849,47 @@ def list_scout_jobs(ip, *, kind=None, status=None, limit=50):
 
 
 def _find_scout_job(ip, kind, url, wordlist, *, status):
+    from url_util import canonicalize_url
+
+    url = canonicalize_url((url or "").strip())
+    if not ip or not url:
+        return None
+
     conn = connect()
     cur = conn.cursor()
-    row = cur.execute(
-        """
-        SELECT id, ip, kind, url, port, wordlist, command, log_path,
-               status, pid, exit_code, hits_summary, started_at, ended_at
-        FROM scout_jobs
-        WHERE ip = ? AND kind = ? AND url = ? AND wordlist = ?
-          AND status = ?
-        ORDER BY id DESC
-        LIMIT 1
-        """,
-        (ip, kind, url, wordlist, status),
-    ).fetchone()
+
+    def _fetch(exact_url: str):
+        return cur.execute(
+            """
+            SELECT id, ip, kind, url, port, wordlist, command, log_path,
+                   status, pid, exit_code, hits_summary, started_at, ended_at
+            FROM scout_jobs
+            WHERE ip = ? AND kind = ? AND url = ? AND wordlist = ?
+              AND status = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (ip, kind, exact_url, wordlist, status),
+        ).fetchone()
+
+    row = _fetch(url)
+    if row is None:
+        rows = cur.execute(
+            """
+            SELECT id, ip, kind, url, port, wordlist, command, log_path,
+                   status, pid, exit_code, hits_summary, started_at, ended_at
+            FROM scout_jobs
+            WHERE ip = ? AND kind = ? AND wordlist = ? AND status = ?
+            ORDER BY id DESC
+            LIMIT 200
+            """,
+            (ip, kind, wordlist, status),
+        ).fetchall()
+        for candidate in rows:
+            if canonicalize_url(candidate["url"] or "") == url:
+                row = candidate
+                break
+
     conn.close()
     return row
 
