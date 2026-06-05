@@ -244,8 +244,15 @@ http://10.49.140.183/
 | `ssh -i <key> [user] [ip]` | 鍵（パスフレーズは creds から） |
 | `ssh -l` / `ssh --log` | セッションを `cases/.../logs/ssh_*` に記録 |
 | `ssh-list [ip]` | creds 一覧（`cl` と同系） |
+| `ssh-get` / `sget` | `cl` creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰） |
 
 **注意:** `-l` は OpenSSH の login user ではなく **ログ保存**。ユーザー指定は `ssh holt` のように引数で。
+
+```bash
+sget tryhackme.asc credential.pgp
+sget -o workspace/cases/tomghost ~/tryhackme.asc
+sget skyfuck ~/credential.pgp
+```
 
 ---
 
@@ -402,6 +409,7 @@ gb-dns example.com
 | コマンド | 説明 |
 |----------|------|
 | `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john → 成功時 `creds-add` |
+| `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john → `credential.pgp` 復号 → 平文の `user:pass` を `creds-add` |
 | `hash-crack [-f] [-b] [-u user] <hash\|file\|url> [wordlist]` | ハッシュ文字列・ファイル・URL を john（htpasswd 等）。`-b` で creds を `borg@$IP` に保存 |
 | `zip-crack <zip> [wordlist]` | zip ハッシュ |
 | `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | フォルダ内の Borg リポジトリを検出 → 全アーカイブを `borg extract` |
@@ -480,6 +488,7 @@ listen -h
 steg-extract -h
 gb-dirs -h
 sshkey-crack -h
+gpg-crack -h
 upsh -h
 rcecurl -h
 b64d -h
@@ -492,10 +501,10 @@ hydraweb   # 引数不足時に usage 表示
 
 `cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scout -r` `scout -d` `scout -s` `scout -ws` `scan` ·
 `creds-add` `ca` `cl` `creds-rm` `cr` `hydrassh` `hydraftp` `hydraweb` ·
-`ssh` `ssh-list` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
+`ssh` `ssh-list` `sget` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
 `gb-dir` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-web` `gb-set-dns` `gb-set-threads` ·
-`sshkey-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
+`sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
 `b64d` `b64e` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

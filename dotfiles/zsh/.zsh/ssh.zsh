@@ -6,6 +6,10 @@ _ssh-bin() {
   whence -p ssh 2>/dev/null || echo /usr/bin/ssh
 }
 
+_scp-bin() {
+  whence -p scp 2>/dev/null || echo /usr/bin/scp
+}
+
 _ssh-log-path() {
   local host="$1"
   local user="${2:-session}"
@@ -329,3 +333,162 @@ ssh-list() {
   fi
   python3 "$RECON_APP" creds-list "$ip"
 }
+
+_ssh-get-help() {
+  echo "usage: ssh-get | sget [-o dir] [-r] [user] [ip] <remote> [remote...]"
+  echo "  download via scp using cl creds (sshpass)"
+  echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
+  echo "  -o dir   local destination (default: .)"
+  echo "  -r       scp -r (directory)"
+  echo "examples:"
+  echo "  sget tryhackme.asc credential.pgp"
+  echo "  sget -o workspace/cases/tomghost ~/tryhackme.asc"
+  echo "  sget skyfuck ~/credential.pgp"
+}
+
+# True when name is a saved cred user for ip (not a remote filename).
+_ssh-get-is-cred-user() {
+  local ip="$1" name="$2"
+  [[ -n "$ip" && -n "$name" ]] || return 1
+  _recon-creds-for-user "$ip" "$name" >/dev/null 2>&1
+}
+
+# Sets _SSH_GET_USER _SSH_GET_IP _SSH_GET_REMOTES[] from positionals.
+_ssh-get-parse() {
+  local -a pos=("${(@)1}")
+  _SSH_GET_USER=""
+  _SSH_GET_IP=""
+  _SSH_GET_REMOTES=()
+
+  if (( ${#pos[@]} == 0 )); then
+    return 1
+  fi
+
+  if [[ "${pos[1]}" =~ $(_recon-ip-re) ]]; then
+    _SSH_GET_IP="${pos[1]}"
+    pos=("${pos[@]:2}")
+  fi
+
+  if (( ${#pos[@]} >= 2 )) && [[ "${pos[2]}" =~ $(_recon-ip-re) ]]; then
+    _SSH_GET_USER="${pos[1]}"
+    _SSH_GET_IP="${pos[2]}"
+    pos=("${pos[@]:3}")
+  elif (( ${#pos[@]} >= 2 )) && _ssh-get-is-cred-user "${_SSH_GET_IP:-$(_recon-ip-default 2>/dev/null)}" "${pos[1]}"; then
+    _SSH_GET_USER="${pos[1]}"
+    pos=("${pos[@]:2}")
+  fi
+
+  _SSH_GET_REMOTES=("${pos[@]}")
+  (( ${#_SSH_GET_REMOTES[@]} > 0 ))
+}
+
+ssh-get() {
+  local dest="." recursive=false
+  local -a pos=() a
+  local ip="" user="" pass=""
+  local -a scp_args=() remote_specs=() r
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _ssh-get-help
+        return 0
+        ;;
+      -o)
+        dest="$2"
+        shift 2
+        ;;
+      -r)
+        recursive=true
+        shift
+        ;;
+      --)
+        shift
+        pos+=("$@")
+        break
+        ;;
+      -*)
+        echo "[-] ssh-get: unknown option: $1" >&2
+        _ssh-get-help >&2
+        return 1
+        ;;
+      *)
+        pos+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  _ssh-get-parse "${pos[@]}" || {
+    _ssh-get-help >&2
+    return 1
+  }
+
+  ip="${_SSH_GET_IP:-}"
+  user="${_SSH_GET_USER:-}"
+  if [[ -z "$ip" ]]; then
+    ip="$(_recon-ip-default 2>/dev/null)" || {
+      echo "[-] no target ip (ts <ip> or cs <case> with target file)" >&2
+      return 1
+    }
+  fi
+
+  if [[ -z "$user" ]]; then
+    local last=""
+    last="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
+    if [[ -n "$last" ]] && ! _recon-skip-ssh-user "$last" \
+        && _recon-creds-for-user "$ip" "$last" >/dev/null 2>&1; then
+      user="$last"
+    fi
+  fi
+
+  if [[ -z "$user" ]]; then
+    user="$(_recon-pick-user "$ip" 1)" || return 1
+  fi
+
+  if _recon-skip-ssh-user "$user"; then
+    echo "[-] ssh-get: invalid login user: $user (ca <user> <pass> first)" >&2
+    return 1
+  fi
+
+  if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
+    echo "[-] no saved creds for ${user}@${ip} (cl empty?)" >&2
+    return 1
+  fi
+  if [[ -z "$pass" ]]; then
+    echo "[-] empty password in db for ${user}@${ip}" >&2
+    return 1
+  fi
+
+  if ! command -v sshpass >/dev/null 2>&1; then
+    echo "[-] sshpass not installed" >&2
+    return 1
+  fi
+
+  mkdir -p "$dest" || return 1
+  dest="$(cd "$dest" && pwd)"
+
+  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+
+  $recursive && scp_args+=(-r)
+
+  for r in "${_SSH_GET_REMOTES[@]}"; do
+    remote_specs+=("${user}@${ip}:${r}")
+  done
+
+  echo "[+] get: ${user}@${ip} → $dest" >&2
+  for r in "${_SSH_GET_REMOTES[@]}"; do
+    echo "    ${r}" >&2
+  done
+
+  sshpass -p "$pass" "$(_scp-bin)" \
+    -o StrictHostKeyChecking=accept-new \
+    -o ConnectTimeout=15 \
+    -o PreferredAuthentications=password \
+    -o PubkeyAuthentication=no \
+    "${scp_args[@]}" \
+    "${remote_specs[@]}" \
+    "$dest/"
+}
+
+alias sget='ssh-get'

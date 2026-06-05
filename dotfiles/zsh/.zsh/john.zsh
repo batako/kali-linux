@@ -31,6 +31,22 @@ _sshkey_pass_from_show() {
   _john_pass_from_show "$1"
 }
 
+# gpg2john --show: keyname:passphrase:::uid::file  (not split(':',1))
+_gpg_pass_from_show() {
+  local show="$1"
+  print -r -- "$show" | python3 -c "
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line or 'password hash' in line:
+        continue
+    parts = line.split(':')
+    if len(parts) >= 2 and parts[1]:
+        print(parts[1])
+        break
+"
+}
+
 _sshkey_import_creds() {
   local key="$1" user="$2" pass="$3"
   local ip="${IP:-}"
@@ -419,6 +435,270 @@ hash-crack() {
     _hash_crack_apply_creds "$cracked" "$creds_user"
   elif (( rc == 0 )); then
     echo "[-] john finished but no password found" >&2
+    rc=1
+  fi
+
+  echo ""
+  echo "[+] hash file: $hash_file"
+
+  return $rc
+}
+
+_gpg2john_path() {
+  local p
+  p="$(command -v gpg2john 2>/dev/null)" && [[ -n "$p" ]] && echo "$p" && return 0
+  return 1
+}
+
+_gpg_crack_credential_default() {
+  local key="$1"
+  local dir="${key:h}"
+  local f
+
+  for f in credential.pgp credentials.pgp; do
+    [[ -f "$dir/$f" ]] && { echo "$dir/$f"; return 0 }
+  done
+  return 1
+}
+
+_gpg_crack_parse_creds() {
+  local text="$1"
+  print -r -- "$text" | python3 -c "
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line or line.startswith('-----'):
+        continue
+    if ':' not in line:
+        continue
+    user, _, passwd = line.partition(':')
+    user, passwd = user.strip(), passwd.strip()
+    if user and passwd:
+        print(user)
+        print(passwd)
+        break
+"
+}
+
+_gpg_crack_import_creds() {
+  local user="$1" pass="$2"
+  local ip="${IP:-}"
+  local creds_status
+
+  if [[ -z "$ip" ]]; then
+    echo "[-] creds not saved: ts <ip> first, or cs <case> (cases/<case>/target)" >&2
+    return 1
+  fi
+  if [[ -z "$user" || -z "$pass" ]]; then
+    return 1
+  fi
+
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+
+  echo ""
+  echo "----- recon -----"
+  case "$creds_status" in
+    unchanged) echo "[=] creds unchanged: ${user}@${ip}" ;;
+    updated)   echo "[~] creds updated: ${user}@${ip}" ;;
+    *)         echo "[+] creds saved: ${user}@${ip}" ;;
+  esac
+  echo "    login:    $user"
+  echo "    password: $pass"
+  echo "[i] connect: ssh $user  (or: su $user)"
+}
+
+_gpg_crack_decrypt() {
+  local key="$1" cred="$2" gpg_pass="$3"
+  local gnupg plain user pass
+
+  if [[ ! -f "$cred" ]]; then
+    echo "[-] credential file not found: $cred" >&2
+    return 1
+  fi
+
+  gnupg="$(mktemp -d "${TMPDIR:-/tmp}/gpg-crack.XXXXXX")"
+  chmod 700 "$gnupg"
+
+  if ! gpg --homedir "$gnupg" --batch --yes --pinentry-mode loopback \
+      --passphrase "$gpg_pass" --import "$key" >/dev/null 2>&1; then
+    echo "[-] gpg --import failed (bad passphrase?)" >&2
+    rm -rf "$gnupg"
+    return 1
+  fi
+
+  plain="$(gpg --homedir "$gnupg" --batch --yes --pinentry-mode loopback \
+      --passphrase "$gpg_pass" -d "$cred" 2>/dev/null)" || {
+    echo "[-] gpg --decrypt failed: $cred" >&2
+    rm -rf "$gnupg"
+    return 1
+  }
+  rm -rf "$gnupg"
+
+  echo ""
+  echo "[+] decrypted:"
+  print -r -- "$plain"
+
+  local -a parsed
+  parsed=("${(@f)$(_gpg_crack_parse_creds "$plain")}")
+  user="${parsed[1]}"
+  pass="${parsed[2]}"
+  if [[ -n "$user" && -n "$pass" ]]; then
+    _gpg_crack_import_creds "$user" "$pass"
+    return 0
+  fi
+
+  echo "[-] could not parse user:pass from decrypted text (use: ca <user> <pass>)" >&2
+  return 1
+}
+
+# gpg2john + john; optional gpg decrypt + creds-add from credential.pgp
+# usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]
+#   x "gpg-crack tryhackme.asc"
+# -f: force re-crack (ignore pot)
+# -n: crack only (no gpg --decrypt / creds-add)
+# -c: credential file (default: credential.pgp beside key.asc)
+gpg-crack() {
+  local force=0
+  local do_decrypt=1
+  local cred_file=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) force=1; shift ;;
+      -n) do_decrypt=0; shift ;;
+      -c) cred_file="$2"; shift 2 ;;
+      -h|--help)
+        echo "usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]"
+        echo "  default wordlist: \$RECON_PASSLIST"
+        echo "  default credential: credential.pgp beside <key.asc>"
+        echo "  on success: gpg --decrypt → creds-add (cl) when user:pass in plaintext"
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ $# -lt 1 ]]; then
+    echo "usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]"
+    return 1
+  fi
+
+  local key="$1"
+  local wordlist="${2:-$RECON_PASSLIST}"
+
+  if [[ ! -f "$key" ]]; then
+    echo "key not found: $key"
+    return 1
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  local gpg2john
+  gpg2john="$(_gpg2john_path)" || {
+    echo "gpg2john not found (install john)"
+    return 1
+  }
+
+  if ! command -v john >/dev/null 2>&1; then
+    echo "john not found (install john)"
+    return 1
+  fi
+
+  if (( do_decrypt )) && ! command -v gpg >/dev/null 2>&1; then
+    echo "gpg not found"
+    return 1
+  fi
+
+  if (( do_decrypt )) && [[ -z "$cred_file" ]]; then
+    cred_file="$(_gpg_crack_credential_default "$key")" || true
+  fi
+
+  local out_dir
+  out_dir="$(case-exports-dir)" || return 1
+  mkdir -p "$out_dir"
+
+  local base="${key:t}"
+  local hash_file="${out_dir}/${base}.john"
+  local pot_file="${hash_file}.pot"
+
+  echo "[*] key:      $key"
+  echo "[*] hash:     $hash_file"
+  echo "[*] pot:      $pot_file"
+  echo "[*] wordlist: $wordlist"
+  (( do_decrypt )) && [[ -n "$cred_file" ]] && echo "[*] cred:     $cred_file"
+  echo ""
+
+  "$gpg2john" "$key" >"$hash_file" || return 1
+
+  _gpg_crack_show() {
+    local show
+    show="$(john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    fi
+    print -r -- "$show"
+  }
+
+  local global_show
+  global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (global john pot):"
+    echo "$global_show"
+    local pass
+    pass="$(_gpg_pass_from_show "$global_show")"
+    [[ -n "$pass" ]] && echo "[+] gpg passphrase: $pass"
+    if (( do_decrypt )) && [[ -n "$cred_file" && -n "$pass" ]]; then
+      _gpg_crack_decrypt "$key" "$cred_file" "$pass"
+    fi
+    echo ""
+    echo "[i] isolated re-crack: gpg-crack -f $key"
+    return 0
+  fi
+
+  local prior
+  prior="$(_gpg_crack_show)"
+  if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (this key's pot):"
+    echo "$prior"
+    local pass
+    pass="$(_gpg_pass_from_show "$prior")"
+    [[ -n "$pass" ]] && echo "[+] gpg passphrase: $pass"
+    if (( do_decrypt )) && [[ -n "$cred_file" && -n "$pass" ]]; then
+      _gpg_crack_decrypt "$key" "$cred_file" "$pass"
+    fi
+    echo ""
+    echo "[i] run again: gpg-crack -f $key"
+    return 0
+  fi
+
+  [[ $force -eq 1 ]] && rm -f "$pot_file"
+
+  john "$hash_file" --wordlist="$wordlist" --pot="$pot_file"
+  local rc=$?
+
+  echo ""
+  local cracked
+  cracked="$(_gpg_crack_show)"
+  echo "[+] cracked (if any):"
+  print -r -- "$cracked"
+
+  local pass
+  pass="$(_gpg_pass_from_show "$cracked")"
+  if [[ -n "$pass" ]]; then
+    echo "[+] gpg passphrase: $pass"
+    if (( do_decrypt )) && [[ -n "$cred_file" ]]; then
+      _gpg_crack_decrypt "$key" "$cred_file" "$pass" || rc=1
+    elif (( do_decrypt )); then
+      echo "[-] no credential.pgp beside key (use: gpg-crack -c <file> $key)" >&2
+      rc=1
+    fi
+  elif (( rc == 0 )); then
+    echo "[-] john finished but no passphrase found" >&2
     rc=1
   fi
 

