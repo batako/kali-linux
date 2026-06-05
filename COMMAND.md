@@ -15,6 +15,7 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 | `GB_WORDLIST` | `gb-dir` / `gb-vhost` 用（`gb-set-web` で変更可） |
 | `GB_DNS_WORDLIST` | `gb-dns` 用（`gb-set-dns`） |
 | `GB_THREADS` | gobuster スレッド（`gb-set-threads`、既定 30 程度） |
+| `SCOUT_STATUS_SLOTS` | `scout -s` / `-ws` で表示する **完了 dirs ジョブ**の上限（既定 **4**） |
 | `CASE_LOOSE=1` | 案件未設定時に `cases/_unscoped/` へフォールバック |
 
 ```bash
@@ -139,10 +140,11 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -r` / `scout --report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS**）。再実行なし |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/` |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
-| `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了** |
+| `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
+| `scout --force` | Phase 1 の再スキャン、Phase 3 dirs の再 dispatch（done スキップ解除） |
 
-**前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout --dirs` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
+**前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout -d` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
 
 ### Phase 1 — ポートスキャン
 
@@ -160,13 +162,15 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 
 service 不明のポートはスキップ（プローブ結果で service を上書きしない）。出力はコンソールと **`executions`**（`el` / `ev`）。`task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`。
 
+**再実行:** 同一 `ip` + **command** で過去に **成功**（`done`, `exit_code=0`）があれば再実行せず `(cached)` と表示する。`http://IP/` と `http://IP:80/`、`https://IP/` と `https://IP:443/` は URL 正規化により同一扱い。非標準ポート（例: `:8080`）はポート付きのまま別 probe。**`scout --force` は probe には効かない**（dirs / scan のみ）。
+
 ### Phase 3 — ディレクトリ探索（非同期）
 
 Phase 1 後に Web 系 open ポートがあれば、**ポートごと**に gobuster dir を **バックグラウンド**で起動する（例: 80 と 8080 が両方 Web なら並列 2 本）。
 
 - **既定:** `$GB_WORDLIST`・`$GB_THREADS`（`gb-set-web` / `gb-set-threads` と同系）。上書きは `scout --dirs` のフラグ（詳細は `scout -h`）。
 - **ログ:** `cases/<case>/logs/`（`gb-dirs` と同様の命名規則）。
-- **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。同一 **URL + ワードリスト**で **done** のジョブがあれば再 dispatch しない（`http://IP/` と `http://IP:80/` は同一扱い。`scout --force` で再実行）。
+- **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。同一 **URL + ワードリスト**で **running** または **done** のジョブがあれば再 dispatch しない（`http://IP/` と `http://IP:80/` は同一扱い。**`scout --force`** で再実行）。
 - **コンソール:** gobuster のリアルタイム出力は出さない。進捗は **`scout -s`** / **`scout -ws`**。
 
 ```bash
@@ -177,15 +181,41 @@ scout -ws
 scout --dirs -w /path/to/list.txt -t 20
 scout -d /admin
 scout -d http://$IP:8080/
+scout --force              # dirs / scan をやり直す
 ```
+
+### `scout -s` / `-ws` / `-r` の PATHS
+
+`-s` と `-r` は **ジョブ一覧（メタデータ）** と **PATHS（統合ツリー）** を分けて表示する。
+
+| ブロック | 内容 |
+|----------|------|
+| **jobs** | id・URL・wordlist 名・状態・pid・ログパス（ヒット本文は出さない） |
+| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ |
+
+`-s` の jobs は **完了分を古い順**（新しいものが下）、**running は常に末尾**。完了ジョブの表示上限は **`SCOUT_STATUS_SLOTS`**（既定 **4**、並列 dirs 本数に合わせて調整）。超過分はヘッダに `N older hidden`。
+
+`-r` の PATHS は **URL ごとに最新の dirs ジョブ**だけをマージする（再実行なし・DB のみ）。
+
+**PATHS の例**（ルート dirs + `-d /etc/` の結果を統合）:
+
+```
+--- PATHS ---
+http://10.49.140.183/
+  admin/  301
+  etc/  301
+    squid/  301
+```
+
+数字は gobuster の HTTP ステータス。200 / 301 / 302 / 401 のみ表示（ノイズ・拡張子 fuzz は除外）。
 
 ### 出力の見方
 
 | 種別 | 確認方法 |
 |------|----------|
-| 偵察サマリ（一覧） | **`scout -r`** |
-| スキャン・同期プローブ | コンソール、`el` / `ev` |
-| ディレクトリ探索 | `scout -s` / `scout -ws`、ログファイル |
+| 偵察サマリ（ポート + PROBES + PATHS） | **`scout -r`** |
+| スキャン・同期プローブ | コンソール、`el` / `ev`（probe は成功済みなら `(cached)`） |
+| ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
 
 手動で gobuster を回す場合は下記「Gobuster」の `gb-dir` / `gb-dirs` を使う。
 
