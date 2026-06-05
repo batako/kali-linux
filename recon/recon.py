@@ -31,8 +31,11 @@ from scan_run import PROFILE_FULL
 from scan_run import clamp_full_jobs
 from scan_run import DEFAULT_FULL_JOBS
 from scout_run import run_scout
+from scout_run import show_scout_ports
 from scout_run import show_scout_report
+from scout_run import show_scout_report_exploits
 from scout_run import show_scout_status
+from scout_exploit import run_exploit_phase
 from scout_run import is_dirs_path_arg
 from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_GB_WORDLIST
@@ -41,6 +44,76 @@ from executor import run_command
 from executor import run_command_or_cache
 from form_parse import format_exec_form_shell
 from form_parse import parse_upload_form_html
+
+SCOUT_REPORT_FLAGS = ("-r", "--report")
+SCOUT_REPORT_PORTS_FLAGS = ("-rp", "--report-ports")
+SCOUT_REPORT_EXPLOITS_FLAGS = ("-re", "--report-exploits")
+SCOUT_SEARCH_EXPLOITS_FLAGS = ("-se", "--search-exploits")
+SCOUT_LEGACY_FLAG_MAP = {
+    "-p": "--report-ports",
+    "--ports": "--report-ports",
+    "-e": "--search-exploits",
+    "--exploit": "--search-exploits",
+}
+
+
+def _scout_legacy_flag(flag: str) -> str:
+    new = SCOUT_LEGACY_FLAG_MAP.get(flag)
+    if new:
+        print(f"[!] {flag} is deprecated — use {new}", file=sys.stderr)
+        return new
+    return flag
+
+
+def _scout_parse_tail(
+    args: list[str],
+    *,
+    usage: str,
+    allow_search: bool = False,
+    allow_force: bool = False,
+    allow_dry_run: bool = False,
+    ignore_force: bool = False,
+) -> tuple[str, bool, bool, bool]:
+    ip = None
+    search_exploits = False
+    force_exploit = False
+    dry_run = False
+    rest = list(args)
+    while rest:
+        a = rest[0]
+        if a == "--force":
+            if ignore_force:
+                print(
+                    "[!] --force ignored — scout -se always refreshes exploit cache",
+                    file=sys.stderr,
+                )
+                rest = rest[1:]
+            elif allow_force:
+                force_exploit = True
+                rest = rest[1:]
+            else:
+                print(f"unknown option: {a}")
+                print(usage)
+                sys.exit(1)
+        elif allow_search and a in SCOUT_SEARCH_EXPLOITS_FLAGS:
+            search_exploits = True
+            rest = rest[1:]
+        elif allow_dry_run and a in ("-n", "--dry-run"):
+            dry_run = True
+            rest = rest[1:]
+        elif a.startswith("-"):
+            print(f"unknown option: {a}")
+            print(usage)
+            sys.exit(1)
+        else:
+            ip = a
+            rest = rest[1:]
+    if not ip:
+        ip = os.environ.get("IP")
+    if not ip:
+        print(usage)
+        sys.exit(1)
+    return ip, search_exploits, force_exploit, dry_run
 
 
 def _print_execution_body(row):
@@ -173,22 +246,46 @@ def main():
             else:
                 args = ["--status", *args]
 
-        if args and args[0] in ("-r", "--report"):
-            args = args[1:]
-            ip = None
-            while args:
-                a = args[0]
-                if a.startswith("-"):
-                    print(f"unknown option: {a}")
-                    print("usage: recon.py scout -r [ip]")
-                    sys.exit(1)
-                ip = a
-                args = args[1:]
-            if not ip:
-                ip = os.environ.get("IP")
-            if not ip:
-                print("usage: recon.py scout -r [ip]")
-                sys.exit(1)
+        if args:
+            args[0] = _scout_legacy_flag(args[0])
+
+        if args and args[0] in SCOUT_REPORT_PORTS_FLAGS:
+            ip, _, _, _ = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -rp|--report-ports [ip]",
+            )
+            rc = show_scout_ports(ip)
+            sys.exit(0 if rc == 0 else 1)
+
+        if args and args[0] in SCOUT_REPORT_EXPLOITS_FLAGS:
+            ip, _, _, _ = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -re|--report-exploits [ip]",
+            )
+            rc = show_scout_report_exploits(ip)
+            sys.exit(0 if rc == 0 else 1)
+
+        if args and args[0] in SCOUT_SEARCH_EXPLOITS_FLAGS:
+            ip, _, _, dry_run = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -se|--search-exploits [-n] [ip]",
+                allow_dry_run=True,
+                ignore_force=True,
+            )
+            rc = run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
+            sys.exit(0 if rc == 0 else 1)
+
+        if args and args[0] in SCOUT_REPORT_FLAGS:
+            ip, search_exploits, _, _ = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -r|--report [-se] [ip]",
+                allow_search=True,
+                ignore_force=True,
+            )
+            if search_exploits:
+                erc = run_exploit_phase(ip, force=True)
+                if erc != 0:
+                    sys.exit(erc)
             rc = show_scout_report(ip)
             sys.exit(0 if rc == 0 else 1)
 
@@ -198,6 +295,8 @@ def main():
         dry_run = False
         quiet_ports = False
         dirs_only = False
+        search_exploits_only = False
+        force_exploit = False
         status_mode = False
         wait_dirs_mode = False
         wait_dirs_interval_sec = 2.0
@@ -240,9 +339,17 @@ def main():
                 if args and is_dirs_path_arg(args[0]):
                     dirs_urls.append(args[0])
                     args = args[1:]
+            elif a in SCOUT_SEARCH_EXPLOITS_FLAGS:
+                search_exploits_only = True
+                args = args[1:]
+            elif a in ("-e", "--exploit"):
+                print("[!] -e is deprecated — use -se", file=sys.stderr)
+                search_exploits_only = True
+                args = args[1:]
             elif a == "--force":
                 force_scan = True
                 force_dirs = True
+                force_exploit = True
                 args = args[1:]
             elif a in ("-n", "--dry-run"):
                 dry_run = True
@@ -278,7 +385,7 @@ def main():
                 print(f"unknown option: {a}")
                 print(
                     "usage: recon.py scout [options] [ip|path|url...]"
-                    "  (-r|--report, -s|--status, -ws|--wait-dirs [sec], -d|--dirs, ...)"
+                    "  (-r|-rp|-re|-se, -s, -ws, -d, ...)"
                 )
                 sys.exit(1)
             else:
@@ -290,13 +397,20 @@ def main():
         if not ip:
             print(
                 "usage: recon.py scout [options] <ip>"
-                "  (-r|--report, -s|--status, -ws|--wait-dirs [sec], -d|--dirs, ...)"
+                "  (-r|-rp|-re|-se, -s, -ws, -d, ...)"
             )
             sys.exit(1)
 
+        if search_exploits_only:
+            if status_mode or wait_dirs_mode or dirs_only:
+                print("[-] -se does not combine with -s, -ws, or -d")
+                sys.exit(1)
+            rc = run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
+            sys.exit(0 if rc == 0 else 1)
+
         if status_mode or wait_dirs_mode:
-            if dirs_only or force_scan or force_dirs or dry_run or quiet_ports:
-                print("[-] --status/--wait-dirs does not take --dirs, --force, -n, or -q")
+            if dirs_only or search_exploits_only or force_scan or force_dirs or dry_run or quiet_ports:
+                print("[-] -s/-ws does not take -d, -se, --force, -n, or -q")
                 sys.exit(1)
             if dirs_urls or extensions is not None:
                 print("[-] --status/--wait-dirs does not take paths, -w, -t, or -x")

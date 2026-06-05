@@ -258,7 +258,13 @@ def ingest_nmap_ports_xml(
 
             service_elem = p.find("service")
             service = service_elem.attrib.get("name", "") if service_elem is not None else ""
-            version = service_elem.attrib.get("version", "") if service_elem is not None else ""
+            if service_elem is not None:
+                product = service_elem.attrib.get("product", "") or ""
+                ver = service_elem.attrib.get("version", "") or ""
+                extra = service_elem.attrib.get("extrainfo", "") or ""
+                version = " ".join(x for x in (product, ver, extra) if x).strip()
+            else:
+                version = ""
 
             mark_port_scanned(ip, portid, proto, state, scan_profile)
             upsert_port(ip, portid, proto, state, service, version)

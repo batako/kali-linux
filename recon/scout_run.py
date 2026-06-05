@@ -842,6 +842,40 @@ def _print_scout_job_row(row) -> None:
     print("")
 
 
+def show_scout_ports(ip: str) -> int:
+    """DB snapshot: OPEN + CLOSED port tables only (no scan, no probes)."""
+    from port_sets import FULL_TCP_END
+    from port_sets import full_tcp_ports
+    from port_sets import nmap_top1000_tcp
+
+    basic_cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
+    full_cov = count_tcp_coverage_in_ports(ip, full_tcp_ports())
+    progress = f"[*] basic {basic_cov}/1000  full {full_cov}/{FULL_TCP_END}"
+
+    print("")
+    print(f"[*] report-ports {ip}")
+    for line in format_scan_snapshot_lines(ip, progress):
+        print(line)
+    print("")
+    return 0
+
+
+def show_scout_report_exploits(ip: str) -> int:
+    """DB snapshot: EXPLOITS section only (no searchsploit)."""
+    print("")
+    print(f"[*] report-exploits {ip}")
+    print("")
+    print("--- EXPLOITS ---")
+    from scout_exploit import format_exploit_report_lines
+
+    exploit_lines = format_exploit_report_lines(ip)
+    for line in exploit_lines:
+        print(line)
+    print("")
+    print("[i] detail: ev <id>  |  scout -se  |  scout -r")
+    return 0
+
+
 def show_scout_report(ip: str) -> int:
     """DB snapshot: ports + scout probes + dirs hits (no nmap/curl/gobuster)."""
     from port_sets import FULL_TCP_END
@@ -895,7 +929,14 @@ def show_scout_report(ip: str) -> int:
         else:
             print("(none)")
     print("")
-    print("[i] detail: ev <id>  |  scout status")
+    print("--- EXPLOITS ---")
+    from scout_exploit import format_exploit_report_lines
+
+    exploit_lines = format_exploit_report_lines(ip)
+    for line in exploit_lines:
+        print(line)
+    print("")
+    print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re")
     return 0
 
 
@@ -1015,6 +1056,12 @@ def run_scout(
     if rc != 0:
         return rc
 
+    from scout_exploit import run_exploit_phase
+
+    exploit_rc = run_exploit_phase(ip, dry_run=dry_run)
+    if exploit_rc != 0:
+        return exploit_rc
+
     dirs_rc = _run_dirs_phase(
         ip,
         urls=dirs_urls,
@@ -1025,4 +1072,4 @@ def run_scout(
         force=force_dirs,
     )
     wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
-    return max(rc, dirs_rc, wait_rc)
+    return max(rc, exploit_rc, dirs_rc, wait_rc)

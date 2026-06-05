@@ -136,13 +136,17 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 
 | コマンド | 説明 |
 |----------|------|
-| `scout [ip]` | Phase 1–3 を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `scout --report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS**）。再実行なし |
+| `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
+| `scout -r` / `--report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS** + **EXPLOITS**）。再実行なし |
+| `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
+| `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
+| `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
+| `scout -r -se [ip]` | search してからフルレポート |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
-| `scout --force` | Phase 1 の再スキャン、Phase 3 dirs の再 dispatch（done スキップ解除） |
+| `scout --force` | Phase 1 の再スキャン、Phase 3 dirs の再 dispatch（**`-se` には不要** — `-se` は常に refresh） |
 
 **前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout -d` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
 
@@ -162,7 +166,30 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 
 service 不明のポートはスキップ（プローブ結果で service を上書きしない）。出力はコンソールと **`executions`**（`el` / `ev`）。`task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`。
 
-**再実行:** 同一 `ip` + **command** で過去に **成功**（`done`, `exit_code=0`）があれば再実行せず `(cached)` と表示する。`http://IP/` と `http://IP:80/`、`https://IP/` と `https://IP:443/` は URL 正規化により同一扱い。非標準ポート（例: `:8080`）はポート付きのまま別 probe。**`scout --force` は probe には効かない**（dirs / scan のみ）。
+**再実行:** 同一 `ip` + **command** で過去に **成功**（`done`, `exit_code=0`）があれば再実行せず `(cached)` と表示する。`http://IP/` と `http://IP:80/`、`https://IP/` と `https://IP:443/` は URL 正規化により同一扱い。非標準ポート（例: `:8080`）はポート付きのまま別 probe。**`scout --force` は probe には効かない**（dirs / scan / exploit のみ）。
+
+### Phase search-exploits — searchsploit（同期）
+
+Phase 2 の後（`scout` 本番実行時）、**open ポート**の `service` / `version`（nmap `product` + `version` + `extrainfo`）から `searchsploit -j` を実行。DoS / PoC は `--exclude` で除外し、**remote / webapps** 系を優先してポートごとに最大 **5 件**を `artifacts`（`exploit_report` JSON）へ保存。
+
+**`scout -r` の EXPLOITS は再検索不要:** 各候補に **title / 絶対パス / run コマンド / `searchsploit -m EDB`** を載せる。生 JSON は `ev <id>`（`executions` キャッシュ）に残る。
+
+| 入力例 | searchsploit クエリ |
+|--------|---------------------|
+| `http` + `Apache httpd 2.4.49` | `Apache httpd 2.4.49` |
+| `mysql` + `5.7.33` | `5.7.33` または product 行 |
+| `http` のみ（product 不明） | スキップ（広すぎる） |
+
+`task_type`: `scout-exploit`。詳細 stdout は `ev <id>`。サマリは **`scout -r`** の `--- EXPLOITS ---`。
+
+```bash
+scout -se                # searchsploit → キャッシュ
+scout -re                # キャッシュ済み EXPLOITS を表示
+scout -rp                # ポート一覧のみ
+scout -r                 # フルレポート
+scout -r -se             # 検索してからフルレポート
+scout -se                # searchsploit -u 後など、明示的に再検索（常に refresh）
+```
 
 ### Phase 3 — ディレクトリ探索（非同期）
 
@@ -213,7 +240,10 @@ http://10.49.140.183/
 
 | 種別 | 確認方法 |
 |------|----------|
-| 偵察サマリ（ポート + PROBES + PATHS） | **`scout -r`** |
+| 偵察サマリ（ポート + PROBES + PATHS + EXPLOITS） | **`scout -r`** |
+| ポートのみ | **`scout -rp`** |
+| exploit 一覧（DB） | **`scout -re`** |
+| exploit 検索（キャッシュ更新） | **`scout -se`** / **`scout -r -se`** |
 | スキャン・同期プローブ | コンソール、`el` / `ev`（probe は成功済みなら `(cached)`） |
 | ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
 
@@ -499,7 +529,7 @@ hydraweb   # 引数不足時に usage 表示
 
 ## 索引（ユーザー向けコマンド一覧）
 
-`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `scout -r` `scout -d` `scout -s` `scout -ws` `scan` ·
+`cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `s` `s -rp` `s -re` `s -se` `s -r` `s -d` `s -s` `s -ws` `scan` ·
 `creds-add` `ca` `cl` `creds-rm` `cr` `hydrassh` `hydraftp` `hydraweb` ·
 `ssh` `ssh-list` `sget` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·

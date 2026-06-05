@@ -18,39 +18,71 @@ scout() {
     fi
   fi
 
-  local ip="" force="" dry="" quiet="" dirs_only="" scout_status="" wait_dirs="" wait_iv="" wordlist="" threads="" ext="" report=""
+  local ip="" force="" dry="" quiet="" dirs_only="" scout_status="" wait_dirs="" wait_iv=""
+  local wordlist="" threads="" ext=""
+  local report="" report_ports="" report_exploits="" search_exploits=""
   local -a extra_urls=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: scout [options] [ip|path|url...]"
+        echo "usage: scout [options] [ip|path|url...]  (alias: s)"
         echo ""
-        echo "  scout / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
+        echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
         echo ""
         echo "dirs job status (pair):"
-        echo "  -s, --status [ip]         show once"
-        echo "  -ws, --wait-dirs [sec]    refresh until all jobs finish (default 2s)"
+        echo "  -s, --status [ip]              show once"
+        echo "  -ws, --wait-dirs [sec]         refresh until all jobs finish (default 2s)"
         echo ""
-        echo "other options:"
-        echo "  -r, --report              ports + probes + PATHS from DB"
-        echo "  -d, --dirs [path]         gobuster dir only"
-        echo "  --force                   force rescan / re-dispatch dirs"
-        echo "  -n, --dry-run             show planned commands"
-        echo "  -q, --quiet               no port tables after scan"
-        echo "  -w, --wordlist            wordlist (default: \$GB_WORDLIST)"
-        echo "  -t, --threads             gobuster threads"
-        echo "  -x, --ext                 file extensions"
+        echo "report (DB only, no rescan):"
+        echo "  -r, --report [ip]              full report"
+        echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
+        echo "  -re, --report-exploits [ip]   EXPLOITS"
+        echo ""
+        echo "search (always refreshes exploit cache; e.g. after searchsploit -u):"
+        echo "  -se, --search-exploits [ip]    searchsploit → cache (also in scout)"
+        echo "  scout -r -se [ip]              refresh exploits then full report"
+        echo ""
+        echo "other:"
+        echo "  -d, --dirs [path]              gobuster dir only"
+        echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
+        echo "  -n, --dry-run                  show planned commands"
+        echo "  -q, --quiet                    no port tables after scan"
+        echo "  -w, --wordlist                 wordlist (default: \$GB_WORDLIST)"
+        echo "  -t, --threads                  gobuster threads"
+        echo "  -x, --ext                      file extensions"
         echo ""
         echo "examples:"
-        echo "  scout -d /admin"
-        echo "  scout -ws                 wait for dirs"
-        echo "  scout -s                  status snapshot"
-        echo "  scout -r"
+        echo "  s -re"
+        echo "  s -rp"
+        echo "  s -se"
+        echo "  s -d /admin"
         return 0
+        ;;
+      -rp|--report-ports)
+        report_ports="-rp"
+        shift
+        ;;
+      -re|--report-exploits)
+        report_exploits="-re"
+        shift
+        ;;
+      -se|--search-exploits)
+        search_exploits="-se"
+        shift
         ;;
       -r|--report)
         report="-r"
+        shift
+        ;;
+      -p|--ports)
+        echo "[!] -p is deprecated — use -rp" >&2
+        report_ports="-rp"
+        shift
+        ;;
+      -e|--exploit)
+        echo "[!] -e is deprecated — use -se" >&2
+        search_exploits="-se"
         shift
         ;;
       -s|--status)
@@ -155,6 +187,19 @@ scout() {
     esac
   done
 
+  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" ) ]]; then
+    echo "[-] use one report flag: -r, -rp, or -re" >&2
+    return 1
+  fi
+  if [[ -n "$report_exploits" && -n "$report" ]]; then
+    echo "[-] use -r or -re, not both" >&2
+    return 1
+  fi
+  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" ) ]]; then
+    echo "[-] -se combines with -r only (or use alone)" >&2
+    return 1
+  fi
+
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
       echo "[-] no target (ti <ip> / cs <case>)" >&2
@@ -165,7 +210,16 @@ scout() {
   (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null
 
   local -a args=(scout)
-  [[ -n "$report" ]] && args+=("$report")
+  if [[ -n "$report_ports" ]]; then
+    args+=(-rp)
+  elif [[ -n "$report_exploits" ]]; then
+    args+=(-re)
+  elif [[ -n "$search_exploits" && -z "$report" ]]; then
+    args+=(-se)
+  elif [[ -n "$report" ]]; then
+    args+=(-r)
+    [[ -n "$search_exploits" ]] && args+=(-se)
+  fi
   [[ -n "$scout_status" ]] && args+=("$scout_status")
   [[ -n "$wait_dirs" ]] && args+=("$wait_dirs")
   [[ -n "$wait_iv" ]] && args+=("$wait_iv")
@@ -185,11 +239,14 @@ scout() {
 _scout() {
   _arguments \
     '-h[usage]' '--help[usage]' \
-    '-r[report from DB]' '--report[report from DB]' \
+    '-r[full report from DB]' '--report[full report from DB]' \
+    '-rp[OPEN+CLOSED from DB]' '--report-ports[OPEN+CLOSED from DB]' \
+    '-re[EXPLOITS from DB]' '--report-exploits[EXPLOITS from DB]' \
+    '-se[searchsploit and cache]' '--search-exploits[searchsploit and cache]' \
     '-s[dirs status once]' '--status[dirs status once]' \
     '-ws[wait for dirs jobs]:sec:' '--wait-dirs[wait for dirs jobs]:sec:' \
     '-d[dirs only]:path:_path_files' '--dirs[dirs only]:path:_path_files' \
-    '--force[force rescan / re-dispatch dirs]' \
+    '--force[rescan ports / re-dispatch dirs]' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \
     '-w[wordlist]:wordlist:_files' \
@@ -199,3 +256,10 @@ _scout() {
 }
 
 compdef _scout scout
+
+# alias: s (scout is the recon hub)
+s() {
+  scout "$@"
+}
+
+compdef _scout s
