@@ -1,5 +1,8 @@
 tmp/*
 
+# OpenVPN (contains credentials; place .ovpn locally)
+config/openvpn/*.ovpn
+
 # Python
 __pycache__/
 *.pyc
