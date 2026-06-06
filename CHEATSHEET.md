@@ -178,6 +178,13 @@ steghide extract -sf <path> -p '<pass>'
 
 一括は [COMMAND.md](COMMAND.md) の `stegx`。
 
+## 壊れたファイルヘッダ（magic byte）
+
+```bash
+fixmagic broken.png        # チェック → 必要なら broken_fixed.png
+fixmagic -n image.png      # チェックのみ（修復しない）
+```
+
 ## SUIDが付与された所有ファイルで昇格
 
 ```bash

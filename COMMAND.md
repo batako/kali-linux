@@ -475,14 +475,54 @@ upsh 63
 
 ---
 
-## Base64
+## enc（Base64 / Base32 / Base58 / Base10）
 
 | コマンド | 説明 |
 |----------|------|
-| `b64d <str>` / `b64d -f <file>` / `… \| b64d` | デコード |
-| `b64e <str>` / `b64e -f <file>` / `… \| b64e` | エンコード（1行） |
+| `enc -d <str>` / `… \| enc -d` | b10 + b64 + b32 + b58 を試してデコード |
+| `enc -e <str>` | 全形式でエンコード |
+| `enc -t b10 -d <digits>` | 10進整数 → バイト列（ASCII） |
+| `enc -t b10 -e <str>` | 文字列 → 10進整数 |
+| `enc -t b64 -d <str>` | Base64 のみ |
+| `enc -t b32 -d <str>` | Base32 のみ |
+| `enc -t b58 -d <str>` | Base58 のみ |
 
-`x "b64d QXJlYTUx"` のように `x` 経由でも可。`b64d -h`
+`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。  
+旧名 `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` は alias。`enc -h`
+
+## rot（Caesar / ROT）
+
+| コマンド | 説明 |
+|----------|------|
+| `rot -a <str>` / `rot -a -f <file>` / `… \| rot -a` | シフト 0–25 をすべて表示 |
+
+`rot -a 'MAF{...}'` → `THM{` の行（shift 7）を探す。旧名 `rotall`。`rot -h`
+
+## vig（Vigenère）
+
+| コマンド | 説明 |
+|----------|------|
+| `vig -a <cipher>` | 鍵長 1–3 を総当たり（flag らしい行だけ） |
+| `vig -a --all <cipher>` | フィルタなし |
+| `vig -a -n 4 <cipher>` | 鍵長上限（4 以上は遅い） |
+| `vig -d -k KEY <cipher>` | 復号 |
+| `vig -e -k KEY <plain>` | 暗号化 |
+| `vig -K -p PLAIN <cipher>` | 既知平文から鍵を復元 |
+
+`vig -a 'CIPHER{...}'` → `key THM: TRYHACKME{...}`。外枠が分かるとき `vig -K -p TRYHACKME '...'` → `THM`。  
+`-f` / パイプ可。旧名 `vigd` `vige` `vigall` `vigkey` は alias。`vig -h`
+
+## Magic byte 修復
+
+| コマンド | 説明 |
+|----------|------|
+| `fixmagic <file>` | magic byte をチェックし、必要なときだけ修復 |
+| `fixmagic -o out.png <file>` | 出力先指定 |
+| `fixmagic -n <file>` | チェックのみ（修復しない） |
+| `fixmagic -i <file>` | 必要時のみ上書き（`.bak` を残す） |
+
+修復不要なら `[=] ok` で終了。PNG / JPEG / GIF に対応。  
+`fixmagic broken.png` — 壊れていれば `broken_fixed.png`、正常なら何も書かない。`fixmagic -h`
 
 ---
 
@@ -522,6 +562,10 @@ gpg-crack -h
 upsh -h
 rcecurl -h
 b64d -h
+enc -h
+rot -h
+vig -h
+fixmagic -h
 ftp -h
 ftpa -h
 hydraweb   # 引数不足時に usage 表示
@@ -537,4 +581,4 @@ hydraweb   # 引数不足時に usage 表示
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
 `gb-dir` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-web` `gb-set-dns` `gb-set-threads` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
-`b64d` `b64e` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
+`enc` `rot` `vig` `fixmagic` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

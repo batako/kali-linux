@@ -6,11 +6,13 @@ RUN apt-get update
 
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     # === core ===
+    base58 \
     binutils \
     file \
     htop \
     neovim \
     tmux \
+    xxd \
     zsh \
     \
     # === productivity ===
@@ -23,6 +25,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     python3-pip \
     \
     # === forensics ===
+    binwalk \
     borgbackup \
     exiftool \
     stegcracker \
