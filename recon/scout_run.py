@@ -452,10 +452,9 @@ def reconcile_scout_job(job_id: int) -> None:
         return
 
     pid = row["pid"]
-    if _pid_alive(pid):
-        return
-
     exit_code = None
+    # waitpid before _pid_alive: exited children stay as zombies and still
+    # answer kill(0), so status would never flip to done during -ws watch.
     if pid:
         try:
             wpid, status = os.waitpid(pid, os.WNOHANG)
@@ -463,6 +462,9 @@ def reconcile_scout_job(job_id: int) -> None:
                 exit_code = os.waitstatus_to_exitcode(status)
         except (ChildProcessError, ProcessLookupError):
             pass
+
+    if exit_code is None and _pid_alive(pid):
+        return
 
     log_path = row["log_path"] or ""
     hits = parse_gobuster_hits(log_path, base_url=row["url"]) if log_path else ""
@@ -981,6 +983,9 @@ def show_scout_status(
                 _print_scout_job_row(row)
 
             _print_paths_tree(rows, ip=ip)
+
+            if wait_dirs:
+                sys.stdout.flush()
 
             if not wait_dirs or running_total == 0:
                 if wait_dirs and running_total == 0:
