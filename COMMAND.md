@@ -143,6 +143,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
 | `scout -r -se [ip]` | search してからフルレポート |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
+| `scout -d -x <ext> [path]` | 拡張子 fuzz（`-x` のみなら wordlist は **common.txt**、`GB_DIRS_EXT_WORDLIST` で変更可） |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -207,6 +208,8 @@ scout -s
 scout -ws
 scout --dirs -w /path/to/list.txt -t 20
 scout -d /admin
+scout -d /admin -x bak,old,txt
+scout -d /assets -x php,bak -t 50
 scout -d http://$IP:8080/
 scout --force              # dirs / scan をやり直す
 ```

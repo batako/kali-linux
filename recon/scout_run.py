@@ -45,6 +45,11 @@ DEFAULT_GB_WORDLIST = os.environ.get(
     "GB_WORDLIST",
     "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",
 )
+# scout -d -x: directory basename wordlist (e.g. backup + .bak)
+DIRS_EXTENSION_WORDLIST = os.environ.get(
+    "GB_DIRS_EXT_WORDLIST",
+    "/usr/share/seclists/Discovery/Web-Content/common.txt",
+)
 DEFAULT_GB_THREADS = int(os.environ.get("GB_THREADS", "40"))
 
 WEB_SERVICE_HINTS = (
@@ -337,8 +342,8 @@ def _normalize_dir_path(path_part: str, full_line: str) -> Optional[str]:
             return None
         if not p.startswith("/"):
             p = f"/{p}"
-        if _looks_like_file(p) and not p.endswith("/"):
-            return None
+        if _looks_like_file(p):
+            return p.rstrip("/")
         if not p.endswith("/"):
             p = f"{p}/"
         return p
@@ -350,10 +355,10 @@ def _normalize_dir_path(path_part: str, full_line: str) -> Optional[str]:
     if not clean:
         return None
 
-    p = f"/{clean}/"
+    p = f"/{clean}"
     if _looks_like_file(p):
-        return None
-    return p
+        return p
+    return f"{p}/"
 
 
 def _base_path_from_url(url: str) -> str:
@@ -366,7 +371,9 @@ def _base_path_from_url(url: str) -> str:
 def resolve_site_path(base_url: str, path: str) -> str:
     """Map a gobuster hit to a site-root path (respecting the scan base URL)."""
     path = path if path.startswith("/") else f"/{path}"
-    if not path.endswith("/"):
+    if _looks_like_file(path):
+        path = path.rstrip("/")
+    elif not path.endswith("/"):
         path = f"{path}/"
     base_p = _base_path_from_url(base_url)
     if base_p == "/":

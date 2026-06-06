@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 
 from db import init_db
 from db import show_hosts
@@ -39,11 +40,13 @@ from scout_exploit import run_exploit_phase
 from scout_run import is_dirs_path_arg
 from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_GB_WORDLIST
+from scout_run import DIRS_EXTENSION_WORDLIST
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
 from form_parse import format_exec_form_shell
 from form_parse import parse_upload_form_html
+from wordlists.cli import run_wordlist_cli
 
 SCOUT_REPORT_FLAGS = ("-r", "--report")
 SCOUT_REPORT_PORTS_FLAGS = ("-rp", "--report-ports")
@@ -301,6 +304,7 @@ def main():
         wait_dirs_mode = False
         wait_dirs_interval_sec = 2.0
         wordlist = os.environ.get("GB_WORDLIST") or DEFAULT_GB_WORDLIST
+        wordlist_from_flag = False
         threads = DEFAULT_GB_THREADS
         if os.environ.get("GB_THREADS"):
             try:
@@ -362,6 +366,7 @@ def main():
                     print("usage: recon.py scout --dirs -w <wordlist> [ip|url]")
                     sys.exit(1)
                 wordlist = args[1]
+                wordlist_from_flag = True
                 args = args[2:]
             elif a in ("-t", "--threads"):
                 if len(args) < 2:
@@ -421,6 +426,21 @@ def main():
                 interval_sec=wait_dirs_interval_sec,
             )
             sys.exit(0 if rc == 0 else 1)
+
+        if extensions is not None and not wordlist_from_flag:
+            if Path(DIRS_EXTENSION_WORDLIST).is_file():
+                wordlist = DIRS_EXTENSION_WORDLIST
+            else:
+                print(
+                    f"[!] -x without -w: {DIRS_EXTENSION_WORDLIST} not found; "
+                    f"using {wordlist}",
+                    file=sys.stderr,
+                )
+            print(
+                "[i] -x uses basename+extension (e.g. backup.bak); "
+                "compound names need -w with a larger list",
+                file=sys.stderr,
+            )
 
         rc = run_scout(
             ip,
@@ -811,6 +831,9 @@ def main():
         else:
             print("not found")
             sys.exit(1)
+
+    elif cmd == "wordlist":
+        sys.exit(run_wordlist_cli(sys.argv[2:]))
 
     elif cmd == "host-run-next":
         # run next pending task for host (highest priority first)
