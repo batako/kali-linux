@@ -10,6 +10,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     binutils \
     file \
     htop \
+    less \
     neovim \
     tmux \
     xxd \
@@ -21,6 +22,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ripgrep \
     \
     # === scripting ===
+    beef \
     jq \
     python3-pip \
     \
