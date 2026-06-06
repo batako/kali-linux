@@ -255,6 +255,112 @@ _hash_crack_slug() {
   fi
 }
 
+_hash_crack_hash_value() {
+  local line="$1"
+  if [[ "$line" == *:* ]]; then
+    print -r -- "${line#*:}"
+  else
+    print -r -- "$line"
+  fi
+}
+
+_hash_crack_john_line() {
+  local hash_line="$1" creds_user="$2"
+  local hash_val="${hash_line#*:}"
+
+  if [[ "$hash_line" == *:* ]]; then
+    if [[ "$hash_val" =~ ^[a-fA-F0-9]{32}$ && "${hash_line%%:*}" == *' '* ]]; then
+      print -r -- "$hash_val"
+      return 0
+    fi
+    print -r -- "$hash_line"
+    return 0
+  fi
+
+  if [[ -n "$creds_user" ]]; then
+    print -r -- "${creds_user// /_}:${hash_line}"
+  else
+    print -r -- "$hash_line"
+  fi
+}
+
+_hash_crack_guess_formats() {
+  local hash_val="$1"
+  python3 -c "
+import re, sys
+h = sys.argv[1].strip()
+formats = []
+if h.startswith('\$apr1\$') or h.startswith('\$1\$'):
+    formats = ['md5crypt']
+elif h.startswith('\$2a\$') or h.startswith('\$2y\$') or h.startswith('\$2b\$'):
+    formats = ['bcrypt']
+elif h.startswith('\$6\$'):
+    formats = ['sha512crypt']
+elif h.startswith('\$5\$'):
+    formats = ['sha256crypt']
+elif h.startswith('{SSHA}') or h.startswith('{SHA}'):
+    formats = ['nsldap', 'raw-SHA1']
+elif h.startswith('*') and len(h) == 41:
+    formats = ['mysql-sha1', 'mysql']
+elif re.fullmatch(r'[a-fA-F0-9]{32}', h):
+    formats = ['Raw-MD5', 'dynamic=md5(\$p)', 'NT']
+elif re.fullmatch(r'[a-fA-F0-9]{40}', h):
+    formats = ['Raw-SHA1']
+elif re.fullmatch(r'[a-fA-F0-9]{64}', h):
+    formats = ['Raw-SHA256']
+elif h.startswith('\$6a\$') or h.startswith('\$argon2'):
+    formats = ['argon2']
+else:
+    formats = ['']
+for f in formats:
+    print(f)
+" "$hash_val"
+}
+
+_hash_crack_show() {
+  local fmt="$1" hf="$2" pf="$3"
+  local show="" args=()
+
+  [[ -n "$fmt" ]] && args=(--format="$fmt")
+  show="$(john "${args[@]}" --pot="$pf" --show "$hf" 2>/dev/null | sed '/^$/d')"
+  if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+    show="$(john "${args[@]}" --show "$hf" 2>/dev/null | sed '/^$/d')"
+  fi
+  print -r -- "$show"
+}
+
+_hash_crack_cracked_p() {
+  local show="$1"
+  [[ -n "$(_john_pass_from_show "$show")" ]]
+}
+
+_hash_crack_try_all_formats() {
+  local hash_val="$1" hf="$2" pf="$3" wl="$4"
+  local fmt tried=0 cracked="" rc=1
+
+  while IFS= read -r fmt; do
+    (( tried++ ))
+    if [[ -n "$fmt" ]]; then
+      echo "[*] john --format=$fmt ..." >&2
+      john --format="$fmt" "$hf" --wordlist="$wl" --pot="$pf" 2>&1 \
+        | grep -Ev '^(Warning:|Using default|Will run|Press |$| \d+g \d+:|Session completed|Use the )' >&2 || true
+    else
+      echo "[*] john (auto format) ..." >&2
+      john "$hf" --wordlist="$wl" --pot="$pf" 2>&1 \
+        | grep -Ev '^(Warning:|Using default|Will run|Press |$| \d+g \d+:|Session completed|Use the )' >&2 || true
+    fi
+    cracked="$(_hash_crack_show "$fmt" "$hf" "$pf")"
+    if _hash_crack_cracked_p "$cracked"; then
+      rc=0
+      break
+    fi
+    cracked=""
+  done < <(_hash_crack_guess_formats "$hash_val")
+
+  print -r -- "$cracked"
+  return $rc
+}
+
 _hash_crack_apply_creds() {
   local show="$1" user="$2"
   local pass ip creds_status
@@ -309,6 +415,7 @@ hash-crack() {
         echo "  -b  save creds as \$RECON_BORG_CREDS_USER (default: borg) for borg-crack"
         echo "  -u  username for hash-only input; creds-add on success"
         echo "  -   read hash line from stdin"
+        echo "  auto-tries john --format by hash shape (e.g. 32 hex -> Raw-MD5)"
         echo ""
         echo "examples:"
         echo "  hash-crack -b http://\$IP/etc/squid/passwd"
@@ -371,42 +478,53 @@ hash-crack() {
     return 1
   }
 
-  if [[ -n "$creds_user" && "$hash_line" != *:* ]]; then
-    hash_line="${creds_user}:${hash_line}"
+  if [[ -z "$creds_user" && "$hash_line" == *:* && "$hash_line" != *'$'* ]]; then
+    creds_user="${hash_line%%:*}"
   fi
 
-  local out_dir hash_file pot_file base
+  local hash_val john_line
+  hash_val="$(_hash_crack_hash_value "$hash_line")"
+  john_line="$(_hash_crack_john_line "$hash_line" "$creds_user")"
+
+  local out_dir hash_file pot_file base formats=()
   out_dir="$(case-exports-dir)" || return 1
   mkdir -p "$out_dir"
 
   if [[ -f "$input" && $from_stdin -eq 0 && "$input" != http://* && "$input" != https://* ]]; then
     base="${input:t}.john"
   else
-    base="$(_hash_crack_slug "$hash_line")"
+    base="$(_hash_crack_slug "$john_line")"
   fi
   hash_file="${out_dir}/${base}"
   pot_file="${hash_file}.pot"
 
-  print -r -- "$hash_line" >"$hash_file"
+  print -r -- "$john_line" >"$hash_file"
+  formats=("${(@f)$(_hash_crack_guess_formats "$hash_val")}")
 
   echo "[*] source:   $source_label"
   echo "[*] hash:     $hash_file"
   echo "[*] pot:      $pot_file"
   echo "[*] wordlist: $wordlist"
+  if (( ${#formats[@]} )); then
+    echo "[*] formats:  ${formats[*]}"
+  else
+    echo "[*] formats:  (auto)"
+  fi
   echo ""
 
-  _hash_crack_show() {
-    local show
-    show="$(john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
-    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
-      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  local fmt global_show=""
+  for fmt in "${formats[@]}"; do
+    [[ -n "$fmt" ]] || continue
+    global_show="$(john --format="$fmt" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    if _hash_crack_cracked_p "$global_show"; then
+      break
     fi
-    print -r -- "$show"
-  }
-
-  local global_show
-  global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
-  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    global_show=""
+  done
+  if [[ -z "$global_show" ]]; then
+    global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  fi
+  if _hash_crack_cracked_p "$global_show" && [[ $force -eq 0 ]]; then
     echo "[+] already cracked (global john pot):"
     echo "$global_show"
     _hash_crack_apply_creds "$global_show" "$creds_user"
@@ -415,9 +533,19 @@ hash-crack() {
     return 0
   fi
 
-  local prior
-  prior="$(_hash_crack_show)"
-  if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+  local prior fmt_prior
+  prior=""
+  for fmt_prior in "${formats[@]}"; do
+    prior="$(_hash_crack_show "$fmt_prior" "$hash_file" "$pot_file")"
+    if _hash_crack_cracked_p "$prior"; then
+      break
+    fi
+    prior=""
+  done
+  if [[ -z "$prior" ]]; then
+    prior="$(_hash_crack_show "" "$hash_file" "$pot_file")"
+  fi
+  if _hash_crack_cracked_p "$prior" && [[ $force -eq 0 ]]; then
     echo "[+] already cracked (this hash's pot):"
     echo "$prior"
     _hash_crack_apply_creds "$prior" "$creds_user"
@@ -428,16 +556,15 @@ hash-crack() {
 
   [[ $force -eq 1 ]] && rm -f "$pot_file"
 
-  john "$hash_file" --wordlist="$wordlist" --pot="$pot_file"
-  local rc=$?
+  local cracked rc
+  cracked="$(_hash_crack_try_all_formats "$hash_val" "$hash_file" "$pot_file" "$wordlist")"
+  rc=$?
 
   echo ""
-  local cracked
-  cracked="$(_hash_crack_show)"
   echo "[+] cracked (if any):"
   print -r -- "$cracked"
 
-  if [[ -n "$cracked" && "$cracked" != *"0 password hashes cracked"* ]]; then
+  if _hash_crack_cracked_p "$cracked"; then
     local pass
     pass="$(_john_pass_from_show "$cracked")"
     [[ -n "$pass" ]] && echo "[+] password: $pass"
@@ -727,11 +854,32 @@ _zip2john_path() {
   return 1
 }
 
+_zip_crack_extract() {
+  local zip="$1" extract_dir="$2" pass="${3:-}"
+  mkdir -p "$extract_dir"
+  echo "[*] extracting with 7z..."
+  if [[ -n "$pass" ]]; then
+    7z x "$zip" -p"$pass" -o"$extract_dir" -y
+  else
+    7z x "$zip" -o"$extract_dir" -y
+  fi
+}
+
+_zip_crack_encrypted_p() {
+  local zip2john_out="$1"
+  [[ -n "$zip2john_out" ]] || return 1
+  if print -r -- "$zip2john_out" | grep -qiE 'is not encrypted|not encrypted'; then
+    return 1
+  fi
+  print -r -- "$zip2john_out" | grep -qE 'PKZIP Encr|\$pkzip|\$zip2\$'
+}
+
 # zip2john + john; extract with 7z on success
 # usage: zip-crack [-f] [-n] <zipfile> [wordlist]
 #   x "zip-crack 8702.zip"
 # -f: ignore prior crack in this zip's pot and run wordlist again
 # -n: crack only, do not run 7z extract
+# unencrypted zip: skips john, 7z extract without password
 zip-crack() {
   local force=0
   local do_extract=1
@@ -745,7 +893,8 @@ zip-crack() {
         echo "  default wordlist: \$RECON_PASSLIST"
         echo "  -f  force re-crack (ignore this zip's pot)"
         echo "  -n  crack only (no 7z extract)"
-        echo "  on success: 7z x -p<pass> -o <exports>/<zip-basename>/"
+        echo "  unencrypted zip: 7z extract without john"
+        echo "  on success: 7z x [-p<pass>] -o <exports>/<zip-basename>/"
         return 0
         ;;
       *)
@@ -767,21 +916,11 @@ zip-crack() {
     return 1
   fi
 
-  if [[ ! -f "$wordlist" ]]; then
-    echo "wordlist not found: $wordlist"
-    return 1
-  fi
-
   local zip2john
   zip2john="$(_zip2john_path)" || {
     echo "zip2john not found (install john)"
     return 1
   }
-
-  if ! command -v john >/dev/null 2>&1; then
-    echo "john not found (install john)"
-    return 1
-  fi
 
   if (( do_extract )) && ! command -v 7z >/dev/null 2>&1; then
     echo "7z not found (install 7zip)"
@@ -796,15 +935,44 @@ zip-crack() {
   local hash_file="${out_dir}/${base}.john"
   local pot_file="${hash_file}.pot"
   local extract_dir="${out_dir}/${base:r}"
+  local zip2john_out=""
 
   echo "[*] zip:      $zip"
-  echo "[*] hash:     $hash_file"
-  echo "[*] pot:      $pot_file"
-  echo "[*] wordlist: $wordlist"
   (( do_extract )) && echo "[*] extract:  $extract_dir (7z)"
   echo ""
 
-  "$zip2john" "$zip" >"$hash_file" || return 1
+  zip2john_out="$("$zip2john" "$zip" 2>&1)" || return 1
+  print -r -- "$zip2john_out" >"$hash_file"
+
+  if ! _zip_crack_encrypted_p "$zip2john_out"; then
+    echo "[+] zip: not encrypted"
+    if (( do_extract )); then
+      echo ""
+      if _zip_crack_extract "$zip" "$extract_dir"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] 7z extract failed" >&2
+        return 1
+      fi
+    fi
+    return 0
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  if ! command -v john >/dev/null 2>&1; then
+    echo "john not found (install john)"
+    return 1
+  fi
+
+  echo "[*] hash:     $hash_file"
+  echo "[*] pot:      $pot_file"
+  echo "[*] wordlist: $wordlist"
+  echo ""
 
   _zip_crack_show() {
     john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d'
@@ -837,12 +1005,13 @@ for line in sys.stdin:
     local pass
     pass="$(_zip_crack_password)"
     if (( do_extract )) && [[ -n "$pass" ]]; then
-      mkdir -p "$extract_dir"
-      echo ""
-      echo "[*] extracting with 7z..."
-      7z x "$zip" -p"$pass" -o"$extract_dir" -y
-      echo "[+] extracted to: $extract_dir"
-      ls -la "$extract_dir"
+      if _zip_crack_extract "$zip" "$extract_dir" "$pass"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] 7z extract failed" >&2
+        return 1
+      fi
     fi
     echo ""
     echo "[i] isolated re-crack: zip-crack -f $zip"
@@ -857,12 +1026,13 @@ for line in sys.stdin:
     local pass
     pass="$(_zip_crack_password)"
     if (( do_extract )) && [[ -n "$pass" ]]; then
-      mkdir -p "$extract_dir"
-      echo ""
-      echo "[*] extracting with 7z..."
-      7z x "$zip" -p"$pass" -o"$extract_dir" -y
-      echo "[+] extracted to: $extract_dir"
-      ls -la "$extract_dir"
+      if _zip_crack_extract "$zip" "$extract_dir" "$pass"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] 7z extract failed" >&2
+        return 1
+      fi
     fi
     echo ""
     echo "[i] run again: zip-crack -f $zip"
@@ -884,9 +1054,7 @@ for line in sys.stdin:
     echo ""
     echo "[+] zip password: $pass"
     if (( do_extract )); then
-      mkdir -p "$extract_dir"
-      echo "[*] extracting with 7z..."
-      if 7z x "$zip" -p"$pass" -o"$extract_dir" -y; then
+      if _zip_crack_extract "$zip" "$extract_dir" "$pass"; then
         echo "[+] extracted to: $extract_dir"
         ls -la "$extract_dir"
       else

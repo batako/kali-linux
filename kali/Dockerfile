@@ -71,6 +71,10 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     sudo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+RUN tar -xzf /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz \
+    -C /usr/share/seclists/Passwords/Leaked-Databases/ && \
+    rm -f /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz
+
 RUN ARCH="$(uname -m)" && \
     curl -L "https://github.com/tsl0922/ttyd/releases/latest/download/ttyd.${ARCH}" \
     -o /usr/local/bin/ttyd && \

@@ -15,7 +15,7 @@ _steg-info() {
   local file="$1"
   local bin out
   bin="$(_steg-bin)" || return 1
-  out="$("$bin" info "$file" 2>&1 </dev/null)" || true
+  out="$(printf 'y\n' | "$bin" info "$file" 2>&1 </dev/null)" || true
   print -r -- "$out"
   print -r -- "$out" | grep -qE 'format:|capacity:'
 }
@@ -77,6 +77,43 @@ _steg-crack() {
   return 1
 }
 
+_steg-show-out() {
+  local out="$1" wordlist="${2:-$RECON_PASSLIST}"
+  local kind zip_path rc=0
+
+  [[ -f "$out" && -s "$out" ]] || return 1
+  kind="$(file -b "$out" 2>/dev/null)"
+
+  echo "[+] type: $kind"
+  case "$kind" in
+    *Zip\ archive*)
+      zip_path="${out:h}/${out:t:r}.zip"
+      if [[ "$out" != "$zip_path" ]]; then
+        cp -f "$out" "$zip_path"
+        echo "[+] copied: $zip_path"
+      else
+        zip_path="$out"
+      fi
+      if (( $+functions[zip-crack] )); then
+        echo ""
+        zip-crack "$zip_path" "$wordlist"
+        rc=$?
+      else
+        echo "[i] next: zip-crack ${zip_path:t}" >&2
+      fi
+      return $rc
+      ;;
+    *ASCII*|*text*)
+      echo "-----"
+      cat "$out"
+      ;;
+    *)
+      echo "[i] binary output — inspect with: file $out"
+      ;;
+  esac
+  return 0
+}
+
 # info → (optional crack) → extract
 # usage: steg-extract <image> [wordlist]
 #   default wordlist: $RECON_PASSLIST
@@ -94,6 +131,7 @@ steg-extract() {
         echo "  3. stegcracker + wordlist if needed"
         echo "  default wordlist: \$RECON_PASSLIST"
         echo "  output: cases/<case>/exports/<name>.steg.out"
+        echo "  zip output: auto zip-crack + 7z extract"
         return 0
         ;;
       -*)
@@ -126,7 +164,7 @@ steg-extract() {
     return 1
   fi
 
-  local steghide info out pass logfile
+  local steghide info out pass logfile steg_rc=0
   steghide="$(_steg-bin)" || {
     echo "[-] steghide not installed" >&2
     return 1
@@ -161,13 +199,13 @@ steg-extract() {
     echo "[!] no embedded data reported — trying extract anyway" >&2
   fi
 
+  local steg_rc=0
   echo "[*] trying empty passphrase..." >&2
   if "$steghide" extract -sf "$file" -p "" -xf "$out" -f 2>/dev/null && [[ -s "$out" ]]; then
     echo "[+] extracted (no passphrase)"
     echo "[+] out: $out"
-    echo "-----"
-    cat "$out"
-    return 0
+    _steg-show-out "$out" "$wordlist" || steg_rc=$?
+    return $steg_rc
   fi
   rm -f "$out"
 
@@ -184,9 +222,8 @@ steg-extract() {
 
   echo "[+] passphrase: $pass"
   echo "[+] out: $out"
-  echo "-----"
-  [[ -f "$out" ]] && cat "$out"
-  return 0
+  _steg-show-out "$out" "$wordlist" || steg_rc=$?
+  return $steg_rc
 }
 
 alias stegx='steg-extract'

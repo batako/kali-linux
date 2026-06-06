@@ -39,17 +39,6 @@ echo "[*] Starting ttyd..."
 ttyd -W -p 7681 tmux attach -t ctf &
 
 
-echo "[*] Preparing wordlists..."
-ROCKYOU_DIR="/usr/share/seclists/Passwords/Leaked-Databases"
-ROCKYOU_TXT="$ROCKYOU_DIR/rockyou.txt"
-ROCKYOU_TAR="$ROCKYOU_DIR/rockyou.txt.tar.gz"
-if [ ! -f "$ROCKYOU_TXT" ] && [ -f "$ROCKYOU_TAR" ]; then
-  echo "[*] Extracting rockyou.txt..."
-  sudo tar -xzf "$ROCKYOU_TAR" -C "$ROCKYOU_DIR"
-  sudo rm -f "$ROCKYOU_TAR"
-fi
-
-
 echo "[*] System ready."
 
 
