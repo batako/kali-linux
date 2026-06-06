@@ -41,15 +41,6 @@ DEFAULT_WATCH_INTERVAL_SEC = 2.0
 # Status screen: show this many finished jobs (+ all running at bottom).
 SCOUT_STATUS_SLOTS = max(1, int(os.environ.get("SCOUT_STATUS_SLOTS", "4")))
 
-DEFAULT_GB_WORDLIST = os.environ.get(
-    "GB_WORDLIST",
-    "/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt",
-)
-# scout -d -x: directory basename wordlist (e.g. backup + .bak)
-DIRS_EXTENSION_WORDLIST = os.environ.get(
-    "GB_DIRS_EXT_WORDLIST",
-    "/usr/share/seclists/Discovery/Web-Content/common.txt",
-)
 DEFAULT_GB_THREADS = int(os.environ.get("GB_THREADS", "40"))
 
 WEB_SERVICE_HINTS = (
@@ -291,8 +282,13 @@ def build_dirs_plan(
     extensions: Optional[str] = None,
     dry_run: bool = False,
 ) -> DirsPlan:
+    from wordlists.scout import resolve_scout_wordlist
+
     url = normalize_web_url(url)
-    wl = wordlist or DEFAULT_GB_WORDLIST
+    try:
+        wl = resolve_scout_wordlist(wordlist, extensions=extensions)
+    except ValueError as exc:
+        raise FileNotFoundError(str(exc)) from exc
     th = threads if threads is not None else DEFAULT_GB_THREADS
     if not dry_run and not Path(wl).is_file():
         raise FileNotFoundError(f"wordlist not found: {wl}")

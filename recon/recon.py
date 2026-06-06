@@ -1,6 +1,5 @@
 import sys
 import os
-from pathlib import Path
 
 from db import init_db
 from db import show_hosts
@@ -39,8 +38,7 @@ from scout_run import show_scout_status
 from scout_exploit import run_exploit_phase
 from scout_run import is_dirs_path_arg
 from scout_run import DEFAULT_GB_THREADS
-from scout_run import DEFAULT_GB_WORDLIST
-from scout_run import DIRS_EXTENSION_WORDLIST
+from wordlists.scout import resolve_scout_wordlist
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -303,7 +301,7 @@ def main():
         status_mode = False
         wait_dirs_mode = False
         wait_dirs_interval_sec = 2.0
-        wordlist = os.environ.get("GB_WORDLIST") or DEFAULT_GB_WORDLIST
+        wordlist_spec: Optional[str] = None
         wordlist_from_flag = False
         threads = DEFAULT_GB_THREADS
         if os.environ.get("GB_THREADS"):
@@ -365,7 +363,7 @@ def main():
                 if len(args) < 2:
                     print("usage: recon.py scout --dirs -w <wordlist> [ip|url]")
                     sys.exit(1)
-                wordlist = args[1]
+                wordlist_spec = args[1]
                 wordlist_from_flag = True
                 args = args[2:]
             elif a in ("-t", "--threads"):
@@ -427,20 +425,19 @@ def main():
             )
             sys.exit(0 if rc == 0 else 1)
 
-        if extensions is not None and not wordlist_from_flag:
-            if Path(DIRS_EXTENSION_WORDLIST).is_file():
-                wordlist = DIRS_EXTENSION_WORDLIST
-            else:
-                print(
-                    f"[!] -x without -w: {DIRS_EXTENSION_WORDLIST} not found; "
-                    f"using {wordlist}",
-                    file=sys.stderr,
-                )
+        try:
+            wordlist = resolve_scout_wordlist(
+                wordlist_spec if wordlist_from_flag else None,
+                extensions=extensions,
+            )
+        except ValueError as exc:
+            print(f"[-] {exc}", file=sys.stderr)
             print(
-                "[i] -x uses basename+extension (e.g. backup.bak); "
-                "compound names need -w with a larger list",
+                "[i] catalog ids: recon.py wordlist list --for dirs"
+                + ("-ext" if extensions else ""),
                 file=sys.stderr,
             )
+            sys.exit(1)
 
         rc = run_scout(
             ip,

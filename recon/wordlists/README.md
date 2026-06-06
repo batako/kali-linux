@@ -46,9 +46,18 @@ recon.py wordlist resolve dirbuster-small
 
 ## Selectors（scout UI）
 
-| id | 用途 |
-|----|------|
-| `dirs` | `s -d`（`-x` なし） |
-| `dirs-ext` | `s -d -x <ext>` の拡張子 fuzz |
+| id | 用途 | default id |
+|----|------|------------|
+| `dirs` | `s -d`（`-x` なし） | `common` |
+| `dirs-ext` | `s -d -x <ext>` の拡張子 fuzz | `common` |
+
+### 環境変数（id または path）
+
+| 変数 | 適用 |
+|------|------|
+| `GB_WORDLIST` | `-d`（`-x` なし）の default |
+| `GB_DIRS_EXT_WORDLIST` | `-d -x` で `-w` 未指定時の default |
+
+例: `export GB_DIRS_EXT_WORDLIST=dirbuster-small`
 
 passwords / dns / fuzzing など他カテゴリは在庫用。将来、別 selector を追加する。

@@ -45,6 +45,28 @@ class WordlistCatalogTests(unittest.TestCase):
             msg="\n".join(i.message for i in errors[:10]),
         )
 
+    def test_scout_resolve_id(self) -> None:
+        from wordlists.scout import resolve_scout_wordlist
+
+        path = resolve_scout_wordlist("dirbuster-small", extensions="ticket")
+        self.assertIn("DirBuster-2007_directory-list-2.3-small.txt", path)
+
+    def test_scout_default_dirs_ext(self) -> None:
+        from wordlists.scout import default_wordlist_id
+
+        self.assertEqual(default_wordlist_id(extensions="bak"), "common")
+
+    def test_scout_default_dirs(self) -> None:
+        from wordlists.scout import default_wordlist_id
+
+        self.assertEqual(default_wordlist_id(extensions=None), "common")
+
+    def test_scout_unknown_id_raises(self) -> None:
+        from wordlists.scout import resolve_scout_wordlist
+
+        with self.assertRaises(ValueError):
+            resolve_scout_wordlist("no-such-wordlist-id", extensions=None)
+
     def test_unique_paths_and_ids(self) -> None:
         ids = [e.id for e in self.catalog.entries]
         paths = [e.path for e in self.catalog.entries]
