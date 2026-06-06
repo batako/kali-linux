@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 
+from wordlists.pick import pick_browse_category
+from wordlists.pick import pick_from_selector
 from wordlists.wordlists import WordlistCatalog
 from wordlists.wordlists import format_lines
 
@@ -121,6 +122,56 @@ def cmd_stats(_args: list[str]) -> int:
     return 0
 
 
+def cmd_pick(args: list[str]) -> int:
+    selector = None
+    browse = False
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a in ("--for", "--selector"):
+            selector = args[i + 1]
+            i += 2
+        elif a in ("--browse", "--categories"):
+            browse = True
+            i += 1
+        else:
+            print(f"unknown pick option: {a}", file=sys.stderr)
+            return 1
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        print("[-] wordlist pick requires a TTY (or pass -w <catalog-id>)", file=sys.stderr)
+        return 1
+
+    catalog = WordlistCatalog.load()
+    try:
+        if browse:
+            picked = pick_browse_category(catalog)
+        elif selector:
+            picked = pick_from_selector(catalog, selector)
+        else:
+            print("usage: recon.py wordlist pick --for <selector>", file=sys.stderr)
+            print("       recon.py wordlist pick --browse", file=sys.stderr)
+            print(f"selectors: {', '.join(sorted(catalog.selectors))}", file=sys.stderr)
+            return 1
+    except ValueError as exc:
+        print(f"[-] {exc}", file=sys.stderr)
+        return 1
+
+    if not picked:
+        print("[-] cancelled", file=sys.stderr)
+        return 1
+
+    try:
+        catalog.resolve(picked)
+    except ValueError as exc:
+        print(f"[-] {exc}", file=sys.stderr)
+        return 1
+
+    print(f"[+] wordlist: {picked}", file=sys.stderr)
+    print(picked)
+    return 0
+
+
 def _entry_line(entry) -> str:
     parts = [format_lines(entry.lines).rjust(6)]
     if entry.speed:
@@ -133,7 +184,7 @@ def _entry_line(entry) -> str:
 def run_wordlist_cli(argv: list[str]) -> int:
     if not argv:
         print(
-            "usage: recon.py wordlist <validate|list|resolve|stats> ...",
+            "usage: recon.py wordlist <validate|list|resolve|stats|pick> ...",
             file=sys.stderr,
         )
         return 1
@@ -147,5 +198,7 @@ def run_wordlist_cli(argv: list[str]) -> int:
         return cmd_resolve(rest)
     if sub == "stats":
         return cmd_stats(rest)
+    if sub == "pick":
+        return cmd_pick(rest)
     print(f"unknown wordlist command: {sub}", file=sys.stderr)
     return 1

@@ -5,7 +5,7 @@
 ## 方針
 
 - **全件網羅:** `/usr/share/seclists` 配下のファイルは、すべて `catalog.yaml` に **1 回だけ** 登録する。漏れ・余剰があると `wordlist validate` が FAIL になる。
-- **UI からだけ選ぶ:** 運用時は scout（Phase 3 では `-w ?`）やカタログ id で選ぶ。`/usr/share/seclists/...` を直接 `-w` に書かない想定。
+- **UI からだけ選ぶ:** 運用時は scout（`-w` でピッカー）かカタログ id で選ぶ。`/usr/share/seclists/...` を直接 `-w` に書かない想定。
 - **selectors と categories:**
   - `selectors` — scout UI に出す小さな候補セット（`dirs`, `dirs-ext` など）。
   - `categories` — ディレクトリ単位の全在庫（128 カテゴリ・6184 エントリ）。
@@ -42,7 +42,11 @@ recon.py wordlist list --for dirs-ext
 recon.py wordlist list --category discovery-web-content
 recon.py wordlist list --all-categories
 recon.py wordlist resolve dirbuster-small
+recon.py wordlist pick --for dirs-ext
+recon.py wordlist pick --browse
 ```
+
+scout からは **`-w` 省略 → default**、**`-w` のみ → ピッカー**（`-w browse` で全カテゴリ）。
 
 ## Selectors（scout UI）
 
@@ -51,13 +55,13 @@ recon.py wordlist resolve dirbuster-small
 | `dirs` | `s -d`（`-x` なし） | `common` |
 | `dirs-ext` | `s -d -x <ext>` の拡張子 fuzz | `common` |
 
-### 環境変数（id または path）
+### 環境変数（`-w` 省略時の default）
 
 | 変数 | 適用 |
 |------|------|
-| `GB_WORDLIST` | `-d`（`-x` なし）の default |
-| `GB_DIRS_EXT_WORDLIST` | `-d -x` で `-w` 未指定時の default |
+| `GB_WORDLIST` | `-d`、`-x` なし、**`-w` 省略** |
+| `GB_DIRS_EXT_WORDLIST` | `-d -x`、**`-w` 省略** |
 
-例: `export GB_DIRS_EXT_WORDLIST=dirbuster-small`
+**`-w` のみ**指定したときはピッカー（env は使わない）。
 
 passwords / dns / fuzzing など他カテゴリは在庫用。将来、別 selector を追加する。

@@ -360,12 +360,13 @@ def main():
                 quiet_ports = True
                 args = args[1:]
             elif a in ("-w", "--wordlist"):
-                if len(args) < 2:
-                    print("usage: recon.py scout --dirs -w <wordlist> [ip|url]")
-                    sys.exit(1)
-                wordlist_spec = args[1]
                 wordlist_from_flag = True
-                args = args[2:]
+                args = args[1:]
+                if args and not args[0].startswith("-"):
+                    wordlist_spec = args[0]
+                    args = args[1:]
+                else:
+                    wordlist_spec = ""
             elif a in ("-t", "--threads"):
                 if len(args) < 2:
                     print("usage: recon.py scout --dirs -t <N> [ip|url]")
@@ -429,6 +430,7 @@ def main():
             wordlist = resolve_scout_wordlist(
                 wordlist_spec if wordlist_from_flag else None,
                 extensions=extensions,
+                from_flag=wordlist_from_flag,
             )
         except ValueError as exc:
             print(f"[-] {exc}", file=sys.stderr)

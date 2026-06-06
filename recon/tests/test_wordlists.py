@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from io import StringIO
 from pathlib import Path
 
 RECON = Path(__file__).resolve().parents[1]
@@ -66,6 +67,52 @@ class WordlistCatalogTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             resolve_scout_wordlist("no-such-wordlist-id", extensions=None)
+
+    def test_scout_no_flag_uses_default(self) -> None:
+        from wordlists.scout import resolve_scout_wordlist
+
+        path = resolve_scout_wordlist(None, extensions="ticket", from_flag=False)
+        self.assertIn("common.txt", path)
+
+    def test_scout_from_flag_empty_triggers_pick(self) -> None:
+        from wordlists.scout import _pick_mode
+
+        self.assertEqual(_pick_mode("pick"), "context")
+        self.assertEqual(_pick_mode("browse"), "browse")
+        self.assertIsNone(_pick_mode(""))
+
+    def test_pick_from_selector_by_number(self) -> None:
+        from wordlists.pick import pick_from_selector
+
+        picked = pick_from_selector(
+            self.catalog,
+            "dirs-ext",
+            input_fn=lambda _prompt: "2",
+            output=StringIO(),
+        )
+        self.assertEqual(picked, "dirbuster-small")
+
+    def test_pick_from_selector_by_id(self) -> None:
+        from wordlists.pick import pick_from_selector
+
+        picked = pick_from_selector(
+            self.catalog,
+            "dirs",
+            input_fn=lambda _prompt: "common",
+            output=StringIO(),
+        )
+        self.assertEqual(picked, "common")
+
+    def test_pick_from_selector_cancel(self) -> None:
+        from wordlists.pick import pick_from_selector
+
+        picked = pick_from_selector(
+            self.catalog,
+            "dirs",
+            input_fn=lambda _prompt: "q",
+            output=StringIO(),
+        )
+        self.assertIsNone(picked)
 
     def test_unique_paths_and_ids(self) -> None:
         ids = [e.id for e in self.catalog.entries]

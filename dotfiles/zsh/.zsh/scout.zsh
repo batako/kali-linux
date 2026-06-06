@@ -48,13 +48,19 @@ scout() {
         echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
         echo "  -n, --dry-run                  show planned commands"
         echo "  -q, --quiet                    no port tables after scan"
-        echo "  -w, --wordlist                 catalog id or path (e.g. dirbuster-small)"
+        echo "  -w, --wordlist [id]            id/path, or bare -w to pick from list"
         echo "  -t, --threads                  gobuster threads"
-        echo "  -x, --ext                      extensions (-x without -w uses catalog dirs-ext default)"
+        echo "  -x, --ext                      extension fuzz (-w omitted → default list)"
+        echo ""
+        echo "wordlist:"
+        echo "  (omit -w)                      catalog default (common unless env set)"
+        echo "  -w                             pick from dirs / dirs-ext (-x decides)"
+        echo "  -w browse                      browse all catalog categories"
         echo ""
         echo "examples:"
-        echo "  s -d /admin -x bak,old,txt"
-        echo "  s -d /assets -x php,bak -t 50 -w /path/to/list.txt"
+        echo "  s -d /admin -x ticket          # default wordlist"
+        echo "  s -d /admin -x ticket -w       # pick"
+        echo "  s -d /admin -x ticket -w dirbuster-small"
         echo "  s -re"
         echo "  s -rp"
         echo "  s -se"
@@ -150,8 +156,10 @@ scout() {
       -w|--wordlist)
         wordlist="-w"
         shift
-        wordlist+=" $1"
-        shift
+        if [[ -n "${1:-}" && "${1:-}" != -* ]]; then
+          wordlist+=" $1"
+          shift
+        fi
         ;;
       -t)
         threads="-t"
@@ -259,9 +267,6 @@ _scout() {
 
 compdef _scout scout
 
-# alias: s (scout is the recon hub)
-s() {
-  scout "$@"
-}
-
+# alias: s (scout hub)
+alias s='noglob scout'
 compdef _scout s

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import Optional
 
 from wordlists.wordlists import WordlistCatalog
@@ -45,12 +46,58 @@ def default_wordlist_spec(*, extensions: Optional[str]) -> str:
     return os.environ.get("GB_WORDLIST") or default_wordlist_id(extensions=None)
 
 
+def _pick_mode(value: str) -> Optional[str]:
+    v = (value or "").strip()
+    if v == "pick":
+        return "context"
+    if v == "browse":
+        return "browse"
+    return None
+
+
+def _interactive_pick(
+    *,
+    extensions: Optional[str],
+    mode: str,
+) -> str:
+    from wordlists.pick import pick_browse_category
+    from wordlists.pick import pick_from_selector
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        raise ValueError("wordlist pick requires a TTY (use -w <catalog-id>)")
+
+    catalog = get_catalog()
+    if mode == "browse":
+        picked = pick_browse_category(catalog)
+    else:
+        picked = pick_from_selector(catalog, scout_selector(extensions=extensions))
+    if not picked:
+        raise ValueError("cancelled")
+    return picked
+
+
 def resolve_scout_wordlist(
     value: Optional[str] = None,
     *,
     extensions: Optional[str] = None,
+    from_flag: bool = False,
 ) -> str:
-    """Resolve catalog id, relative path, or absolute path for gobuster -w."""
-    spec = (value or "").strip() or default_wordlist_spec(extensions=extensions)
+    """Resolve catalog id, relative path, or absolute path for gobuster -w.
+
+    - No -w (from_flag=False): catalog/env default.
+    - -w with id/path: resolve that entry.
+    - -w alone or -w browse: interactive picker.
+    """
+    spec = (value or "").strip()
+    pick_mode = _pick_mode(spec) if spec else None
+
+    if from_flag and (not spec or pick_mode):
+        mode = pick_mode or "context"
+        spec = _interactive_pick(extensions=extensions, mode=mode)
+    elif pick_mode:
+        spec = _interactive_pick(extensions=extensions, mode=pick_mode)
+    elif not spec:
+        spec = default_wordlist_spec(extensions=extensions)
+
     selector = scout_selector(extensions=extensions)
     return get_catalog().resolve(spec, category=selector)
