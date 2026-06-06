@@ -42,6 +42,7 @@ DEFAULT_WATCH_INTERVAL_SEC = 2.0
 SCOUT_STATUS_SLOTS = max(1, int(os.environ.get("SCOUT_STATUS_SLOTS", "4")))
 
 DEFAULT_GB_THREADS = int(os.environ.get("GB_THREADS", "40"))
+DEFAULT_DIRS_MULTI_THREADS = int(os.environ.get("GB_DIRS_THREADS", "15"))
 
 WEB_SERVICE_HINTS = (
     "http",
@@ -123,9 +124,13 @@ def is_dirs_path_arg(s: str) -> bool:
         return False
     if s.startswith(("http://", "https://", "/")):
         return True
-    if re.match(r"^\d+\.\d+\.\d+\.\d+$", s):
+    if looks_like_ipv4(s):
         return False
     return True
+
+
+def looks_like_ipv4(s: str) -> bool:
+    return bool(re.match(r"^\d+\.\d+\.\d+\.\d+$", (s or "").strip()))
 
 
 def resolve_dirs_target(ip: str, path_or_url: str) -> str:
@@ -555,13 +560,36 @@ def _run_dirs_phase(
     *,
     urls: Optional[list[str]] = None,
     wordlist: Optional[str] = None,
+    wordlists: Optional[list[str]] = None,
+    dirs_multi: bool = False,
+    dirs_preset: str = "ctf",
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> int:
+    wl_batch: list[Optional[str]]
+    if wordlists:
+        wl_batch = list(wordlists)
+    elif wordlist:
+        wl_batch = [wordlist]
+    else:
+        wl_batch = [None]
+
     print("")
-    print("[*] phase 3: directory brute (gobuster dir, background)")
+    if dirs_multi:
+        print(
+            "[*] phase 3: directory brute (multi, preset="
+            f"{dirs_preset}, {len(wl_batch)} wordlist(s), background)"
+        )
+        if dirs_preset == "deep" and not dry_run:
+            print(
+                f"[!] deep preset runs {len(wl_batch)} jobs per URL"
+                " — consider: scout -ds -p deep -t 10",
+                file=sys.stderr,
+            )
+    else:
+        print("[*] phase 3: directory brute (gobuster dir, background)")
 
     targets: list[tuple[Optional[int], str]] = []
     if urls:
@@ -583,25 +611,26 @@ def _run_dirs_phase(
     rc = 0
     started = 0
     for port, url in targets:
-        try:
-            plan = build_dirs_plan(
-                url,
-                port=port,
-                wordlist=wordlist,
-                threads=threads,
-                extensions=extensions,
-                dry_run=dry_run,
-            )
-        except FileNotFoundError as e:
-            print(f"[-] {e}")
-            return 1
-        except RuntimeError as e:
-            print(f"[-] {e}")
-            return 1
+        for wl in wl_batch:
+            try:
+                plan = build_dirs_plan(
+                    url,
+                    port=port,
+                    wordlist=wl,
+                    threads=threads,
+                    extensions=extensions,
+                    dry_run=dry_run,
+                )
+            except FileNotFoundError as e:
+                print(f"[-] {e}")
+                return 1
+            except RuntimeError as e:
+                print(f"[-] {e}")
+                return 1
 
-        job_id = _dispatch_dirs_job(ip, plan, dry_run=dry_run, force=force)
-        if job_id is not None or dry_run:
-            started += 1
+            job_id = _dispatch_dirs_job(ip, plan, dry_run=dry_run, force=force)
+            if job_id is not None or dry_run:
+                started += 1
 
     if started and not dry_run:
         print("")
@@ -1021,14 +1050,17 @@ def run_scout(
     dry_run: bool = False,
     quiet_ports: bool = False,
     dirs_only: bool = False,
+    dirs_multi: bool = False,
+    dirs_preset: str = "ctf",
     dirs_urls: Optional[list[str]] = None,
     wordlist: Optional[str] = None,
+    wordlists: Optional[list[str]] = None,
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
 ):
     upsert_host(ip, status="up")
 
-    if dirs_only:
+    if dirs_only or dirs_multi:
         if not dirs_urls and not discover_web_targets(ip):
             print("[-] no Web targets in DB — run scout first, or pass a URL")
             return 1
@@ -1036,6 +1068,9 @@ def run_scout(
             ip,
             urls=dirs_urls,
             wordlist=wordlist,
+            wordlists=wordlists,
+            dirs_multi=dirs_multi,
+            dirs_preset=dirs_preset,
             threads=threads,
             extensions=extensions,
             dry_run=dry_run,

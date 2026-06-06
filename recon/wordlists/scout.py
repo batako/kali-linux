@@ -9,6 +9,7 @@ from wordlists.wordlists import WordlistCatalog
 
 SELECTOR_DIRS = "dirs"
 SELECTOR_DIRS_EXT = "dirs-ext"
+DEFAULT_DIRS_MULTI_PRESET = "ctf"
 
 _catalog: Optional[WordlistCatalog] = None
 
@@ -96,3 +97,18 @@ def resolve_scout_wordlist(
 
     selector = scout_selector(extensions=extensions)
     return get_catalog().resolve(spec, category=selector)
+
+
+def resolve_dirs_multi_wordlists(
+    *,
+    preset: str = DEFAULT_DIRS_MULTI_PRESET,
+    wordlist_ids: Optional[list[str]] = None,
+) -> list[str]:
+    """Resolve parallel dir wordlists for scout -ds (preset or explicit ids)."""
+    catalog = get_catalog()
+    if wordlist_ids:
+        ids = wordlist_ids
+    else:
+        entries = catalog.list_dirs_multi_preset(preset)
+        ids = [e.id for e in entries]
+    return [catalog.resolve(wid) for wid in ids]

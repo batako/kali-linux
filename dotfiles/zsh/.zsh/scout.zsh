@@ -18,10 +18,11 @@ scout() {
     fi
   fi
 
-  local ip="" force="" dry="" quiet="" dirs_only="" scout_status="" wait_dirs="" wait_iv=""
+  local ip="" force="" dry="" quiet="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local wordlist="" threads="" ext=""
   local report="" report_ports="" report_exploits="" search_exploits=""
   local -a extra_urls=()
+  local -a wordlist_ids=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -29,6 +30,7 @@ scout() {
         echo "usage: scout [options] [ip|path|url...]  (alias: s)"
         echo ""
         echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
+        echo "  scout -ds           parallel dirs (preset ctf|fast|deep, like gb-dirs)"
         echo ""
         echo "dirs job status (pair):"
         echo "  -s, --status [ip]              show once"
@@ -44,27 +46,37 @@ scout() {
         echo "  scout -r -se [ip]              refresh exploits then full report"
         echo ""
         echo "other:"
-        echo "  -d, --dirs [path]              gobuster dir only"
+        echo "  -d, --dirs [path]              gobuster dir only (single wordlist)"
+        echo "  -ds, --dirs-multi [path]       parallel dirs (see presets below)"
         echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
         echo "  -n, --dry-run                  show planned commands"
         echo "  -q, --quiet                    no port tables after scan"
-        echo "  -w, --wordlist [id]            id/path, or bare -w to pick from list"
-        echo "  -t, --threads                  gobuster threads"
-        echo "  -x, --ext                      extension fuzz (-w omitted → default list)"
+        echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker"
+        echo "  -t, --threads                  gobuster threads (-ds default: 15)"
+        echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
         echo ""
-        echo "wordlist:"
-        echo "  (omit -w)                      catalog default (common unless env set)"
-        echo "  -w                             pick from dirs / dirs-ext (-x decides)"
-        echo "  -w browse                      browse all catalog categories"
+        echo "scout -ds presets (-p / --preset, only with -ds):"
+        echo "  -p is NOT ports (ports report → -rp). With -ds it picks a wordlist bundle:"
+        echo ""
+        echo "    preset   jobs   wordlists"
+        echo "    ctf      3      common + raft-small-directories + quickhits  (default)"
+        echo "    fast     2      common + quickhits"
+        echo "    deep     4      ctf lists + raft-small-files  (use -t 10)"
+        echo ""
+        echo "  s -ds              → preset ctf"
+        echo "  s -ds -p fast      → preset fast"
+        echo "  s -ds -w common -w quickhits   → custom (skip -p)"
+        echo ""
+        echo "wordlist (-d single dir):"
+        echo "  (omit -w)          catalog default (common)"
+        echo "  -w                 picker (dirs or dirs-ext when -x set)"
+        echo "  -w browse          browse all catalog categories"
         echo ""
         echo "examples:"
-        echo "  s -d /admin -x ticket          # default wordlist"
-        echo "  s -d /admin -x ticket -w       # pick"
         echo "  s -d /admin -x ticket -w dirbuster-small"
-        echo "  s -re"
-        echo "  s -rp"
-        echo "  s -se"
-        echo "  s -d /admin"
+        echo "  s -ds /island                 # parallel ctf (3 jobs)"
+        echo "  s -ds -p fast /               # parallel fast (2 jobs)"
+        echo "  s -rp                         # port list (not -p)"
         return 0
         ;;
       -rp|--report-ports)
@@ -83,8 +95,8 @@ scout() {
         report="-r"
         shift
         ;;
-      -p|--ports)
-        echo "[!] -p is deprecated — use -rp" >&2
+      --ports)
+        echo "[!] --ports is deprecated — use -rp" >&2
         report_ports="-rp"
         shift
         ;;
@@ -141,6 +153,30 @@ scout() {
           shift
         fi
         ;;
+      -ds|--dirs-multi)
+        dirs_multi="--dirs-multi"
+        shift
+        if [[ -n "${1:-}" ]] && _scout-is-path "$1"; then
+          extra_urls+=("$1")
+          shift
+        elif [[ -n "${1:-}" && "$1" != -* && ! "$1" =~ $(_recon-ip-re) ]]; then
+          extra_urls+=("$1")
+          shift
+        fi
+        ;;
+      -p|--preset)
+        shift
+        if [[ "${1:-}" =~ ^(ctf|fast|deep)$ ]]; then
+          dirs_preset="-p $1"
+          shift
+        elif [[ -n "$dirs_multi" ]]; then
+          echo "[-] unknown preset: ${1:-} (ctf|fast|deep)" >&2
+          return 1
+        else
+          echo "[!] -p is deprecated for ports — use -rp (or -ds -p ctf|fast|deep)" >&2
+          report_ports="-rp"
+        fi
+        ;;
       --force)
         force="--force"
         shift
@@ -154,11 +190,19 @@ scout() {
         shift
         ;;
       -w|--wordlist)
-        wordlist="-w"
         shift
         if [[ -n "${1:-}" && "${1:-}" != -* ]]; then
-          wordlist+=" $1"
+          if [[ -n "$dirs_multi" ]]; then
+            wordlist_ids+=(-w "$1")
+          else
+            wordlist="-w $1"
+          fi
           shift
+        elif [[ -n "$dirs_multi" ]]; then
+          echo "[-] scout -ds needs -p preset or repeated -w <catalog-id>" >&2
+          return 1
+        else
+          wordlist="-w"
         fi
         ;;
       -t)
@@ -184,12 +228,12 @@ scout() {
       *)
         if [[ "$1" =~ $(_recon-ip-re) ]]; then
           ip="$1"
-        elif [[ -n "$dirs_only" ]] && _scout-is-path "$1"; then
+        elif [[ -n "$dirs_only$dirs_multi" ]] && _scout-is-path "$1"; then
           extra_urls+=("$1")
-        elif [[ -n "$dirs_only" && "$1" != -* ]]; then
+        elif [[ -n "$dirs_only$dirs_multi" && "$1" != -* ]]; then
           extra_urls+=("$1")
         else
-          echo "[-] expected ip or use -d with path, got: $1" >&2
+          echo "[-] expected ip or use -d/-ds with path, got: $1" >&2
           return 1
         fi
         shift
@@ -207,6 +251,21 @@ scout() {
   fi
   if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" ) ]]; then
     echo "[-] -se combines with -r only (or use alone)" >&2
+    return 1
+  fi
+
+  if [[ -n "$dirs_only" && -n "$dirs_multi" ]]; then
+    echo "[-] use -d or -ds, not both" >&2
+    return 1
+  fi
+
+  if [[ -n "$dirs_preset" && -z "$dirs_multi" ]]; then
+    echo "[-] -p/--preset requires scout -ds" >&2
+    return 1
+  fi
+
+  if [[ ${#wordlist_ids[@]} -gt 0 && -z "$dirs_multi" ]]; then
+    echo "[-] repeat -w requires scout -ds" >&2
     return 1
   fi
 
@@ -234,14 +293,21 @@ scout() {
   [[ -n "$wait_dirs" ]] && args+=("$wait_dirs")
   [[ -n "$wait_iv" ]] && args+=("$wait_iv")
   [[ -n "$dirs_only" ]] && args+=("$dirs_only")
+  [[ -n "$dirs_multi" ]] && args+=("$dirs_multi")
+  [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
   [[ -n "$force" ]] && args+=("$force")
   [[ -n "$dry" ]] && args+=(-n)
   [[ -n "$quiet" ]] && args+=(-q)
-  [[ -n "$wordlist" ]] && args+=(${=wordlist})
+  args+=("${extra_urls[@]}")
   [[ -n "$threads" ]] && args+=(${=threads})
   [[ -n "$ext" ]] && args+=(${=ext})
   args+=("$ip")
-  args+=("${extra_urls[@]}")
+  # -w after ip so bare `-w` is not parsed as `-w <ip>` in recon.py
+  if (( ${#wordlist_ids[@]} )); then
+    args+=("${wordlist_ids[@]}")
+  elif [[ -n "$wordlist" ]]; then
+    args+=(${=wordlist})
+  fi
 
   python3 "$RECON_APP" "${args[@]}"
 }
@@ -256,6 +322,9 @@ _scout() {
     '-s[dirs status once]' '--status[dirs status once]' \
     '-ws[wait for dirs jobs]:sec:' '--wait-dirs[wait for dirs jobs]:sec:' \
     '-d[dirs only]:path:_path_files' '--dirs[dirs only]:path:_path_files' \
+    '-ds[parallel dirs]:path:_path_files' '--dirs-multi[parallel dirs]:path:_path_files' \
+    '-p[preset ctf|fast|deep with -ds]:preset:(ctf fast deep)' \
+    '--preset[preset with -ds]:preset:(ctf fast deep)' \
     '--force[rescan ports / re-dispatch dirs]' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \

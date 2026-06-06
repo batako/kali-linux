@@ -148,6 +148,10 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -d`（`-w` 省略） | catalog default（`common` 等） |
 | `scout -d -w` | 対話ピッカー（`-x` で dirs / dirs-ext） |
 | `scout -d -w browse` | 全カテゴリ browse |
+| `scout -ds` / `-ds [path]` | **並列 dir**（3 本 preset **ctf** 既定） |
+| `scout -ds -p fast` | 2 本: common + quickhits |
+| `scout -ds -p deep` | 4 本: ctf + raft-small-files（`-t 10` 推奨） |
+| `scout -ds -w id -w id` | preset の代わりに id を明示 |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -219,6 +223,9 @@ scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
+scout -ds /island
+scout -ds -p fast
+scout -ds -p deep -t 10
 scout --force              # dirs / scan をやり直す
 ```
 
@@ -258,7 +265,7 @@ http://10.49.140.183/
 | スキャン・同期プローブ | コンソール、`el` / `ev`（probe は成功済みなら `(cached)`） |
 | ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
 
-手動で gobuster を回す場合は下記「Gobuster」の `gb-dirs`（並列）を使う。単一 wordlist の dir は **`scout -d`**。
+手動で gobuster を回す場合は **`scout -ds`**（並列）または **`scout -d`**（単一 wordlist）。
 
 ---
 
@@ -416,16 +423,23 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 
 ## Gobuster
 
-偵察フローでは **`scout -d`** が dir 探索の正。並列プリセットや DNS / vhost はこちら。
+偵察フローでは **`scout -d`**（単一） / **`scout -ds`**（並列）が dir 探索の正。DNS / vhost はこちら。
 
 | コマンド | 説明 |
 |----------|------|
 | `scout -d [path]` | 単一 wordlist（catalog default / `-w` / ピッカー）— 上記「偵察（scout）」参照 |
-| `gb-dirs [opts] [url]` | 複数リスト並列。ログは `cases/.../logs/` |
+| `scout -ds [path]` | 並列 dir（`-p ctf\|fast\|deep`、DB ジョブ + 自動 watch） |
+| `gb-dirs [opts] [url]` | **非推奨** — `scout -ds` へ委譲 |
 | `gb-dns [domain]` | DNS |
 | `gb-vhost ...` | vhost |
 
-`gb-dirs` プリセット: `ctf`（既定）, `fast`, `deep` — `gb-dirs -h`
+`scout -ds` プリセット（**`-p` = preset、ポートではない** — ポート一覧は `-rp`）:
+
+| `-p` | 本数 | 内容 |
+|------|------|------|
+| `ctf`（省略時） | 3 | common + raft-small-directories + quickhits |
+| `fast` | 2 | common + quickhits |
+| `deep` | 4 | ctf + raft-small-files |
 
 DNS ワードリストの対話設定:
 
@@ -435,9 +449,10 @@ DNS ワードリストの対話設定:
 
 ```bash
 cs overpass
-scout -d /admin -x ticket -w dirbuster-small   # 単一 dir（推奨）
-gb-dirs
-gb-dirs -p fast -n http://$IP
+scout -d /admin -x ticket -w dirbuster-small   # 単一 dir
+scout -ds                                      # 並列 preset ctf
+scout -ds -p fast -n
+scout -ds /island
 gb-vhost              # http + https 両方
 gb-dns example.com
 ```
@@ -589,6 +604,6 @@ hydraweb   # 引数不足時に usage 表示
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
-`gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
+`scout -ds` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
 `enc` `rot` `vig` `fixmagic` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

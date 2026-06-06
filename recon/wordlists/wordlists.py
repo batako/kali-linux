@@ -43,6 +43,13 @@ class SelectorSpec:
     entry_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class DirsMultiPreset:
+    id: str
+    description: str
+    entry_ids: tuple[str, ...]
+
+
 @dataclass
 class ValidationIssue:
     level: str  # error | warn
@@ -58,6 +65,7 @@ class WordlistCatalog:
         self._entries_by_id: dict[str, CatalogEntry] = {}
         self._entries_by_path: dict[str, CatalogEntry] = {}
         self._selectors: dict[str, SelectorSpec] = {}
+        self._dirs_multi_presets: dict[str, DirsMultiPreset] = {}
         self._build_indexes()
 
     @classmethod
@@ -120,6 +128,21 @@ class WordlistCatalog:
                 entry_ids=tuple(str(x) for x in entry_ids),
             )
 
+        presets = self._raw.get("dirs_multi_presets") or {}
+        if not isinstance(presets, dict):
+            raise ValueError("catalog.dirs_multi_presets must be a map")
+        for pid, raw in presets.items():
+            if not isinstance(raw, dict):
+                continue
+            entry_ids = raw.get("entry_ids") or raw.get("entries") or []
+            if not isinstance(entry_ids, list):
+                entry_ids = []
+            self._dirs_multi_presets[str(pid)] = DirsMultiPreset(
+                id=str(pid),
+                description=str(raw.get("description") or ""),
+                entry_ids=tuple(str(x) for x in entry_ids),
+            )
+
     @property
     def entries(self) -> list[CatalogEntry]:
         return list(self._entries_by_id.values())
@@ -127,6 +150,25 @@ class WordlistCatalog:
     @property
     def selectors(self) -> dict[str, SelectorSpec]:
         return dict(self._selectors)
+
+    @property
+    def dirs_multi_presets(self) -> dict[str, DirsMultiPreset]:
+        return dict(self._dirs_multi_presets)
+
+    def list_dirs_multi_preset(self, preset_id: str) -> list[CatalogEntry]:
+        spec = self._dirs_multi_presets.get(preset_id)
+        if spec is None:
+            known = ", ".join(sorted(self._dirs_multi_presets))
+            raise ValueError(f"unknown dirs preset: {preset_id} (known: {known})")
+        out: list[CatalogEntry] = []
+        for eid in spec.entry_ids:
+            entry = self._entries_by_id.get(eid)
+            if entry is None:
+                raise ValueError(
+                    f"preset {preset_id!r} references missing entry id: {eid}"
+                )
+            out.append(entry)
+        return out
 
     def get(self, entry_id: str) -> Optional[CatalogEntry]:
         return self._entries_by_id.get(entry_id)
@@ -253,6 +295,20 @@ class WordlistCatalog:
                         ValidationIssue(
                             "error",
                             f"selector {sid!r} {label}={target!r} not in entry_ids",
+                        )
+                    )
+
+        for pid, spec in self._dirs_multi_presets.items():
+            if not spec.entry_ids:
+                issues.append(
+                    ValidationIssue("error", f"dirs_multi preset {pid!r} has no entry_ids")
+                )
+            for eid in spec.entry_ids:
+                if eid not in self._entries_by_id:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            f"preset {pid!r} references unknown id: {eid}",
                         )
                     )
 

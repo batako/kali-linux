@@ -114,6 +114,36 @@ class WordlistCatalogTests(unittest.TestCase):
         )
         self.assertIsNone(picked)
 
+    def test_dirs_multi_preset_ctf(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(preset="ctf")
+        self.assertEqual(len(paths), 3)
+        names = {Path(p).name for p in paths}
+        self.assertIn("common.txt", names)
+        self.assertIn("raft-small-directories.txt", names)
+        self.assertIn("quickhits.txt", names)
+
+    def test_dirs_multi_preset_fast(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(preset="fast")
+        self.assertEqual(len(paths), 2)
+
+    def test_dirs_multi_custom_ids(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(
+            wordlist_ids=["common", "quickhits"],
+        )
+        self.assertEqual(len(paths), 2)
+
+    def test_dirs_multi_unknown_preset(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        with self.assertRaises(ValueError):
+            resolve_dirs_multi_wordlists(preset="nope")
+
     def test_unique_paths_and_ids(self) -> None:
         ids = [e.id for e in self.catalog.entries]
         paths = [e.path for e in self.catalog.entries]

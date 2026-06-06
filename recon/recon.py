@@ -37,8 +37,11 @@ from scout_run import show_scout_report_exploits
 from scout_run import show_scout_status
 from scout_exploit import run_exploit_phase
 from scout_run import is_dirs_path_arg
+from scout_run import looks_like_ipv4
 from scout_run import DEFAULT_GB_THREADS
+from scout_run import DEFAULT_DIRS_MULTI_THREADS
 from wordlists.scout import resolve_scout_wordlist
+from wordlists.scout import resolve_dirs_multi_wordlists
 from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
@@ -296,6 +299,9 @@ def main():
         dry_run = False
         quiet_ports = False
         dirs_only = False
+        dirs_multi = False
+        dirs_only_flag = False
+        dirs_preset = "ctf"
         search_exploits_only = False
         force_exploit = False
         status_mode = False
@@ -303,7 +309,9 @@ def main():
         wait_dirs_interval_sec = 2.0
         wordlist_spec: Optional[str] = None
         wordlist_from_flag = False
+        wordlist_ids: list[str] = []
         threads = DEFAULT_GB_THREADS
+        threads_set = False
         if os.environ.get("GB_THREADS"):
             try:
                 threads = int(os.environ["GB_THREADS"])
@@ -336,11 +344,31 @@ def main():
                 print("[-] use -ws (or --wait-dirs), not --watch")
                 sys.exit(1)
             elif a in ("-d", "--dirs"):
+                if dirs_multi:
+                    print("[-] use -d or -ds, not both")
+                    sys.exit(1)
+                dirs_only = True
+                dirs_only_flag = True
+                args = args[1:]
+                if args and is_dirs_path_arg(args[0]):
+                    dirs_urls.append(args[0])
+                    args = args[1:]
+            elif a in ("-ds", "--dirs-multi"):
+                if dirs_only_flag:
+                    print("[-] use -d or -ds, not both")
+                    sys.exit(1)
+                dirs_multi = True
                 dirs_only = True
                 args = args[1:]
                 if args and is_dirs_path_arg(args[0]):
                     dirs_urls.append(args[0])
                     args = args[1:]
+            elif a in ("-p", "--preset"):
+                if len(args) < 2:
+                    print("usage: recon.py scout -ds -p ctf|fast|deep [ip|url]")
+                    sys.exit(1)
+                dirs_preset = args[1]
+                args = args[2:]
             elif a in SCOUT_SEARCH_EXPLOITS_FLAGS:
                 search_exploits_only = True
                 args = args[1:]
@@ -360,18 +388,35 @@ def main():
                 quiet_ports = True
                 args = args[1:]
             elif a in ("-w", "--wordlist"):
-                wordlist_from_flag = True
                 args = args[1:]
                 if args and not args[0].startswith("-"):
-                    wordlist_spec = args[0]
-                    args = args[1:]
+                    if (
+                        not dirs_multi
+                        and looks_like_ipv4(args[0])
+                        and not wordlist_from_flag
+                    ):
+                        # bare `-w` with ip next (legacy arg order) — not `-w <ip>`
+                        wordlist_from_flag = True
+                        wordlist_spec = ""
+                    elif dirs_multi:
+                        wordlist_ids.append(args[0])
+                        args = args[1:]
+                    else:
+                        wordlist_from_flag = True
+                        wordlist_spec = args[0]
+                        args = args[1:]
                 else:
+                    if dirs_multi:
+                        print("[-] scout -ds needs -p preset or repeated -w <catalog-id>")
+                        sys.exit(1)
+                    wordlist_from_flag = True
                     wordlist_spec = ""
             elif a in ("-t", "--threads"):
                 if len(args) < 2:
                     print("usage: recon.py scout --dirs -t <N> [ip|url]")
                     sys.exit(1)
                 threads = int(args[1])
+                threads_set = True
                 args = args[2:]
             elif a in ("-x", "--ext", "--extensions"):
                 if len(args) < 2:
@@ -407,14 +452,14 @@ def main():
 
         if search_exploits_only:
             if status_mode or wait_dirs_mode or dirs_only:
-                print("[-] -se does not combine with -s, -ws, or -d")
+                print("[-] -se does not combine with -s, -ws, -d, or -ds")
                 sys.exit(1)
             rc = run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
             sys.exit(0 if rc == 0 else 1)
 
         if status_mode or wait_dirs_mode:
             if dirs_only or search_exploits_only or force_scan or force_dirs or dry_run or quiet_ports:
-                print("[-] -s/-ws does not take -d, -se, --force, -n, or -q")
+                print("[-] -s/-ws does not take -d, -ds, -se, --force, -n, or -q")
                 sys.exit(1)
             if dirs_urls or extensions is not None:
                 print("[-] --status/--wait-dirs does not take paths, -w, -t, or -x")
@@ -426,20 +471,47 @@ def main():
             )
             sys.exit(0 if rc == 0 else 1)
 
-        try:
-            wordlist = resolve_scout_wordlist(
-                wordlist_spec if wordlist_from_flag else None,
-                extensions=extensions,
-                from_flag=wordlist_from_flag,
-            )
-        except ValueError as exc:
-            print(f"[-] {exc}", file=sys.stderr)
-            print(
-                "[i] catalog ids: recon.py wordlist list --for dirs"
-                + ("-ext" if extensions else ""),
-                file=sys.stderr,
-            )
+        if dirs_preset != "ctf" and not dirs_multi:
+            print("[-] -p/--preset requires scout -ds")
             sys.exit(1)
+
+        if wordlist_ids and not dirs_multi:
+            print("[-] repeat -w requires scout -ds")
+            sys.exit(1)
+
+        wordlists: list[str] | None = None
+        wordlist: str | None = None
+
+        if dirs_multi:
+            if not threads_set:
+                threads = DEFAULT_DIRS_MULTI_THREADS
+            try:
+                wordlists = resolve_dirs_multi_wordlists(
+                    preset=dirs_preset,
+                    wordlist_ids=wordlist_ids or None,
+                )
+            except ValueError as exc:
+                print(f"[-] {exc}", file=sys.stderr)
+                print(
+                    "[i] presets: ctf, fast, deep — recon.py wordlist list --for dirs",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        else:
+            try:
+                wordlist = resolve_scout_wordlist(
+                    wordlist_spec if wordlist_from_flag else None,
+                    extensions=extensions,
+                    from_flag=wordlist_from_flag,
+                )
+            except ValueError as exc:
+                print(f"[-] {exc}", file=sys.stderr)
+                print(
+                    "[i] catalog ids: recon.py wordlist list --for dirs"
+                    + ("-ext" if extensions else ""),
+                    file=sys.stderr,
+                )
+                sys.exit(1)
 
         rc = run_scout(
             ip,
@@ -447,9 +519,12 @@ def main():
             force_dirs=force_dirs,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
-            dirs_only=dirs_only,
+            dirs_only=dirs_only and not dirs_multi,
+            dirs_multi=dirs_multi,
+            dirs_preset=dirs_preset,
             dirs_urls=dirs_urls or None,
             wordlist=wordlist,
+            wordlists=wordlists,
             threads=threads,
             extensions=extensions,
         )

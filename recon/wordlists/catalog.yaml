@@ -17,6 +17,25 @@ selectors:
     - common
     - dirbuster-small
     - dirbuster-medium
+dirs_multi_presets:
+  ctf:
+    description: common + raft-small-directories + quickhits (parallel, CTF default)
+    entry_ids:
+    - common
+    - raft-small-directories
+    - quickhits
+  fast:
+    description: common + quickhits (2 jobs)
+    entry_ids:
+    - common
+    - quickhits
+  deep:
+    description: ctf + raft-small-files (4 jobs; use lower -t)
+    entry_ids:
+    - common
+    - raft-small-directories
+    - quickhits
+    - discovery-web-content-raft-small-files
 categories:
 - id: discovery-dns
   name: Discovery / DNS

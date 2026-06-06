@@ -28,21 +28,19 @@
 
 ### Gobuster 並列（dir）
 
-単一 wordlist の dir は **`scout -d`**（catalog / `-w` / ピッカー）。複数リスト並列は `gb-dirs`。
-
 | コマンド | 用途 |
 |----------|------|
-| `scout -d [path]` | 1 ワードリスト（偵察パイプライン、ログは `cases/.../logs/`） |
-| `gb-dirs` | 重複しにくい複数リストを並列（ログは `cases/.../logs/`） |
+| `scout -d [path]` | 1 ワードリスト |
+| `scout -ds [path]` | 複数リスト並列（preset ctf / fast / deep） |
+
+`gb-dirs` は非推奨（内部で `scout -ds` に委譲）。
 
 ```bash
-cs overpass          # cases/<name>/target があれば $IP 自動復元
-ts 10.48.160.112     # target-set の短縮（案件内なら target に保存）
 scout -d /            # catalog default（common）
-scout -d / -w         # ピッカー
-gb-dirs              # preset ctf: common + raft-small-directories + quickhits
-gb-dirs -p fast      # 2 本
-gb-dirs -n http://$IP   # dry-run
+scout -ds             # parallel preset ctf
+scout -ds /island
+scout -ds -p fast
+scout -ds -n
 ```
 
 ## レイアウト
