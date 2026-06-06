@@ -23,7 +23,7 @@ from db import set_task_status
 DEFAULT_TIMEOUT_SEC = 300
 DEFAULT_EXEC_SHELL = os.environ.get("RECON_EXEC_SHELL", "zsh")
 DEFAULT_EXEC_MODE = os.environ.get("RECON_EXEC_MODE", "shell")  # shell|argv
-# Load zsh aliases/functions (scan, gb-dir, etc.) before running the command.
+# Load zsh aliases/functions (scan, scout, gb-dirs, etc.) before running the command.
 DEFAULT_EXEC_INIT = os.environ.get(
     "RECON_EXEC_INIT",
     "[[ -f ~/.zshrc ]] && source ~/.zshrc; setopt aliases 2>/dev/null",

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from typing import Optional
 
@@ -38,12 +37,8 @@ def default_wordlist_id(*, extensions: Optional[str]) -> str:
 
 
 def default_wordlist_spec(*, extensions: Optional[str]) -> str:
-    """Env override (id or path) or catalog default id."""
-    if extensions:
-        return os.environ.get("GB_DIRS_EXT_WORDLIST") or default_wordlist_id(
-            extensions=extensions
-        )
-    return os.environ.get("GB_WORDLIST") or default_wordlist_id(extensions=None)
+    """Catalog default id for scout -d when -w is omitted."""
+    return default_wordlist_id(extensions=extensions)
 
 
 def _pick_mode(value: str) -> Optional[str]:

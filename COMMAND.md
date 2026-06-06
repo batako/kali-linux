@@ -12,9 +12,9 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 | `cs <name>` | 案件ディレクトリを用意して選択（下記「案件」参照） |
 | `recon.db` | `/workspace/recon/recon.db`（creds・実行履歴） |
 | `RECON_PASSLIST` | john / hydra / stegcracker の既定ワードリスト |
-| `GB_WORDLIST` | `gb-dir` / `gb-vhost` 用（`gb-set-web` で変更可） |
+| `GB_VHOST_WORDLIST` | `gb-vhost` 用（既定: raft-small-words） |
 | `GB_DNS_WORDLIST` | `gb-dns` 用（`gb-set-dns`） |
-| `GB_THREADS` | gobuster スレッド（`gb-set-threads`、既定 30 程度） |
+| `GB_THREADS` | `gb-dns` / `gb-vhost` の gobuster スレッド（既定 40） |
 | `SCOUT_STATUS_SLOTS` | `scout -s` / `-ws` で表示する **完了 dirs ジョブ**の上限（既定 **4**） |
 | `CASE_LOOSE=1` | 案件未設定時に `cases/_unscoped/` へフォールバック |
 
@@ -258,7 +258,7 @@ http://10.49.140.183/
 | スキャン・同期プローブ | コンソール、`el` / `ev`（probe は成功済みなら `(cached)`） |
 | ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
 
-手動で gobuster を回す場合は下記「Gobuster」の `gb-dir` / `gb-dirs` を使う。
+手動で gobuster を回す場合は下記「Gobuster」の `gb-dirs`（並列）を使う。単一 wordlist の dir は **`scout -d`**。
 
 ---
 
@@ -416,27 +416,26 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 
 ## Gobuster
 
-偵察フローでは **`scout`** が dir 探索を起動する。直接 gobuster を回す・プリセットを細かく選ぶときはこちら。
+偵察フローでは **`scout -d`** が dir 探索の正。並列プリセットや DNS / vhost はこちら。
 
 | コマンド | 説明 |
 |----------|------|
-| `gb-dir [url] [-x ext]` | 単一ワードリスト（`$GB_WORDLIST`） |
+| `scout -d [path]` | 単一 wordlist（catalog default / `-w` / ピッカー）— 上記「偵察（scout）」参照 |
 | `gb-dirs [opts] [url]` | 複数リスト並列。ログは `cases/.../logs/` |
 | `gb-dns [domain]` | DNS |
 | `gb-vhost ...` | vhost |
 
 `gb-dirs` プリセット: `ctf`（既定）, `fast`, `deep` — `gb-dirs -h`
 
-対話で環境変数を設定:
+DNS ワードリストの対話設定:
 
 | コマンド | 説明 |
 |----------|------|
-| `gb-set-web` | `GB_WORDLIST` を選択 |
 | `gb-set-dns` | `GB_DNS_WORDLIST` を選択 |
-| `gb-set-threads` | `GB_THREADS` を選択 |
 
 ```bash
 cs overpass
+scout -d /admin -x ticket -w dirbuster-small   # 単一 dir（推奨）
 gb-dirs
 gb-dirs -p fast -n http://$IP
 gb-vhost              # http + https 両方
@@ -590,6 +589,6 @@ hydraweb   # 引数不足時に usage 表示
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
-`gb-dir` `gb-dirs` `gb-dns` `gb-vhost` `gb-set-web` `gb-set-dns` `gb-set-threads` ·
+`gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upsh` `upload-shell` `shell-url` `shell-cmd` ·
 `enc` `rot` `vig` `fixmagic` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
