@@ -718,8 +718,14 @@ enc() {
         break
         ;;
       -*)
-        echo "enc: unknown option: $1" >&2
-        return 1
+        # Encoded strings may start with '-' (base64url, etc.); after -d/-e treat as input.
+        if [[ -n "$mode" ]]; then
+          positional+=("$1")
+          shift
+        else
+          echo "enc: unknown option: $1" >&2
+          return 1
+        fi
         ;;
       *)
         positional+=("$1")
@@ -1119,7 +1125,11 @@ if period < len(recovered):
 # backward-compatible aliases
 dec() {
   [[ "${1:-}" == -h || "${1:-}" == --help ]] && { enc -h; return; }
-  enc -d "$@"
+  if (( $# )); then
+    enc -d -- "$@"
+  else
+    enc -d
+  fi
 }
 
 b64d() {

