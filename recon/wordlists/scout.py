@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import sys
+from typing import Callable
 from typing import Optional
 
 from wordlists.wordlists import WordlistCatalog
 
 SELECTOR_DIRS = "dirs"
 SELECTOR_DIRS_EXT = "dirs-ext"
-DEFAULT_DIRS_MULTI_PRESET = "ctf"
+DEFAULT_DIRS_MULTI_PRESET = "standard"
+DEFAULT_DIRS_MULTI_TIER = "standard"
 
 _catalog: Optional[WordlistCatalog] = None
 
@@ -99,34 +101,93 @@ def resolve_scout_wordlist(
     return get_catalog().resolve(spec, category=selector)
 
 
+def _done_wordlist_paths(ip: str, url: str) -> set[str]:
+    from db import list_scout_jobs
+    from url_util import canonicalize_url
+
+    canon = canonicalize_url((url or "").strip())
+    done: set[str] = set()
+    for status in ("running", "done"):
+        for row in list_scout_jobs(ip, kind="dirs", status=status, limit=500):
+            row_url = canonicalize_url((row["url"] or "").strip())
+            if row_url != canon:
+                continue
+            wl = (row["wordlist"] or "").strip()
+            if wl:
+                done.add(wl)
+    return done
+
+
+def resolve_dirs_multi_wordlist_ids(
+    *,
+    preset: str = DEFAULT_DIRS_MULTI_PRESET,
+    wordlist_ids: Optional[list[str]] = None,
+    extensions: Optional[str] = None,
+    preset_from_flag: bool = False,
+    preset_is_next: bool = False,
+    ip: Optional[str] = None,
+    url: Optional[str] = None,
+    warn: Optional[Callable[[str], None]] = None,
+) -> tuple[list[str], str]:
+    """Resolve catalog ids for scout -ds.
+
+    Returns (ids, label) where label describes the tier/source for logging.
+    """
+    catalog = get_catalog()
+    ext = bool(extensions)
+
+    if wordlist_ids:
+        return list(wordlist_ids), "custom"
+
+    raw_preset = (preset or DEFAULT_DIRS_MULTI_PRESET).strip().lower()
+
+    if preset_is_next or raw_preset == "next":
+        if not ip or not url:
+            raise ValueError("-p next requires a target URL (pass path or ip with web target)")
+        done = _done_wordlist_paths(ip, url)
+        tier, label, pending = catalog.next_tier_adds(
+            extensions=ext,
+            done_wordlist_paths=done,
+        )
+        if not pending:
+            return [], "done"
+        return list(pending), f"next/{tier}"
+
+    if preset_from_flag:
+        hint = catalog.preset_deprecated_hint(raw_preset, extensions=ext)
+        if hint and warn:
+            warn(f"[!] {hint} — use -p {catalog.normalize_preset_id(raw_preset, extensions=ext)}")
+        tier = catalog.normalize_preset_id(raw_preset, extensions=ext)
+        ids = list(catalog.cumulative_preset_ids(tier, extensions=ext))
+        return ids, tier
+
+    # Default -ds: standard tier cumulative
+    tier = DEFAULT_DIRS_MULTI_TIER
+    ids = list(catalog.cumulative_preset_ids(tier, extensions=ext))
+    return ids, tier
+
+
 def resolve_dirs_multi_wordlists(
     *,
     preset: str = DEFAULT_DIRS_MULTI_PRESET,
     wordlist_ids: Optional[list[str]] = None,
     extensions: Optional[str] = None,
     preset_from_flag: bool = False,
+    preset_is_next: bool = False,
+    ip: Optional[str] = None,
+    url: Optional[str] = None,
+    warn: Optional[Callable[[str], None]] = None,
 ) -> list[str]:
-    """Resolve parallel dir wordlists for scout -ds.
-
-    - Explicit -w ids: those entries only.
-    - -x set, no -p: all dirs-ext selector entries (same pool as ``-d -x -w`` picker).
-    - -x set + -p: dirs_ext_multi_presets subset (fast/deep/ctf).
-    - -p set (no -x): dirs_multi_presets subset (fast/deep/ctf).
-    - Default (no -x, no -p): all dirs selector entries (same pool as ``-d -w`` picker).
-    """
+    """Resolve parallel dir wordlist paths for scout -ds."""
+    ids, _label = resolve_dirs_multi_wordlist_ids(
+        preset=preset,
+        wordlist_ids=wordlist_ids,
+        extensions=extensions,
+        preset_from_flag=preset_from_flag,
+        preset_is_next=preset_is_next,
+        ip=ip,
+        url=url,
+        warn=warn,
+    )
     catalog = get_catalog()
-    if wordlist_ids:
-        ids = wordlist_ids
-    elif extensions:
-        if preset_from_flag:
-            entries = catalog.list_dirs_ext_multi_preset(preset)
-        else:
-            entries = catalog.list_selector(SELECTOR_DIRS_EXT)
-        ids = [e.id for e in entries]
-    elif preset_from_flag:
-        entries = catalog.list_dirs_multi_preset(preset)
-        ids = [e.id for e in entries]
-    else:
-        entries = catalog.list_selector(SELECTOR_DIRS)
-        ids = [e.id for e in entries]
     return [catalog.resolve(wid) for wid in ids]

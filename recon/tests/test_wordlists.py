@@ -124,44 +124,73 @@ class WordlistCatalogTests(unittest.TestCase):
         self.assertIn("raft-small-directories.txt", names)
         self.assertIn("quickhits.txt", names)
 
-    def test_dirs_multi_preset_ctf(self) -> None:
+    def test_dirs_multi_preset_standard(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(preset="standard", preset_from_flag=True)
+        self.assertEqual(len(paths), 3)
+
+    def test_dirs_multi_preset_ctf_alias(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
         paths = resolve_dirs_multi_wordlists(preset="ctf", preset_from_flag=True)
         self.assertEqual(len(paths), 3)
-        names = {Path(p).name for p in paths}
-        self.assertIn("common.txt", names)
-        self.assertIn("raft-small-directories.txt", names)
-        self.assertIn("quickhits.txt", names)
 
-    def test_dirs_multi_preset_fast(self) -> None:
+    def test_dirs_multi_preset_light(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(preset="light", preset_from_flag=True)
+        self.assertEqual(len(paths), 2)
+
+    def test_dirs_multi_preset_fast_alias(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
         paths = resolve_dirs_multi_wordlists(preset="fast", preset_from_flag=True)
         self.assertEqual(len(paths), 2)
 
-    def test_dirs_multi_ext_selector(self) -> None:
+    def test_dirs_multi_preset_wide(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
-        paths = resolve_dirs_multi_wordlists(extensions="ticket")
-        self.assertEqual(len(paths), 3)
+        paths = resolve_dirs_multi_wordlists(preset="wide", preset_from_flag=True)
+        self.assertEqual(len(paths), 4)
+
+    def test_dirs_multi_preset_deep(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(preset="deep", preset_from_flag=True)
+        self.assertEqual(len(paths), 6)
         names = {Path(p).name for p in paths}
-        self.assertIn("common.txt", names)
         self.assertIn("DirBuster-2007_directory-list-2.3-small.txt", names)
-        self.assertIn("DirBuster-2007_directory-list-2.3-medium.txt", names)
+        self.assertIn("raft-small-words.txt", names)
 
-    def test_dirs_multi_ext_preset_fast(self) -> None:
+    def test_dirs_multi_ext_default_standard(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
-        paths = resolve_dirs_multi_wordlists(
-            preset="fast",
-            extensions="ticket",
-            preset_from_flag=True,
-        )
+        paths = resolve_dirs_multi_wordlists(extensions="php")
         self.assertEqual(len(paths), 2)
         names = {Path(p).name for p in paths}
         self.assertIn("common.txt", names)
         self.assertIn("DirBuster-2007_directory-list-2.3-small.txt", names)
+
+    def test_dirs_multi_ext_preset_light(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(
+            preset="light",
+            extensions="php",
+            preset_from_flag=True,
+        )
+        self.assertEqual(len(paths), 1)
+
+    def test_dirs_multi_ext_preset_fast_alias(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(
+            preset="fast",
+            extensions="php",
+            preset_from_flag=True,
+        )
+        self.assertEqual(len(paths), 1)
 
     def test_dirs_multi_ext_preset_deep(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
@@ -196,6 +225,29 @@ class WordlistCatalogTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             resolve_dirs_multi_wordlists(preset="nope", preset_from_flag=True)
+
+    def test_next_tier_adds(self) -> None:
+        done = {
+            self.catalog.resolve("common"),
+            self.catalog.resolve("quickhits"),
+            self.catalog.resolve("raft-small-directories"),
+        }
+        tier, _label, pending = self.catalog.next_tier_adds(
+            extensions=False,
+            done_wordlist_paths=done,
+        )
+        self.assertEqual(tier, "wide")
+        self.assertEqual(pending, ("discovery-web-content-raft-small-files",))
+
+    def test_next_tier_all_done(self) -> None:
+        ids = self.catalog.cumulative_preset_ids("deep", extensions=False)
+        done = {self.catalog.resolve(i) for i in ids}
+        tier, _label, pending = self.catalog.next_tier_adds(
+            extensions=False,
+            done_wordlist_paths=done,
+        )
+        self.assertEqual(tier, "")
+        self.assertEqual(pending, ())
 
     def test_unique_paths_and_ids(self) -> None:
         ids = [e.id for e in self.catalog.entries]

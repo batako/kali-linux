@@ -20,7 +20,7 @@ scout() {
 
   local ip="" force="" dry="" quiet="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local wordlist="" threads="" ext=""
-  local report="" report_ports="" report_exploits="" search_exploits=""
+  local report="" report_ports="" report_exploits="" report_paths="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
 
@@ -30,7 +30,7 @@ scout() {
         echo "usage: scout [options] [ip|path|url...]  (alias: s)"
         echo ""
         echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
-        echo "  scout -ds           parallel dirs (preset ctf|fast|deep, like gb-dirs)"
+        echo "  scout -ds           parallel dirs (preset tiers; default standard)"
         echo ""
         echo "dirs job status (pair):"
         echo "  -s, --status [ip]              show once"
@@ -40,6 +40,7 @@ scout() {
         echo "  -r, --report [ip]              full report"
         echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
         echo "  -re, --report-exploits [ip]   EXPLOITS"
+        echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
         echo ""
         echo "search (always refreshes exploit cache; e.g. after searchsploit -u):"
         echo "  -se, --search-exploits [ip]    searchsploit → cache (also in scout)"
@@ -60,30 +61,42 @@ scout() {
         echo "  -x (extensions) is NOT part of the cache key — use --force to rerun with different -x"
         echo "  -n, --dry-run                  show planned commands"
         echo "  -q, --quiet                    no port tables after scan"
-        echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker"
+        echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker (-h: tier table below)"
         echo "  -t, --threads                  gobuster threads (-ds default: 15)"
         echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
         echo ""
-        echo "scout -ds (parallel; same pool as -d -w picker):"
+        echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
         echo "  -p is NOT ports (ports report → -rp)."
         echo ""
-        echo "    (no -x)  dirs selector     → 3 jobs (common, quickhits, raft-small-directories)"
-        echo "    -x EXT   dirs-ext selector  → 3 jobs (common, dirbuster-small, dirbuster-medium)"
+        echo "  dirs (no -x):"
+        echo "    light     common, quickhits"
+        echo "    standard  + raft-small-directories          (default -ds)"
+        echo "    wide      + raft-small-files"
+        echo "    deep      + dirbuster-small, raft-small-words"
         echo ""
-        echo "  -p subsets: fast, deep, ctf (dirs or dirs-ext when -x set)"
+        echo "  dirs-ext (-x EXT):"
+        echo "    light     common"
+        echo "    standard  + dirbuster-small                 (default -ds -x)"
+        echo "    wide      + dirbuster-medium"
+        echo "    deep      + raft-small-files"
         echo ""
-        echo "wordlist (-d single dir):"
-        echo "  (omit -w)          catalog default (common)"
-        echo "  -w                 picker (dirs or dirs-ext when -x set)"
-        echo "  -w browse          browse all catalog categories"
+        echo "  -p next     next tier adds only (skip done jobs on same URL)"
+        echo "  aliases: fast→light, ctf→standard"
+        echo ""
+        echo "  common wordlist ids (-w):"
+        echo "    common, quickhits, raft-small-directories, raft-small-files,"
+        echo "    raft-small-words, dirbuster-small, dirbuster-medium"
         echo ""
         echo "examples:"
-        echo "  s -d /admin -x ticket -w dirbuster-small"
-        echo "  s -ds /island                 # dirs selector (3 jobs)"
-        echo "  s -ds -x ticket /island/2100  # dirs-ext selector (3 jobs)"
-        echo "  s -ds -x ticket -p fast       # common + dirbuster-small (2 jobs)"
-        echo "  s -ds -p fast /               # subset (2 jobs)"
+        echo "  s -ds /admin                  # standard tier on /admin/"
+        echo "  s -ds /assets                 # enumerate under /assets/"
+        echo "  s -ds -p next /assets         # tier up when hits empty"
+        echo "  s -ds -p wide /uploads        # cumulative through wide"
+        echo "  s -ds -x php /backup          # ext fuzz, standard tier"
+        echo "  s -ds -x bak -p next /api     # next ext tier"
+        echo "  s -d /config -w dirbuster-small"
         echo "  s -rp                         # port list (not -p)"
+        echo "  s -rt                         # dirs PATHS tree only"
         return 0
         ;;
       -rp|--report-ports)
@@ -92,6 +105,10 @@ scout() {
         ;;
       -re|--report-exploits)
         report_exploits="-re"
+        shift
+        ;;
+      -rt|--report-paths)
+        report_paths="-rt"
         shift
         ;;
       -se|--search-exploits)
@@ -173,11 +190,11 @@ scout() {
         ;;
       -p|--preset)
         shift
-        if [[ "${1:-}" =~ ^(ctf|fast|deep)$ ]]; then
+        if [[ "${1:-}" =~ ^(light|standard|wide|deep|next|ctf|fast)$ ]]; then
           dirs_preset="-p $1"
           shift
         elif [[ -n "$dirs_multi" ]]; then
-          echo "[-] unknown preset: ${1:-} (ctf|fast|deep)" >&2
+          echo "[-] unknown preset: ${1:-} (light|standard|wide|deep|next)" >&2
           return 1
         else
           echo "[!] -p is deprecated for ports — use -rp (or -ds -p ctf|fast|deep)" >&2
@@ -248,15 +265,19 @@ scout() {
     esac
   done
 
-  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" ) ]]; then
-    echo "[-] use one report flag: -r, -rp, or -re" >&2
+  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
+    echo "[-] use one report flag: -r, -rp, -re, or -rt" >&2
     return 1
   fi
-  if [[ -n "$report_exploits" && -n "$report" ]]; then
-    echo "[-] use -r or -re, not both" >&2
+  if [[ -n "$report_exploits" && ( -n "$report" || -n "$report_paths" ) ]]; then
+    echo "[-] use one report flag: -r, -re, or -rt" >&2
     return 1
   fi
-  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" ) ]]; then
+  if [[ -n "$report_paths" && -n "$report" ]]; then
+    echo "[-] use -r or -rt, not both" >&2
+    return 1
+  fi
+  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
     echo "[-] -se combines with -r only (or use alone)" >&2
     return 1
   fi
@@ -290,6 +311,8 @@ scout() {
     args+=(-rp)
   elif [[ -n "$report_exploits" ]]; then
     args+=(-re)
+  elif [[ -n "$report_paths" ]]; then
+    args+=(-rt)
   elif [[ -n "$search_exploits" && -z "$report" ]]; then
     args+=(-se)
   elif [[ -n "$report" ]]; then
@@ -325,13 +348,14 @@ _scout() {
     '-r[full report from DB]' '--report[full report from DB]' \
     '-rp[OPEN+CLOSED from DB]' '--report-ports[OPEN+CLOSED from DB]' \
     '-re[EXPLOITS from DB]' '--report-exploits[EXPLOITS from DB]' \
+    '-rt[PATHS tree from DB]' '--report-paths[PATHS tree from DB]' \
     '-se[searchsploit and cache]' '--search-exploits[searchsploit and cache]' \
     '-s[dirs status once]' '--status[dirs status once]' \
     '-ws[wait for dirs jobs]:sec:' '--wait-dirs[wait for dirs jobs]:sec:' \
     '-d[dirs only]:path:_path_files' '--dirs[dirs only]:path:_path_files' \
     '-ds[parallel dirs]:path:_path_files' '--dirs-multi[parallel dirs]:path:_path_files' \
-    '-p[preset ctf|fast|deep with -ds]:preset:(ctf fast deep)' \
-    '--preset[preset with -ds]:preset:(ctf fast deep)' \
+    '-p[preset light|standard|wide|deep|next with -ds]:preset:(light standard wide deep next)' \
+    '--preset[preset with -ds]:preset:(light standard wide deep next)' \
     '--force[rescan ports / re-dispatch dirs]' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \

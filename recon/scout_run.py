@@ -562,45 +562,16 @@ def _run_dirs_phase(
     wordlist: Optional[str] = None,
     wordlists: Optional[list[str]] = None,
     dirs_multi: bool = False,
-    dirs_preset: str = "ctf",
+    dirs_preset: str = "standard",
     dirs_multi_preset_from_flag: bool = False,
+    dirs_multi_preset_is_next: bool = False,
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> int:
-    wl_batch: list[Optional[str]]
-    if wordlists:
-        wl_batch = list(wordlists)
-    elif wordlist:
-        wl_batch = [wordlist]
-    else:
-        wl_batch = [None]
-
-    print("")
-    if dirs_multi:
-        if extensions:
-            if dirs_multi_preset_from_flag:
-                src = f"preset {dirs_preset} ({len(wl_batch)} wordlists, -x {extensions})"
-            else:
-                src = f"dirs-ext ({len(wl_batch)} wordlists, -x {extensions})"
-        elif dirs_multi_preset_from_flag:
-            src = f"preset {dirs_preset} ({len(wl_batch)} wordlists)"
-        else:
-            src = f"dirs ({len(wl_batch)} wordlists)"
-        print(f"[*] phase 3: directory brute (multi, {src}, background)")
-        if (
-            dirs_multi_preset_from_flag
-            and dirs_preset == "deep"
-            and not dry_run
-        ):
-            print(
-                f"[!] deep preset runs {len(wl_batch)} jobs per URL"
-                " — consider: scout -ds -p deep -t 10",
-                file=sys.stderr,
-            )
-    else:
-        print("[*] phase 3: directory brute (gobuster dir, background)")
+    from wordlists.scout import resolve_dirs_multi_wordlist_ids
+    from wordlists.scout import resolve_dirs_multi_wordlists
 
     targets: list[tuple[Optional[int], str]] = []
     if urls:
@@ -619,9 +590,74 @@ def _run_dirs_phase(
         print("[-] case not set — cs <name> first (or export CASE_LOOSE=1)")
         return 1
 
+    print("")
     rc = 0
     started = 0
+    header_printed = False
+
     for port, url in targets:
+        wl_paths: list[str] = []
+
+        if dirs_multi and dirs_multi_preset_is_next:
+            try:
+                ids, label = resolve_dirs_multi_wordlist_ids(
+                    preset="next",
+                    extensions=extensions,
+                    preset_is_next=True,
+                    ip=ip,
+                    url=url,
+                )
+            except ValueError as e:
+                print(f"[-] {e}")
+                return 1
+            if not ids:
+                print(f"[*] {url}  all preset tiers done")
+                continue
+            wl_paths = resolve_dirs_multi_wordlists(
+                wordlist_ids=ids,
+                extensions=extensions,
+            )
+            tier = label.split("/", 1)[-1]
+            src = f"next/{tier} ({len(wl_paths)} wordlists"
+            if extensions:
+                src += f", -x {extensions}"
+            src += ")"
+            print(f"[*] phase 3: directory brute (multi, {src}, background)")
+        elif dirs_multi:
+            wl_paths = list(wordlists or [])
+            if not header_printed:
+                if dirs_multi_preset_from_flag:
+                    src = f"preset {dirs_preset} ({len(wl_paths)} wordlists"
+                elif extensions:
+                    src = f"standard ({len(wl_paths)} wordlists, -x {extensions})"
+                else:
+                    src = f"standard ({len(wl_paths)} wordlists)"
+                if extensions and dirs_multi_preset_from_flag:
+                    src += f", -x {extensions}"
+                src += ")"
+                print(f"[*] phase 3: directory brute (multi, {src}, background)")
+                if (
+                    dirs_multi_preset_from_flag
+                    and dirs_preset in ("deep", "wide")
+                    and not dry_run
+                ):
+                    print(
+                        f"[!] {dirs_preset} tier runs {len(wl_paths)} jobs per URL"
+                        " — consider: scout -ds -p deep -t 10",
+                        file=sys.stderr,
+                    )
+                header_printed = True
+        else:
+            if wordlists:
+                wl_paths = list(wordlists)
+            elif wordlist:
+                wl_paths = [wordlist]
+            if not header_printed:
+                print("[*] phase 3: directory brute (gobuster dir, background)")
+                header_printed = True
+
+        wl_batch: list[Optional[str]] = wl_paths if wl_paths else [None]
+
         for wl in wl_batch:
             try:
                 plan = build_dirs_plan(
@@ -836,18 +872,43 @@ def _paths_root_label(ip: str, rows) -> str:
     return f"http://{ip}/"
 
 
-def _print_paths_tree(rows, *, ip: str) -> None:
-    findings = _merge_job_findings(rows)
-    running = any(r["status"] == "running" for r in rows)
+def _fetch_paths_report_state(ip: str) -> tuple[list, list[tuple[str, int]], bool]:
+    """Latest dirs job per URL → merged findings and running flag."""
+    reconcile_scout_jobs(ip)
+    jobs = list_scout_jobs(ip, kind="dirs", limit=100)
+    latest = _latest_dirs_jobs(jobs)
+    if not latest:
+        return [], [], False
+    findings = _merge_job_findings(latest)
+    running = any(r["status"] == "running" for r in latest)
+    return latest, findings, running
+
+
+def _print_paths_section(
+    ip: str,
+    latest,
+    findings: list[tuple[str, int]],
+    *,
+    running: bool,
+) -> None:
     print("--- PATHS ---")
+    if not latest:
+        print("(none)")
+        return
     if findings:
-        for line in format_paths_tree(findings, root_label=_paths_root_label(ip, rows)):
+        for line in format_paths_tree(findings, root_label=_paths_root_label(ip, latest)):
             print(line)
     elif running:
-        print(_paths_root_label(ip, rows))
+        print(_paths_root_label(ip, latest))
         print("  (running)")
     else:
         print("(none)")
+
+
+def _print_paths_tree(rows, *, ip: str) -> None:
+    findings = _merge_job_findings(rows)
+    running = any(r["status"] == "running" for r in rows)
+    _print_paths_section(ip, rows, findings, running=running)
     print("")
 
 
@@ -922,6 +983,18 @@ def show_scout_report_exploits(ip: str) -> int:
     return 0
 
 
+def show_scout_report_paths(ip: str) -> int:
+    """DB snapshot: PATHS tree only (no gobuster)."""
+    latest, findings, running = _fetch_paths_report_state(ip)
+    print("")
+    print(f"[*] report-paths {ip}")
+    print("")
+    _print_paths_section(ip, latest, findings, running=running)
+    print("")
+    print("[i] detail: scout -s  |  scout -ws  |  scout -r")
+    return 0
+
+
 def show_scout_report(ip: str) -> int:
     """DB snapshot: ports + scout probes + dirs hits (no nmap/curl/gobuster)."""
     from port_sets import FULL_TCP_END
@@ -958,22 +1031,8 @@ def show_scout_report(ip: str) -> int:
             print(f"         $ {row['command']}")
     print("")
 
-    print("--- PATHS ---")
-    jobs = list_scout_jobs(ip, kind="dirs", limit=100)
-    latest = _latest_dirs_jobs(jobs)
-    if not latest:
-        print("(none)")
-    else:
-        findings = _merge_job_findings(latest)
-        running = any(r["status"] == "running" for r in latest)
-        if findings:
-            for line in format_paths_tree(findings, root_label=_paths_root_label(ip, latest)):
-                print(line)
-        elif running:
-            print(_paths_root_label(ip, latest))
-            print("  (running)")
-        else:
-            print("(none)")
+    latest, findings, running = _fetch_paths_report_state(ip)
+    _print_paths_section(ip, latest, findings, running=running)
     print("")
     print("--- EXPLOITS ---")
     from scout_exploit import format_exploit_report_lines
@@ -982,7 +1041,7 @@ def show_scout_report(ip: str) -> int:
     for line in exploit_lines:
         print(line)
     print("")
-    print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re")
+    print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re  |  scout -rt")
     print("[i] tried & N/A: erj <EDB>  |  undo: eru <EDB>")
     return 0
 
@@ -1064,8 +1123,9 @@ def run_scout(
     quiet_ports: bool = False,
     dirs_only: bool = False,
     dirs_multi: bool = False,
-    dirs_preset: str = "ctf",
+    dirs_preset: str = "standard",
     dirs_multi_preset_from_flag: bool = False,
+    dirs_multi_preset_is_next: bool = False,
     dirs_urls: Optional[list[str]] = None,
     wordlist: Optional[str] = None,
     wordlists: Optional[list[str]] = None,
@@ -1086,6 +1146,7 @@ def run_scout(
             dirs_multi=dirs_multi,
             dirs_preset=dirs_preset,
             dirs_multi_preset_from_flag=dirs_multi_preset_from_flag,
+            dirs_multi_preset_is_next=dirs_multi_preset_is_next,
             threads=threads,
             extensions=extensions,
             dry_run=dry_run,

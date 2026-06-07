@@ -140,6 +140,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -r` / `--report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
+| `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
 | `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
 | `scout -r -se [ip]` | search してからフルレポート |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
@@ -148,12 +149,10 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -d`（`-w` 省略） | catalog default（`common` 等） |
 | `scout -d -w` | 対話ピッカー（`-x` で dirs / dirs-ext） |
 | `scout -d -w browse` | 全カテゴリ browse |
-| `scout -ds` / `-ds [path]` | **並列 dir** — **dirs** selector 全件（`-d -w` と同プール） |
-| `-ds -x <ext>` | **dirs-ext** selector 全件（`-d -x -w` と同プール） |
-| `scout -ds -x <ext> -p fast` | ext 向けサブセット（common + dirbuster-small） |
-| `scout -ds -x <ext> -p deep` | ctf + raft-small-files（`-t 10` 推奨） |
-| `scout -ds -p fast` | dirs のサブセット |
-| `scout -ds -p deep` | ctf + raft-small-files（`-t 10` 推奨） |
+| `scout -ds` / `-ds [path]` | **並列 dir** — **standard** tier まで（累積 3 本） |
+| `-ds -x <ext>` | ext fuzz — **standard** tier まで（累積 2 本） |
+| `scout -ds -p next [path]` | 次 tier の adds のみ（済み job スキップ） |
+| `scout -ds -p light\|standard\|wide\|deep` | 指定 tier まで累積 |
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
@@ -238,17 +237,18 @@ scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
-scout -ds /island
-scout -ds -x ticket /island/2100
-scout -ds -x ticket -p fast
-scout -ds -p fast
+scout -ds /assets
+scout -ds -p next /assets
+scout -ds -p wide /uploads
+scout -ds -x php /backup
+scout -ds -x bak -p next /api
 scout -ds -p deep -t 10
 scout --force              # dirs / scan をやり直す
 ```
 
-### `scout -s` / `-ws` / `-r` の PATHS
+### `scout -s` / `-ws` / `-r` / `-rt` の PATHS
 
-`-s` と `-r` は **ジョブ一覧（メタデータ）** と **PATHS（統合ツリー）** を分けて表示する。
+`-s` / `-r` / **`-rt`** は **ジョブ一覧（メタデータ）** と **PATHS（統合ツリー）** を分けて表示する（`-rt` は PATHS のみ）。
 
 | ブロック | 内容 |
 |----------|------|
@@ -257,7 +257,7 @@ scout --force              # dirs / scan をやり直す
 
 `-s` の jobs は **完了分を古い順**（新しいものが下）、**running は常に末尾**。完了ジョブの表示上限は **`SCOUT_STATUS_SLOTS`**（既定 **4**、並列 dirs 本数に合わせて調整）。超過分はヘッダに `N older hidden`。
 
-`-r` の PATHS は **URL ごとに最新の dirs ジョブ**だけをマージする（再実行なし・DB のみ）。
+`-r` / `-rt` の PATHS は **URL ごとに最新の dirs ジョブ**だけをマージする（再実行なし・DB のみ）。
 
 **PATHS の例**（ルート dirs + `-d /etc/` の結果を統合）:
 
@@ -277,6 +277,7 @@ http://10.49.140.183/
 |------|----------|
 | 偵察サマリ（ポート + PROBES + PATHS + EXPLOITS） | **`scout -r`** |
 | ポートのみ | **`scout -rp`** |
+| PATHS ツリーのみ | **`scout -rt`** |
 | exploit 一覧（DB） | **`scout -re`** |
 | exploit 検索（キャッシュ更新） | **`scout -se`** / **`scout -r -se`** |
 | スキャン・同期プローブ | コンソール、`el` / `ev`（probe は成功済みなら `(cached)`） |
@@ -445,25 +446,21 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | コマンド | 説明 |
 |----------|------|
 | `scout -d [path]` | 単一 wordlist（catalog default / `-w` / ピッカー）— 上記「偵察（scout）」参照 |
-| `scout -ds [path]` | 並列 dir（default: selector 全件；`-p` でサブセット） |
+| `scout -ds [path]` | 並列 dir（default: standard tier；`-p next` で昇格） |
 | `gb-dirs [opts] [url]` | **非推奨** — `scout -ds` へ委譲 |
 | `gb-dns [domain]` | DNS |
 | `gb-vhost ...` | vhost |
 
-**`-ds` 省略時**は `-d -w` / `-d -x -w` ピッカーと同じ selector を **全件並列**。
+**`-ds` 省略** = **standard** tier まで（累積）。**`-p next`** = 次 tier の adds のみ。
 
-| 条件 | 並列 wordlists |
-|------|----------------|
-| `-ds` | dirs: common + quickhits + raft-small-directories |
-| `-ds -x EXT` | dirs-ext: common + dirbuster-small + dirbuster-medium |
+| tier | dirs（`-x` なし）累積 | dirs-ext（`-x`）累積 |
+|------|----------------------|---------------------|
+| light | common, quickhits | common |
+| standard | + raft-small-directories | + dirbuster-small |
+| wide | + raft-small-files | + dirbuster-medium |
+| deep | + dirbuster-small, raft-small-words | + raft-small-files |
 
-**`-p` サブセット**（`-x` の有無で catalog の preset テーブルが切り替わる）:
-
-| `-p` | dirs（`-x` なし） | dirs-ext（`-x` あり） |
-|------|-------------------|----------------------|
-| `ctf` | default dirs と同内容 | default dirs-ext と同内容 |
-| `fast` | common + quickhits | common + dirbuster-small |
-| `deep` | ctf + raft-small-files | ctf + raft-small-files |
+aliases: `fast→light`, `ctf→standard`。旧 dirs `-p deep`（4 jobs）は **`wide`** に変更。
 
 DNS ワードリストの対話設定:
 
@@ -473,11 +470,11 @@ DNS ワードリストの対話設定:
 
 ```bash
 cs overpass
-scout -d /admin -x ticket -w dirbuster-small   # 単一 dir
-scout -ds
-scout -ds -x ticket /island/2100
-scout -ds -x ticket -p fast
-scout -ds -p fast -n
+scout -d /admin -x php -w dirbuster-small
+scout -ds /admin
+scout -ds -p next /assets
+scout -ds -x php /backup
+scout -ds -p wide -n
 gb-vhost              # http + https 両方
 gb-dns example.com
 ```

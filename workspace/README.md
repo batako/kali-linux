@@ -31,18 +31,17 @@
 | コマンド | 用途 |
 |----------|------|
 | `scout -d [path]` | 1 ワードリスト |
-| `scout -ds [path]` | 複数リスト並列（dirs selector 全件） |
-| `scout -ds -x <ext>` | ext fuzz 並列（dirs-ext selector 全件） |
-| `scout -ds -x <ext> -p fast` | common + dirbuster-small（2 jobs） |
+| `scout -ds [path]` | standard tier まで（累積 3 本） |
+| `scout -ds -p next [path]` | 次 tier の adds のみ |
+| `scout -ds -x <ext>` | ext fuzz — standard tier（累積 2 本） |
 
 `gb-dirs` は非推奨（内部で `scout -ds` に委譲）。
 
 ```bash
 scout -d /            # catalog default（common）
-scout -ds             # dirs selector (3 jobs)
-scout -ds -x ticket /island/2100
-scout -ds -x ticket -p fast
-scout -ds -p fast
+scout -ds /admin      # standard tier
+scout -ds -p next /assets
+scout -ds -x php /backup
 scout -ds -n
 ```
 

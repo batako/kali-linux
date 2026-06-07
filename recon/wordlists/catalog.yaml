@@ -17,43 +17,51 @@ selectors:
     - common
     - dirbuster-small
     - dirbuster-medium
+dirs_multi_preset_chain:
+- light
+- standard
+- wide
+- deep
 dirs_multi_presets:
-  ctf:
-    description: common + raft-small-directories + quickhits (parallel, CTF default)
-    entry_ids:
+  light:
+    description: quick pass (common + quickhits)
+    adds:
     - common
+    - quickhits
+  standard:
+    description: CTF default (+ raft-small-directories)
+    adds:
     - raft-small-directories
-    - quickhits
-  fast:
-    description: common + quickhits (2 jobs)
-    entry_ids:
-    - common
-    - quickhits
-  deep:
-    description: ctf + raft-small-files (4 jobs; use lower -t)
-    entry_ids:
-    - common
-    - raft-small-directories
-    - quickhits
+  wide:
+    description: add raft-small-files (4 jobs cumulative)
+    adds:
     - discovery-web-content-raft-small-files
-dirs_ext_multi_presets:
-  ctf:
-    description: common + dirbuster-small + dirbuster-medium (parallel, ext fuzz default)
-    entry_ids:
-    - common
-    - dirbuster-small
-    - dirbuster-medium
-  fast:
-    description: common + dirbuster-small (2 jobs)
-    entry_ids:
-    - common
-    - dirbuster-small
   deep:
-    description: ctf + raft-small-files (4 jobs; use lower -t)
-    entry_ids:
-    - common
+    description: add dirbuster-small + raft-small-words (6 jobs cumulative)
+    adds:
     - dirbuster-small
+    - raft-small-words
+dirs_ext_multi_preset_chain:
+- light
+- standard
+- wide
+- deep
+dirs_ext_multi_presets:
+  light:
+    description: ext fuzz quick (common only)
+    adds:
+    - common
+  standard:
+    description: ext fuzz default (+ dirbuster-small)
+    adds:
+    - dirbuster-small
+  wide:
+    description: add dirbuster-medium (3 jobs cumulative)
+    adds:
     - dirbuster-medium
+  deep:
+    description: add raft-small-files (4 jobs cumulative)
+    adds:
     - discovery-web-content-raft-small-files
 categories:
 - id: discovery-dns

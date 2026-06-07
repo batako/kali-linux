@@ -34,6 +34,7 @@ from scout_run import run_scout
 from scout_run import show_scout_ports
 from scout_run import show_scout_report
 from scout_run import show_scout_report_exploits
+from scout_run import show_scout_report_paths
 from scout_run import show_scout_status
 from scout_exploit import run_exploit_phase
 from scout_exploit import reject_exploit
@@ -55,6 +56,7 @@ from wordlists.cli import run_wordlist_cli
 SCOUT_REPORT_FLAGS = ("-r", "--report")
 SCOUT_REPORT_PORTS_FLAGS = ("-rp", "--report-ports")
 SCOUT_REPORT_EXPLOITS_FLAGS = ("-re", "--report-exploits")
+SCOUT_REPORT_PATHS_FLAGS = ("-rt", "--report-paths")
 SCOUT_SEARCH_EXPLOITS_FLAGS = ("-se", "--search-exploits")
 SCOUT_LEGACY_FLAG_MAP = {
     "-p": "--report-ports",
@@ -272,6 +274,14 @@ def main():
             rc = show_scout_report_exploits(ip)
             sys.exit(0 if rc == 0 else 1)
 
+        if args and args[0] in SCOUT_REPORT_PATHS_FLAGS:
+            ip, _, _, _ = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -rt|--report-paths [ip]",
+            )
+            rc = show_scout_report_paths(ip)
+            sys.exit(0 if rc == 0 else 1)
+
         if args and args[0] in SCOUT_SEARCH_EXPLOITS_FLAGS:
             ip, _, _, dry_run = _scout_parse_tail(
                 args[1:],
@@ -304,8 +314,9 @@ def main():
         dirs_only = False
         dirs_multi = False
         dirs_only_flag = False
-        dirs_preset = "ctf"
+        dirs_preset = "standard"
         dirs_preset_from_flag = False
+        dirs_preset_is_next = False
         search_exploits_only = False
         force_exploit = False
         status_mode = False
@@ -369,9 +380,11 @@ def main():
                     args = args[1:]
             elif a in ("-p", "--preset"):
                 if len(args) < 2:
-                    print("usage: recon.py scout -ds -p ctf|fast|deep [ip|url]")
+                    print("usage: recon.py scout -ds -p light|standard|wide|deep|next [ip|url]")
                     sys.exit(1)
                 dirs_preset = args[1]
+                if dirs_preset.strip().lower() == "next":
+                    dirs_preset_is_next = True
                 dirs_preset_from_flag = True
                 args = args[2:]
             elif a in SCOUT_SEARCH_EXPLOITS_FLAGS:
@@ -439,7 +452,7 @@ def main():
                 print(f"unknown option: {a}")
                 print(
                     "usage: recon.py scout [options] [ip|path|url...]"
-                    "  (-r|-rp|-re|-se, -s, -ws, -d, ...)"
+                    "  (-r|-rp|-re|-rt|-se, -s, -ws, -d, ...)"
                 )
                 sys.exit(1)
             else:
@@ -451,7 +464,7 @@ def main():
         if not ip:
             print(
                 "usage: recon.py scout [options] <ip>"
-                "  (-r|-rp|-re|-se, -s, -ws, -d, ...)"
+                "  (-r|-rp|-re|-rt|-se, -s, -ws, -d, ...)"
             )
             sys.exit(1)
 
@@ -490,28 +503,23 @@ def main():
         if dirs_multi:
             if not threads_set:
                 threads = DEFAULT_DIRS_MULTI_THREADS
-            try:
-                wordlists = resolve_dirs_multi_wordlists(
-                    preset=dirs_preset,
-                    wordlist_ids=wordlist_ids or None,
-                    extensions=extensions,
-                    preset_from_flag=dirs_preset_from_flag,
-                )
-            except ValueError as exc:
-                print(f"[-] {exc}", file=sys.stderr)
-                if extensions:
+            if not dirs_preset_is_next:
+                try:
+                    wordlists = resolve_dirs_multi_wordlists(
+                        preset=dirs_preset,
+                        wordlist_ids=wordlist_ids or None,
+                        extensions=extensions,
+                        preset_from_flag=dirs_preset_from_flag,
+                        warn=lambda msg: print(msg, file=sys.stderr),
+                    )
+                except ValueError as exc:
+                    print(f"[-] {exc}", file=sys.stderr)
                     print(
-                        "[i] -ds -x -p presets: ctf, fast, deep"
-                        " — default uses all dirs-ext selector entries",
+                        "[i] -ds -p tiers: light, standard, wide, deep, next"
+                        " — default -ds uses standard",
                         file=sys.stderr,
                     )
-                else:
-                    print(
-                        "[i] -ds -p presets: ctf, fast, deep"
-                        " — default uses all dirs selector entries",
-                        file=sys.stderr,
-                    )
-                sys.exit(1)
+                    sys.exit(1)
         else:
             try:
                 wordlist = resolve_scout_wordlist(
@@ -543,6 +551,7 @@ def main():
             threads=threads,
             extensions=extensions,
             dirs_multi_preset_from_flag=dirs_preset_from_flag,
+            dirs_multi_preset_is_next=dirs_preset_is_next,
         )
         sys.exit(0 if rc == 0 else 1)
 

@@ -47,7 +47,7 @@ class SelectorSpec:
 class DirsMultiPreset:
     id: str
     description: str
-    entry_ids: tuple[str, ...]
+    adds: tuple[str, ...]
 
 
 @dataclass
@@ -67,6 +67,8 @@ class WordlistCatalog:
         self._selectors: dict[str, SelectorSpec] = {}
         self._dirs_multi_presets: dict[str, DirsMultiPreset] = {}
         self._dirs_ext_multi_presets: dict[str, DirsMultiPreset] = {}
+        self._dirs_multi_preset_chain: tuple[str, ...] = ()
+        self._dirs_ext_multi_preset_chain: tuple[str, ...] = ()
         self._build_indexes()
 
     @classmethod
@@ -135,14 +137,7 @@ class WordlistCatalog:
         for pid, raw in presets.items():
             if not isinstance(raw, dict):
                 continue
-            entry_ids = raw.get("entry_ids") or raw.get("entries") or []
-            if not isinstance(entry_ids, list):
-                entry_ids = []
-            self._dirs_multi_presets[str(pid)] = DirsMultiPreset(
-                id=str(pid),
-                description=str(raw.get("description") or ""),
-                entry_ids=tuple(str(x) for x in entry_ids),
-            )
+            self._dirs_multi_presets[str(pid)] = _parse_dirs_multi_preset(str(pid), raw)
 
         ext_presets = self._raw.get("dirs_ext_multi_presets") or {}
         if not isinstance(ext_presets, dict):
@@ -150,14 +145,19 @@ class WordlistCatalog:
         for pid, raw in ext_presets.items():
             if not isinstance(raw, dict):
                 continue
-            entry_ids = raw.get("entry_ids") or raw.get("entries") or []
-            if not isinstance(entry_ids, list):
-                entry_ids = []
-            self._dirs_ext_multi_presets[str(pid)] = DirsMultiPreset(
-                id=str(pid),
-                description=str(raw.get("description") or ""),
-                entry_ids=tuple(str(x) for x in entry_ids),
-            )
+            self._dirs_ext_multi_presets[str(pid)] = _parse_dirs_multi_preset(str(pid), raw)
+
+        chain = self._raw.get("dirs_multi_preset_chain") or []
+        if chain:
+            self._dirs_multi_preset_chain = tuple(str(x) for x in chain)
+        else:
+            self._dirs_multi_preset_chain = tuple(self._dirs_multi_presets)
+
+        ext_chain = self._raw.get("dirs_ext_multi_preset_chain") or []
+        if ext_chain:
+            self._dirs_ext_multi_preset_chain = tuple(str(x) for x in ext_chain)
+        else:
+            self._dirs_ext_multi_preset_chain = tuple(self._dirs_ext_multi_presets)
 
     @property
     def entries(self) -> list[CatalogEntry]:
@@ -175,25 +175,106 @@ class WordlistCatalog:
     def dirs_ext_multi_presets(self) -> dict[str, DirsMultiPreset]:
         return dict(self._dirs_ext_multi_presets)
 
-    def list_dirs_multi_preset(self, preset_id: str) -> list[CatalogEntry]:
-        spec = self._dirs_multi_presets.get(preset_id)
-        if spec is None:
-            known = ", ".join(sorted(self._dirs_multi_presets))
-            raise ValueError(f"unknown dirs preset: {preset_id} (known: {known})")
-        return self._resolve_preset_entries(preset_id, spec)
+    @property
+    def dirs_ext_multi_presets(self) -> dict[str, DirsMultiPreset]:
+        return dict(self._dirs_ext_multi_presets)
+
+    @property
+    def dirs_multi_preset_chain(self) -> tuple[str, ...]:
+        return self._dirs_multi_preset_chain
+
+    @property
+    def dirs_ext_multi_preset_chain(self) -> tuple[str, ...]:
+        return self._dirs_ext_multi_preset_chain
+
+    def _preset_map(self, *, extensions: bool) -> dict[str, DirsMultiPreset]:
+        return self._dirs_ext_multi_presets if extensions else self._dirs_multi_presets
+
+    def _preset_chain(self, *, extensions: bool) -> tuple[str, ...]:
+        return (
+            self._dirs_ext_multi_preset_chain
+            if extensions
+            else self._dirs_multi_preset_chain
+        )
+
+    def normalize_preset_id(self, preset_id: str, *, extensions: bool) -> str:
+        pid = (preset_id or "").strip().lower()
+        if pid == "next":
+            return "next"
+        aliases = {"fast": "light", "ctf": "standard"}
+        if pid in aliases:
+            return aliases[pid]
+        presets = self._preset_map(extensions=extensions)
+        if pid not in presets:
+            known = ", ".join(self._preset_chain(extensions=extensions))
+            raise ValueError(f"unknown preset: {preset_id} (known: {known}, next)")
+        return pid
+
+    def preset_deprecated_hint(self, preset_id: str, *, extensions: bool) -> Optional[str]:
+        pid = (preset_id or "").strip().lower()
+        if pid == "fast":
+            return "preset fast renamed to light"
+        if pid == "ctf":
+            return "preset ctf renamed to standard"
+        return None
+
+    def tier_adds(self, tier_id: str, *, extensions: bool) -> tuple[str, ...]:
+        tier = self.normalize_preset_id(tier_id, extensions=extensions)
+        spec = self._preset_map(extensions=extensions)[tier]
+        return spec.adds
+
+    def cumulative_preset_ids(
+        self, tier_id: str, *, extensions: bool
+    ) -> tuple[str, ...]:
+        tier = self.normalize_preset_id(tier_id, extensions=extensions)
+        chain = self._preset_chain(extensions=extensions)
+        presets = self._preset_map(extensions=extensions)
+        if tier not in chain:
+            raise ValueError(f"preset {tier_id!r} not in chain")
+        out: list[str] = []
+        seen: set[str] = set()
+        for pid in chain:
+            for eid in presets[pid].adds:
+                if eid not in seen:
+                    seen.add(eid)
+                    out.append(eid)
+            if pid == tier:
+                break
+        return tuple(out)
+
+    def next_tier_adds(
+        self,
+        *,
+        extensions: bool,
+        done_wordlist_paths: set[str],
+    ) -> tuple[str, str, tuple[str, ...]]:
+        """Return (tier_id, label, pending_add_ids) for the next incomplete tier."""
+        chain = self._preset_chain(extensions=extensions)
+        presets = self._preset_map(extensions=extensions)
+        for tier in chain:
+            pending: list[str] = []
+            for eid in presets[tier].adds:
+                path = self.resolve(eid)
+                if path not in done_wordlist_paths:
+                    pending.append(eid)
+            if pending:
+                return tier, tier, tuple(pending)
+        return "", "done", ()
+
+    def list_dirs_multi_preset(
+        self, preset_id: str, *, extensions: bool = False
+    ) -> list[CatalogEntry]:
+        ids = self.cumulative_preset_ids(preset_id, extensions=extensions)
+        return self._resolve_preset_entry_ids(preset_id, ids)
 
     def list_dirs_ext_multi_preset(self, preset_id: str) -> list[CatalogEntry]:
-        spec = self._dirs_ext_multi_presets.get(preset_id)
-        if spec is None:
-            known = ", ".join(sorted(self._dirs_ext_multi_presets))
-            raise ValueError(f"unknown dirs-ext preset: {preset_id} (known: {known})")
-        return self._resolve_preset_entries(preset_id, spec)
+        return self.list_dirs_multi_preset(preset_id, extensions=True)
 
-    def _resolve_preset_entries(
-        self, preset_id: str, spec: DirsMultiPreset
+    def _resolve_preset_entry_ids(
+        self, preset_id: str, entry_ids: tuple[str, ...] | list[str]
     ) -> list[CatalogEntry]:
         out: list[CatalogEntry] = []
-        for eid in spec.entry_ids:
+        for eid in entry_ids:
             entry = self._entries_by_id.get(eid)
             if entry is None:
                 raise ValueError(
@@ -331,11 +412,11 @@ class WordlistCatalog:
                     )
 
         for pid, spec in self._dirs_multi_presets.items():
-            if not spec.entry_ids:
+            if not spec.adds:
                 issues.append(
-                    ValidationIssue("error", f"dirs_multi preset {pid!r} has no entry_ids")
+                    ValidationIssue("error", f"dirs_multi preset {pid!r} has no adds")
                 )
-            for eid in spec.entry_ids:
+            for eid in spec.adds:
                 if eid not in self._entries_by_id:
                     issues.append(
                         ValidationIssue(
@@ -343,15 +424,23 @@ class WordlistCatalog:
                             f"preset {pid!r} references unknown id: {eid}",
                         )
                     )
-
-        for pid, spec in self._dirs_ext_multi_presets.items():
-            if not spec.entry_ids:
+        for pid in self._dirs_multi_preset_chain:
+            if pid not in self._dirs_multi_presets:
                 issues.append(
                     ValidationIssue(
-                        "error", f"dirs_ext_multi preset {pid!r} has no entry_ids"
+                        "error",
+                        f"dirs_multi_preset_chain references unknown preset: {pid!r}",
                     )
                 )
-            for eid in spec.entry_ids:
+
+        for pid, spec in self._dirs_ext_multi_presets.items():
+            if not spec.adds:
+                issues.append(
+                    ValidationIssue(
+                        "error", f"dirs_ext_multi preset {pid!r} has no adds"
+                    )
+                )
+            for eid in spec.adds:
                 if eid not in self._entries_by_id:
                     issues.append(
                         ValidationIssue(
@@ -359,8 +448,27 @@ class WordlistCatalog:
                             f"dirs_ext preset {pid!r} references unknown id: {eid}",
                         )
                     )
+        for pid in self._dirs_ext_multi_preset_chain:
+            if pid not in self._dirs_ext_multi_presets:
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        f"dirs_ext_multi_preset_chain references unknown preset: {pid!r}",
+                    )
+                )
 
         return issues
+
+
+def _parse_dirs_multi_preset(pid: str, raw: dict[str, Any]) -> DirsMultiPreset:
+    adds = raw.get("adds") or raw.get("entry_ids") or raw.get("entries") or []
+    if not isinstance(adds, list):
+        adds = []
+    return DirsMultiPreset(
+        id=pid,
+        description=str(raw.get("description") or ""),
+        adds=tuple(str(x) for x in adds),
+    )
 
 
 def _optional_int(value: Any) -> Optional[int]:

@@ -74,16 +74,15 @@ gb-dirs() {
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
     echo "deprecated: use scout -ds (alias: s -ds)"
     echo ""
-    echo "usage: scout -ds [-p ctf|fast|deep] [-w id]... [-t N] [-x ext] [-n] [path|url]"
-    echo "  presets (catalog):"
-    echo "    ctf  — common + raft-small-directories + quickhits (default)"
-    echo "    fast — common + quickhits"
-    echo "    deep — ctf + raft-small-files (4 jobs; use lower -t)"
+    echo "usage: scout -ds [-p light|standard|wide|deep|next] [-w id]... [-t N] [-x ext] [-n] [path|url]"
+    echo "  tiers (light → standard → wide → deep):"
+    echo "    standard — default -ds (3 jobs on dirs)"
+    echo "    next     — next tier adds only"
     echo ""
     echo "examples:"
-    echo "  s -ds"
-    echo "  s -ds /island"
-    echo "  s -ds -p fast -n"
+    echo "  s -ds /admin"
+    echo "  s -ds -p next /assets"
+    echo "  s -ds -p wide -n"
     return 0
   fi
   echo "[!] gb-dirs is deprecated — use: scout -ds (s -ds)" >&2
