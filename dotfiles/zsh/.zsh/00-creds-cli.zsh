@@ -176,45 +176,61 @@ _recon-parse-user-ip() {
   [[ -n "$_RECON_IP" ]]
 }
 
-# james_rsa -> james; id_rsa needs explicit user elsewhere
+# james_rsa -> james; id_rsa / secretKey need explicit user or cl
 _recon-guess-user-from-key() {
   local key="$1"
   local base="${key:t}"
   base="${base%.pem}"
-  base="${base%_rsa}"
-  base="${base%_dsa}"
-  base="${base%_ed25519}"
-  base="${base%_ecdsa}"
+
+  case "$base" in
+    *_rsa|*_dsa|*_ed25519|*_ecdsa)
+      base="${base%_rsa}"
+      base="${base%_dsa}"
+      base="${base%_ed25519}"
+      base="${base%_ecdsa}"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+
   [[ "$base" == id || "$base" == identity ]] && return 1
   [[ -n "$base" ]] && { echo "$base"; return 0 }
   return 1
 }
 
-# Resolve login user for ssh -i (key name, .user sidecar, ssh-last, cl picker)
+# Resolve login user for ssh -i (ssh-last, cl, key name if cred exists, picker)
 _recon-user-for-ssh-key() {
   local ip="$1" key="$2"
-  local u base dir f
-
-  u="$(_recon-guess-user-from-key "$key" 2>/dev/null)"
-  [[ -n "$u" ]] && { echo "$u"; return 0 }
-
-  base="${key:t}"
-  local -a sidecars=()
-  [[ -n "${key:h}" && "${key:h}" != "." ]] && sidecars+=("${key:h}/${base}.user")
-  if (( $+functions[case-exports-dir] )); then
-    dir="$(case-exports-dir 2>/dev/null)" && [[ -n "$dir" ]] && sidecars+=("${dir}/${base}.user")
-  fi
-  for f in "${sidecars[@]}"; do
-    [[ -f "$f" ]] || continue
-    u="$(<"$f")"
-    u="${u//$'\n'/}"
-    [[ -n "$u" ]] && { echo "$u"; return 0 }
-  done
+  local u guessed json
+  local -a users=()
 
   u="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
   if [[ -n "$u" ]] && ! _recon-skip-ssh-user "$u" \
       && _recon-creds-for-user "$ip" "$u" >/dev/null 2>&1; then
     echo "$u"
+    return 0
+  fi
+
+  json="$(_recon-creds-json "$ip" | _recon-creds-json-filter 1)"
+  if [[ -n "$json" && "$json" != "[]" ]]; then
+    users=("${(@f)$(print -r -- "$json" | python3 -c "
+import json, sys
+skip = {'exports', 'logs', 'anonymous', ''}
+for r in json.load(sys.stdin):
+    u = r['username']
+    if u not in skip:
+        print(u)
+")}")
+  fi
+  if (( ${#users[@]} == 1 )); then
+    echo "${users[1]}"
+    return 0
+  fi
+
+  guessed="$(_recon-guess-user-from-key "$key" 2>/dev/null)"
+  if [[ -n "$guessed" ]] && _recon-creds-for-user "$ip" "$guessed" >/dev/null 2>&1; then
+    echo "$guessed"
     return 0
   fi
 

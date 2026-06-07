@@ -38,7 +38,7 @@ _ssh-consume-flags() {
         echo "usage: ssh [-l] [-p port] [-i key] [user] [ip]"
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
         echo "  ssh -p 6498 boring   → non-default port (OpenSSH -p)"
-        echo "  ssh -i keyfile  → \$IP + user from key name, .user sidecar, cl, or picker"
+        echo "  ssh -i keyfile  → \$IP + user from cl (ssh-last / single cred / picker)"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
         echo "  login name: ssh user / ssh user@ip (not ssh -l; use command ssh -l user for OpenSSH)"
         echo "  plain: command ssh ..."
@@ -347,7 +347,7 @@ ssh-list() {
 _ssh-get-help() {
   echo "usage: ssh-get | sget [-i key] [-o dir] [-r] [user] [ip] <remote> [remote...]"
   echo "  download via scp using cl creds (sshpass)"
-  echo "  -i key   private key (passphrase from cl; user from .user sidecar or cl)"
+  echo "  -i key   private key (passphrase + user from cl)"
   echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
   echo "  -o dir   local destination (default: .)"
   echo "  -r       scp -r (directory)"

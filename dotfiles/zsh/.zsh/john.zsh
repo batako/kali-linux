@@ -77,13 +77,6 @@ _sshkey_import_creds() {
 
   creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
 
-  local base="${key:t}"
-  if [[ -f "$key" && -w "${key:h}" ]]; then
-    print -r -- "$user" > "${key:h}/${base}.user"
-  fi
-  if out_dir="$(case-exports-dir 2>/dev/null)"; then
-    print -r -- "$user" > "${out_dir}/${base}.user"
-  fi
   python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
 
   echo ""
@@ -96,7 +89,7 @@ _sshkey_import_creds() {
   echo "    login:    $user"
   echo "    password: $pass"
   echo "    key:      $key_abs"
-  echo "[i] connect: ssh -i $key_abs  (passphrase from cl; user from .user sidecar or cl)"
+  echo "[i] connect: ssh -i $key_abs  (passphrase + user from cl)"
 }
 
 # ssh2john + john wordlist crack for private keys
@@ -182,15 +175,25 @@ sshkey-crack() {
 
   _sshkey_apply_creds() {
     local show="$1"
-    local pass user
+    local pass user ip
 
     pass="$(_sshkey_pass_from_show "$show")"
     [[ -z "$pass" ]] && return 0
 
-    user="${creds_user:-$(_recon-guess-user-from-key "$key")}" || {
+    if [[ -n "$creds_user" ]]; then
+      user="$creds_user"
+    else
+      user="$(_recon-guess-user-from-key "$key" 2>/dev/null)"
+      if [[ -z "$user" ]]; then
+        ip="$(_recon-ip-default 2>/dev/null)"
+        [[ -n "$ip" ]] && user="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
+      fi
+    fi
+    if [[ -z "$user" ]]; then
       echo "[-] creds not saved: could not guess username (use: sshkey-crack -u <user> $key)" >&2
+      echo "[i] passphrase: $pass" >&2
       return 0
-    }
+    fi
     _sshkey_import_creds "$key" "$user" "$pass"
   }
 
