@@ -895,10 +895,14 @@ def list_scout_jobs(ip, *, kind=None, status=None, limit=50):
     return rows
 
 
-def list_scout_jobs_for_case(case_name: str, *, kind=None, status=None, limit=200):
-    from case_scope import list_case_ips
+def _recon_scope_ips(current_ip: str | None = None) -> list[str]:
+    from case_scope import recon_scope_ips
 
-    ips = list_case_ips(case_name)
+    return recon_scope_ips(current_ip or os.environ.get("IP"))
+
+
+def list_scout_jobs_for_case(case_name: str, *, kind=None, status=None, limit=200):
+    ips = _recon_scope_ips()
     scope, params = _case_scope_sql(case_name, ips=ips)
     conn = connect()
     sql = f"""
@@ -921,14 +925,14 @@ def list_scout_jobs_for_case(case_name: str, *, kind=None, status=None, limit=20
 
 
 def fetch_merged_open_ports(current_ip: str):
-    """Union open ports across the current case; prefer current_ip service info."""
+    """Union open ports across load_from + current target; prefer current_ip service info."""
     case = _current_case_name()
     order: list[str] = []
     if case:
-        from case_scope import list_case_ips
-
-        order.extend(list_case_ips(case))
-    if current_ip not in order:
+        order.extend(_recon_scope_ips(current_ip))
+    elif current_ip:
+        order.append(current_ip)
+    if current_ip and current_ip not in order:
         order.append(current_ip)
     elif current_ip in order:
         order = [ip for ip in order if ip != current_ip] + [current_ip]
@@ -944,10 +948,10 @@ def fetch_merged_closed_ports(current_ip: str):
     case = _current_case_name()
     order: list[str] = []
     if case:
-        from case_scope import list_case_ips
-
-        order.extend(list_case_ips(case))
-    if current_ip not in order:
+        order.extend(_recon_scope_ips(current_ip))
+    elif current_ip:
+        order.append(current_ip)
+    if current_ip and current_ip not in order:
         order.append(current_ip)
     elif current_ip in order:
         order = [ip for ip in order if ip != current_ip] + [current_ip]
@@ -969,12 +973,11 @@ def format_scan_snapshot_case_lines(case_name: str, current_ip: str, progress_li
     return lines
 
 
-def case_has_basic_scan(case_name: str) -> bool:
-    from case_scope import list_case_ips
+def case_has_basic_scan(case_name: str, *, current_ip: str | None = None) -> bool:
     from scan_run import PROFILE_BASIC
     from scan_run import is_profile_coverage_complete
 
-    for ip in list_case_ips(case_name):
+    for ip in _recon_scope_ips(current_ip):
         if is_profile_coverage_complete(ip, PROFILE_BASIC):
             return True
     return False
@@ -1025,45 +1028,28 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
     if row is None:
         case = _current_case_name()
         if case:
-            from case_scope import list_case_ips
             from url_util import url_path_key
 
             want_path = url_path_key(url)
-            scope_ips = [x for x in list_case_ips(case) if x != ip]
-            batches: list = []
+            scope_ips = [x for x in _recon_scope_ips(ip) if x != ip]
             if scope_ips:
                 placeholders = ",".join("?" * len(scope_ips))
-                batches.extend(
-                    cur.execute(
-                        f"""
-                        SELECT id, ip, kind, url, port, wordlist, command, log_path,
-                               status, pid, exit_code, hits_summary, started_at, ended_at
-                        FROM scout_jobs
-                        WHERE kind = ? AND wordlist = ? AND status = ?
-                          AND ip IN ({placeholders})
-                        ORDER BY id DESC
-                        LIMIT 200
-                        """,
-                        (kind, wordlist, status, *scope_ips),
-                    ).fetchall()
-                )
-            batches.extend(
-                cur.execute(
-                    """
+                batches = cur.execute(
+                    f"""
                     SELECT id, ip, kind, url, port, wordlist, command, log_path,
                            status, pid, exit_code, hits_summary, started_at, ended_at
                     FROM scout_jobs
-                    WHERE kind = ? AND wordlist = ? AND status = ? AND case_name = ?
+                    WHERE kind = ? AND wordlist = ? AND status = ?
+                      AND ip IN ({placeholders})
                     ORDER BY id DESC
                     LIMIT 200
                     """,
-                    (kind, wordlist, status, case),
+                    (kind, wordlist, status, *scope_ips),
                 ).fetchall()
-            )
-            for candidate in batches:
-                if url_path_key(candidate["url"] or "") == want_path:
-                    row = candidate
-                    break
+                for candidate in batches:
+                    if url_path_key(candidate["url"] or "") == want_path:
+                        row = candidate
+                        break
 
     conn.close()
     return row
@@ -1385,35 +1371,12 @@ def find_done_execution(ip: str, command: str):
     if row is None:
         case = _current_case_name()
         if case:
-            from case_scope import list_case_ips
-
-            for alt_ip in list_case_ips(case):
+            for alt_ip in _recon_scope_ips(ip):
                 if alt_ip == ip:
                     continue
                 row = _fetch_canonical_for_ip(alt_ip)
                 if row is not None:
                     break
-            if row is None:
-                candidates = cur.execute(
-                    """
-                    SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
-                    FROM executions
-                    WHERE case_name = ?
-                      AND status = 'done'
-                      AND exit_code = 0
-                    ORDER BY id DESC
-                    LIMIT 200
-                    """,
-                    (case,),
-                ).fetchall()
-                for candidate in candidates:
-                    cmd = candidate["command"] or ""
-                    if cmd == command or cmd == canon:
-                        row = candidate
-                        break
-                    if canonicalize_probe_command(cmd) == canon:
-                        row = candidate
-                        break
 
     conn.close()
     return row
@@ -1638,15 +1601,18 @@ def list_ssh_creds(ip: str):
 def _case_scope_sql(case_name: str, *, ips: list[str]) -> tuple[str, list]:
     if ips:
         placeholders = ",".join("?" * len(ips))
-        return f"(case_name = ? OR ip IN ({placeholders}))", [case_name, *ips]
+        return f"ip IN ({placeholders})", list(ips)
     return "case_name = ?", [case_name]
 
 
-def list_ssh_creds_for_case(case_name: str):
-    """Return [{ip, username, password}, ...] for all IPs seen in this case."""
-    from case_scope import list_case_ips
+def list_ssh_creds_for_case(case_name: str, *, all_case: bool = False):
+    """Return [{ip, username, password}, ...] for recon scope (or whole case)."""
+    if all_case:
+        from case_scope import list_case_ips
 
-    ips = list_case_ips(case_name)
+        ips = list_case_ips(case_name)
+    else:
+        ips = _recon_scope_ips()
     scope, params = _case_scope_sql(case_name, ips=ips)
     conn = connect()
     rows = conn.execute(
@@ -1794,9 +1760,9 @@ def print_host_summary_json(ip: str, executions_limit: int = 10, artifacts_limit
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50):
+def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50, all_case: bool = False):
     if case_name:
-        return list_executions_for_case(case_name, limit=limit)
+        return list_executions_for_case(case_name, limit=limit, all_case=all_case)
 
     conn = connect()
     cur = conn.cursor()
@@ -1827,10 +1793,13 @@ def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50):
     return rows
 
 
-def list_executions_for_case(case_name: str, *, limit: int = 50):
-    from case_scope import list_case_ips
+def list_executions_for_case(case_name: str, *, limit: int = 50, all_case: bool = False):
+    if all_case:
+        from case_scope import list_case_ips
 
-    ips = list_case_ips(case_name)
+        ips = list_case_ips(case_name)
+    else:
+        ips = _recon_scope_ips()
     scope, params = _case_scope_sql(case_name, ips=ips)
     conn = connect()
     rows = conn.execute(

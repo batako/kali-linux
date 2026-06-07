@@ -46,6 +46,14 @@ case-show() {
   if [[ -n "${CASE:-}" ]]; then
     echo "case: $CASE"
     echo "path: ${CASE_HOME:-}"
+    if (( $+functions[target-current] )) && target-current >/dev/null 2>&1; then
+      echo "target: $IP"
+    fi
+    if [[ -f "${CASE_HOME}/load_from" ]]; then
+      echo "load_from: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')"
+    else
+      echo "load_from: (none)"
+    fi
     return 0
   fi
   if [[ "${CASE_LOOSE:-}" == 1 ]]; then
@@ -67,6 +75,20 @@ case-open() {
   home="$(case-home)" || return 1
   cd "$home" || return 1
   echo "[+] cwd: $home"
+}
+
+# Change load_from for current target (recon scope) without changing IP
+case-load() {
+  if [[ -z "${CASE:-}" ]]; then
+    echo "[-] case-load: cs <case> first" >&2
+    return 1
+  fi
+  if [[ $# -lt 1 ]]; then
+    echo "usage: case-load <ip|--new|--pick>"
+    echo "  change inherit source for el/cl/scout (current IP unchanged)"
+    return 1
+  fi
+  python3 "$RECON_APP" case-load-from "$1"
 }
 
 cs() { case-set "$@" }

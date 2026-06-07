@@ -766,9 +766,9 @@ def _fetch_scout_executions(ip: str):
     conn = connect()
     cur = conn.cursor()
     if case:
-        from case_scope import list_case_ips
+        from case_scope import recon_scope_ips
 
-        ips = list_case_ips(case)
+        ips = recon_scope_ips(ip)
         if ips:
             placeholders = ",".join("?" * len(ips))
             rows = cur.execute(
@@ -776,10 +776,10 @@ def _fetch_scout_executions(ip: str):
                 SELECT id, task_type, command, status, exit_code, stdout, ended_at
                 FROM executions
                 WHERE task_type LIKE 'scout-%'
-                  AND (case_name = ? OR ip IN ({placeholders}))
+                  AND ip IN ({placeholders})
                 ORDER BY id ASC
                 """,
-                (case, *ips),
+                ips,
             ).fetchall()
         else:
             rows = cur.execute(

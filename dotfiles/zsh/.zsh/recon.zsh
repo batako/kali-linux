@@ -22,6 +22,7 @@ target-load() {
   export IP="$ip"
   if [[ -n "${CASE:-}" ]]; then
     python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
+    python3 "$RECON_APP" case-sync-ips 2>/dev/null
   fi
   return 0
 }
@@ -35,6 +36,7 @@ target-save() {
   print -r -- "$ip" >"$f"
   if [[ -n "${CASE:-}" ]]; then
     python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
+    python3 "$RECON_APP" case-sync-ips 2>/dev/null
   fi
   return 0
 }
@@ -249,7 +251,7 @@ xcs() {
 }
 
 exec-list() {
-  # usage: exec-list [-l] [ip]   default: current CASE (all IPs in room), else $IP
+  # usage: exec-list [-l] [--all-case] [ip]   default: recon scope when CASE set
   python3 "$RECON_APP" exec-list "$@"
 }
 

@@ -1,5 +1,6 @@
 import sys
 import os
+from pathlib import Path
 
 from db import init_db
 from db import show_hosts
@@ -29,6 +30,16 @@ from hints import format_hint_list_lines
 from hints import hint_scope
 from case_scope import case_name_from_env
 from case_scope import register_case_ip
+from case_scope import sync_case_ip_registry
+from case_scope import read_load_from
+from case_scope import write_load_from
+from case_scope import clear_load_from
+from case_scope import read_target_ip
+from case_scope import resolve_load_from
+from case_scope import list_case_ip_candidates
+from case_scope import format_candidate_line
+from case_scope import recon_scope_ips
+from case_scope import looks_like_ipv4 as case_looks_like_ipv4
 import json
 
 from scanner import network_scan
@@ -690,13 +701,140 @@ def main():
         register_case_ip(case, ip)
         print(f"[+] case {case}: registered ip {ip}")
 
+    elif cmd == "case-sync-ips":
+        case = case_name_from_env()
+        if not case:
+            print("usage: recon.py case-sync-ips  (requires CASE)")
+            sys.exit(1)
+        ips = sync_case_ip_registry(case, extra=[read_load_from(), read_target_ip()])
+        print(f"[+] case {case}: {len(ips)} ip(s) — {', '.join(ips) or '(none)'}")
+
+    elif cmd == "case-target-set":
+        args = sys.argv[2:]
+        if not args:
+            print("usage: recon.py case-target-set <ip> [--mode inherit|new|pick] [--previous IP] [--from IP] [-y]")
+            sys.exit(1)
+        new_ip = args[0]
+        if not case_looks_like_ipv4(new_ip):
+            print(f"invalid ip: {new_ip!r}")
+            sys.exit(1)
+        case = case_name_from_env()
+        if not case:
+            print("usage: recon.py case-target-set <ip>  (requires CASE)")
+            sys.exit(1)
+        mode = "inherit"
+        previous_ip = None
+        from_ip = None
+        assume_yes = False
+        i = 1
+        while i < len(args):
+            a = args[i]
+            if a in ("--mode", "-m") and i + 1 < len(args):
+                mode = args[i + 1]
+                i += 2
+            elif a == "--previous" and i + 1 < len(args):
+                previous_ip = args[i + 1]
+                i += 2
+            elif a == "--from" and i + 1 < len(args):
+                from_ip = args[i + 1]
+                i += 2
+            elif a in ("-y", "--yes"):
+                assume_yes = True
+                i += 1
+            else:
+                print(f"unknown option: {a}")
+                sys.exit(1)
+        if previous_ip is None:
+            previous_ip = read_target_ip()
+        load_from = resolve_load_from(
+            new_ip=new_ip,
+            previous_ip=previous_ip,
+            mode=mode,
+            from_ip=from_ip,
+            assume_yes=assume_yes,
+        )
+        if load_from:
+            write_load_from(load_from)
+        else:
+            clear_load_from()
+        register_case_ip(case, new_ip)
+        home = os.environ.get("CASE_HOME", "").strip()
+        if home:
+            target = Path(home) / "target"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(new_ip + "\n", encoding="utf-8")
+        scope = recon_scope_ips(new_ip)
+        if load_from:
+            print(f"[+] target: {new_ip}  (load_from: {load_from})")
+        else:
+            print(f"[+] target: {new_ip}  (--new, no inherit)")
+        if scope:
+            print(f"[*] recon scope: {', '.join(scope)}")
+
+    elif cmd == "case-load-from":
+        args = sys.argv[2:]
+        case = case_name_from_env()
+        if not case or not args:
+            print("usage: recon.py case-load-from <ip|--new|--pick>")
+            sys.exit(1)
+        if args[0] in ("--new", "new", "none"):
+            clear_load_from()
+            print("[+] load_from cleared (--new)")
+        elif args[0] in ("--pick", "pick"):
+            from case_scope import pick_load_from_interactive
+
+            current = os.environ.get("IP")
+            load_from = pick_load_from_interactive(
+                case,
+                current_ip=current,
+                previous_ip=read_load_from(),
+            )
+            if load_from:
+                register_case_ip(case, load_from)
+                write_load_from(load_from)
+                print(f"[+] load_from: {load_from}")
+            else:
+                clear_load_from()
+                print("[+] load_from cleared (--new)")
+        else:
+            ip = args[0].strip()
+            if not case_looks_like_ipv4(ip):
+                print(f"invalid ip: {ip!r}")
+                sys.exit(1)
+            register_case_ip(case, ip)
+            write_load_from(ip)
+            print(f"[+] load_from: {ip}")
+        scope = recon_scope_ips(os.environ.get("IP"))
+        if scope:
+            print(f"[*] recon scope: {', '.join(scope)}")
+
+    elif cmd == "case-ip-list":
+        case = case_name_from_env()
+        if not case:
+            print("usage: recon.py case-ip-list  (requires CASE)")
+            sys.exit(1)
+        current = os.environ.get("IP")
+        load_from = read_load_from()
+        print(f"case {case}")
+        if current:
+            print(f"target: {current}")
+        print(f"load_from: {load_from or '(none)'}")
+        print("")
+        for row in list_case_ip_candidates(case, current_ip=current):
+            marker = "*" if load_from and row["ip"] == load_from else ""
+            print(format_candidate_line(row, marker=marker))
+
     elif cmd == "exec-list":
-        # list recent executions; default = current CASE, else $IP; -l = all hosts
+        # list recent executions; default = recon scope when CASE set; -l = all hosts
         args = sys.argv[2:]
         list_all = False
+        all_case = False
 
-        if args and args[0] in ("-l", "--all"):
-            list_all = True
+        while args and args[0] in ("-l", "--all", "--all-case"):
+            if args[0] in ("-l", "--all"):
+                list_all = True
+            else:
+                all_case = True
             args = args[1:]
 
         case = case_name_from_env()
@@ -708,8 +846,12 @@ def main():
             rows = list_executions(limit=50)
             label = "all hosts"
         elif case:
-            rows = list_executions(case_name=case, limit=50)
-            label = f"case {case}"
+            rows = list_executions(case_name=case, limit=50, all_case=all_case)
+            if all_case:
+                label = f"case {case} (all IPs)"
+            else:
+                scope = recon_scope_ips()
+                label = f"case {case} ({', '.join(scope) or 'scope'})"
         else:
             ip = os.environ.get("IP")
             if not ip:
@@ -1011,8 +1153,12 @@ def main():
     elif cmd == "creds-list":
         args = sys.argv[2:]
         as_json = False
-        if args and args[0] == "--json":
-            as_json = True
+        all_case = False
+        while args and args[0] in ("--json", "--all-case"):
+            if args[0] == "--json":
+                as_json = True
+            else:
+                all_case = True
             args = args[1:]
 
         ip = args[0] if args else None
@@ -1028,7 +1174,7 @@ def main():
                     for r in rows:
                         print(f"{r['username']}\t{r['password']}")
         elif case:
-            rows = list_ssh_creds_for_case(case)
+            rows = list_ssh_creds_for_case(case, all_case=all_case)
             if as_json:
                 print(json.dumps(rows))
             else:

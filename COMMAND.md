@@ -51,7 +51,7 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは案件ルート（`CASE_HOME`）に直接置いてよい。
 
-**THM で IP が変わったとき:** `ta <新IP>` するだけ。`el` / `cl` / `hl` / **`s -r`** は **case 単位**（過去 IP の scan・dirs・exploit も統合表示）。`-p next` / dirs skip も **URL path 単位**（`/island/` 済みなら新 IP でも skip）。ポート再 scan は `--force` または case 内に basic scan 未済のときのみ。
+**THM で IP が変わったとき:** `ta <新IP>` するだけ（既定で **直前 target から継承**）。`el` / `cl` / **`s -r`** は **load_from + 現在 IP** の recon scope を表示（pivot 時は `ta <ip> --new`）。`-p next` / dirs skip も **URL path 単位**（`/island/` 済みなら新 IP でも skip）。ポート再 scan は `--force` または scope 内に basic scan 未済のときのみ。ルーム全体の監査は `el --all-case` / `cl --all-case`。
 
 ```bash
 cs startup
@@ -78,7 +78,8 @@ cs startup
 
 | コマンド | 説明 |
 |----------|------|
-| `case-show` | 現在の `CASE` / `CASE_HOME` |
+| `case-show` | 現在の `CASE` / `CASE_HOME` / `target` / `load_from` |
+| `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（load_from）だけ変更 |
 | `case-clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
 | `case-open` | 案件を変えず `CASE_HOME` に cd し直す |
 
@@ -98,8 +99,10 @@ cs startup
 
 | コマンド | 説明 |
 |----------|------|
-| `ts <ip>` | `target-set` の短縮。`cases/<case>/target` に保存し `$IP` 設定 |
-| `ta <ip>` / `ta` / `ti` | target 設定または `target` から `$IP` 再読込（**oh-my-zsh tmux の `ta` を上書き**） |
+| `ts <ip>` | `target-set` の短縮。`cases/<case>/target` に保存し `$IP` 設定（継承は触らない） |
+| `ta <ip>` / `ta` / `ti` | target 設定または `target` から `$IP` 再読込。**IP 変更時は継承プロンプト**（既定 Y） |
+| `ta <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
+| `ta <ip> --pick` | 継承元 IP を対話選択（last_seen + open/dirs 件数） |
 | `case-sync` | `$PWD` が `cases/<name>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
@@ -318,7 +321,7 @@ hr 3          # id=3 を削除
 | コマンド | 説明 |
 |----------|------|
 | `creds-add [ip] <user> <pass>` / `ca` | 手動登録（`???` 等の仮置きは `noglob` 付き alias。更新後は `exec zsh`） |
-| `creds-list [ip]` / `cl` | 一覧。**`cs` 済みなら case 内の全 IP**（IP 列付き）。`cl 10.x.x.x` で単一 IP |
+| `creds-list [ip]` / `cl` | 一覧。**`cs` 済みなら load_from + 現在 IP**（IP 列付き）。`cl --all-case` で case 内全 IP |
 | `creds-rm [ip] [user]` / `cr` | 削除（user 省略で IP の creds すべて。`?` 等は `noglob` 付き alias） |
 | `hydrassh [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
@@ -454,7 +457,7 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | `x [ip] <cmd...>` | コマンド実行を記録（`exec-run`） |
 | `xs ...` | サイレント（出力抑制寄り） |
 | `xc` / `xcs` | キャッシュ付き（同一 ip+cmd は再利用可） |
-| `el [ip]` / `exec-list` | 実行一覧。**`cs` 済みなら case 内の全 IP**（`ta` で IP が変わっても旧履歴を表示）。`el -l` で全ホスト |
+| `el [ip]` / `exec-list` | 実行一覧。**`cs` 済みなら load_from + 現在 IP**（reboot 継承）。`el --all-case` で case 内全 IP、`el -l` で全ホスト |
 | `ev <id> [--tail N]` | 出力表示 |
 | `exec-form <id> [--shell]` | 実行 stdout からアップロードフォーム解析 |
 | `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |
