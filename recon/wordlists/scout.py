@@ -102,16 +102,28 @@ def resolve_scout_wordlist(
 
 
 def _done_wordlist_paths(ip: str, url: str) -> set[str]:
+    from case_scope import case_name_from_env
     from db import list_scout_jobs
+    from db import list_scout_jobs_for_case
     from url_util import canonicalize_url
+    from url_util import url_path_key
 
-    canon = canonicalize_url((url or "").strip())
+    want_path = url_path_key(url)
     done: set[str] = set()
+    case = case_name_from_env()
     for status in ("running", "done"):
-        for row in list_scout_jobs(ip, kind="dirs", status=status, limit=500):
-            row_url = canonicalize_url((row["url"] or "").strip())
-            if row_url != canon:
-                continue
+        if case:
+            rows = list_scout_jobs_for_case(case, kind="dirs", status=status, limit=500)
+        else:
+            rows = list_scout_jobs(ip, kind="dirs", status=status, limit=500)
+        for row in rows:
+            if case:
+                if url_path_key(row["url"] or "") != want_path:
+                    continue
+            else:
+                row_url = canonicalize_url((row["url"] or "").strip())
+                if row_url != canonicalize_url((url or "").strip()):
+                    continue
             wl = (row["wordlist"] or "").strip()
             if wl:
                 done.add(wl)

@@ -33,6 +33,18 @@ def canonicalize_url(url: str) -> str:
     return f"{scheme}://{host}:{port}{path}"
 
 
+def url_path_key(url: str) -> str:
+    """Path-only key for cross-IP dirs cache within the same case (/island/)."""
+    s = canonicalize_url((url or "").strip())
+    if not s:
+        return "/"
+    parsed = urlparse(s)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    return path
+
+
 def canonicalize_probe_command(command: str) -> str:
     """Normalize URLs embedded in curl-style probe commands."""
     command = (command or "").strip()

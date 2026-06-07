@@ -21,9 +21,13 @@ from db import connect
 from db import find_done_scout_job
 from db import find_running_scout_job
 from db import format_scan_snapshot_lines
+from db import format_scan_snapshot_case_lines
+from db import case_has_basic_scan
+from db import fetch_merged_open_ports
 from db import get_scout_job
 from db import insert_scout_job
 from db import list_scout_jobs
+from db import list_scout_jobs_for_case
 from db import update_scout_job
 from db import upsert_host
 from db import _fetch_ports
@@ -33,6 +37,8 @@ from scan_run import PROFILE_BASIC
 from scan_run import run_scan
 from url_util import canonicalize_url
 from url_util import normalize_web_url
+from url_util import url_path_key
+from case_scope import case_name_from_env
 
 PROBE_TIMEOUT_SEC = 30
 
@@ -163,9 +169,20 @@ def resolve_dirs_targets(ip: str, raw_urls: list[str]) -> list[str]:
     return [resolve_dirs_target(ip, u) for u in raw_urls]
 
 
+def _scout_case() -> str | None:
+    return case_name_from_env()
+
+
+def _scout_jobs(ip: str, **kwargs):
+    case = _scout_case()
+    if case:
+        return list_scout_jobs_for_case(case, **kwargs)
+    return list_scout_jobs(ip, **kwargs)
+
+
 def discover_web_targets(ip: str) -> list[tuple[int, str]]:
     targets = []
-    for row in _fetch_ports(ip, "open"):
+    for row in fetch_merged_open_ports(ip):
         port = int(row[0])
         service = row[3] or ""
         if not is_web_service(service):
@@ -490,7 +507,7 @@ def reconcile_scout_job(job_id: int) -> None:
 
 
 def reconcile_scout_jobs(ip: str) -> None:
-    for row in list_scout_jobs(ip, status="running", limit=200):
+    for row in _scout_jobs(ip, status="running", limit=200):
         reconcile_scout_job(int(row["id"]))
 
 
@@ -688,7 +705,7 @@ def _run_dirs_phase(
 
 def _probe_open_rows(ip: str):
     """All open ports; resolve_probe_plan filters by service (ssh / web / ftp)."""
-    return sorted(_fetch_ports(ip, "open"), key=lambda r: int(r[0]))
+    return sorted(fetch_merged_open_ports(ip), key=lambda r: int(r[0]))
 
 
 def _format_port_row(row) -> str:
@@ -745,17 +762,45 @@ def _run_probe_phase(ip: str, *, dry_run: bool = False) -> int:
 
 
 def _fetch_scout_executions(ip: str):
+    case = _scout_case()
     conn = connect()
     cur = conn.cursor()
-    rows = cur.execute(
-        """
-        SELECT id, task_type, command, status, exit_code, stdout, ended_at
-        FROM executions
-        WHERE ip = ? AND task_type LIKE 'scout-%'
-        ORDER BY id ASC
-        """,
-        (ip,),
-    ).fetchall()
+    if case:
+        from case_scope import list_case_ips
+
+        ips = list_case_ips(case)
+        if ips:
+            placeholders = ",".join("?" * len(ips))
+            rows = cur.execute(
+                f"""
+                SELECT id, task_type, command, status, exit_code, stdout, ended_at
+                FROM executions
+                WHERE task_type LIKE 'scout-%'
+                  AND (case_name = ? OR ip IN ({placeholders}))
+                ORDER BY id ASC
+                """,
+                (case, *ips),
+            ).fetchall()
+        else:
+            rows = cur.execute(
+                """
+                SELECT id, task_type, command, status, exit_code, stdout, ended_at
+                FROM executions
+                WHERE task_type LIKE 'scout-%' AND case_name = ?
+                ORDER BY id ASC
+                """,
+                (case,),
+            ).fetchall()
+    else:
+        rows = cur.execute(
+            """
+            SELECT id, task_type, command, status, exit_code, stdout, ended_at
+            FROM executions
+            WHERE ip = ? AND task_type LIKE 'scout-%'
+            ORDER BY id ASC
+            """,
+            (ip,),
+        ).fetchall()
     conn.close()
     return rows
 
@@ -780,16 +825,16 @@ def _probe_stdout_hint(stdout: str, *, max_len: int = 100) -> str:
     return stdout.strip().splitlines()[0][:max_len]
 
 
-def _latest_dirs_jobs(jobs) -> list:
+def _latest_dirs_jobs(jobs, *, group_by_path: bool = False) -> list:
     by_url = {}
     for row in jobs:
         if row["kind"] != "dirs":
             continue
-        url = row["url"]
-        prev = by_url.get(url)
+        key = url_path_key(row["url"] or "") if group_by_path else row["url"]
+        prev = by_url.get(key)
         if prev is None or int(row["id"]) > int(prev["id"]):
-            by_url[url] = row
-    return sorted(by_url.values(), key=lambda r: r["url"])
+            by_url[key] = row
+    return sorted(by_url.values(), key=lambda r: (r["url"] or ""))
 
 
 def _dirs_findings_for_job(row) -> list[tuple[str, int]]:
@@ -873,10 +918,11 @@ def _paths_root_label(ip: str, rows) -> str:
 
 
 def _fetch_paths_report_state(ip: str) -> tuple[list, list[tuple[str, int]], bool]:
-    """Latest dirs job per URL → merged findings and running flag."""
+    """Latest dirs job per URL path → merged findings and running flag."""
     reconcile_scout_jobs(ip)
-    jobs = list_scout_jobs(ip, kind="dirs", limit=100)
-    latest = _latest_dirs_jobs(jobs)
+    jobs = _scout_jobs(ip, kind="dirs", limit=200)
+    group_by_path = bool(_scout_case())
+    latest = _latest_dirs_jobs(jobs, group_by_path=group_by_path)
     if not latest:
         return [], [], False
     findings = _merge_job_findings(latest)
@@ -958,9 +1004,15 @@ def show_scout_ports(ip: str) -> int:
     full_cov = count_tcp_coverage_in_ports(ip, full_tcp_ports())
     progress = f"[*] basic {basic_cov}/1000  full {full_cov}/{FULL_TCP_END}"
 
+    case = _scout_case()
     print("")
-    print(f"[*] report-ports {ip}")
-    for line in format_scan_snapshot_lines(ip, progress):
+    if case:
+        print(f"[*] report-ports case {case}  target {ip}")
+        port_lines = format_scan_snapshot_case_lines(case, ip, progress)
+    else:
+        print(f"[*] report-ports {ip}")
+        port_lines = format_scan_snapshot_lines(ip, progress)
+    for line in port_lines:
         print(line)
     print("")
     return 0
@@ -968,8 +1020,12 @@ def show_scout_ports(ip: str) -> int:
 
 def show_scout_report_exploits(ip: str) -> int:
     """DB snapshot: EXPLOITS section only (no searchsploit)."""
+    case = _scout_case()
     print("")
-    print(f"[*] report-exploits {ip}")
+    if case:
+        print(f"[*] report-exploits case {case}  target {ip}")
+    else:
+        print(f"[*] report-exploits {ip}")
     print("")
     print("--- EXPLOITS ---")
     from scout_exploit import format_exploit_report_lines
@@ -986,8 +1042,12 @@ def show_scout_report_exploits(ip: str) -> int:
 def show_scout_report_paths(ip: str) -> int:
     """DB snapshot: PATHS tree only (no gobuster)."""
     latest, findings, running = _fetch_paths_report_state(ip)
+    case = _scout_case()
     print("")
-    print(f"[*] report-paths {ip}")
+    if case:
+        print(f"[*] report-paths case {case}  target {ip}")
+    else:
+        print(f"[*] report-paths {ip}")
     print("")
     _print_paths_section(ip, latest, findings, running=running)
     print("")
@@ -1007,11 +1067,19 @@ def show_scout_report(ip: str) -> int:
     full_cov = count_tcp_coverage_in_ports(ip, full_tcp_ports())
     progress = f"[*] basic {basic_cov}/1000  full {full_cov}/{FULL_TCP_END}"
 
+    case = _scout_case()
     print("========================")
-    print(f"[SCOUT REPORT] {ip}")
+    if case:
+        print(f"[SCOUT REPORT] case {case}  target {ip}")
+    else:
+        print(f"[SCOUT REPORT] {ip}")
     print("========================")
     print("")
-    for line in format_scan_snapshot_lines(ip, progress):
+    if case:
+        port_lines = format_scan_snapshot_case_lines(case, ip, progress)
+    else:
+        port_lines = format_scan_snapshot_lines(ip, progress)
+    for line in port_lines:
         print(line)
     print("")
 
@@ -1072,12 +1140,16 @@ def show_scout_status(
                 print("\033[2J\033[H", end="")
 
             reconcile_scout_jobs(ip)
-            all_rows = list_scout_jobs(ip, limit=200)
+            all_rows = _scout_jobs(ip, limit=200)
             running_total = sum(1 for r in all_rows if r["status"] == "running")
             rows = _select_status_jobs(all_rows)
 
             print("========================")
-            print(f"[SCOUT STATUS] {ip}")
+            case = _scout_case()
+            if case:
+                print(f"[SCOUT STATUS] case {case}  target {ip}")
+            else:
+                print(f"[SCOUT STATUS] {ip}")
             if wait_dirs:
                 print(f"[*] -ws ({interval_sec:g}s) — Ctrl+C to stop")
             print("========================")
@@ -1119,7 +1191,7 @@ def _auto_wait_dirs(ip: str, *, dry_run: bool = False) -> int:
     if dry_run:
         return 0
     reconcile_scout_jobs(ip)
-    if not list_scout_jobs(ip, limit=1):
+    if not _scout_jobs(ip, limit=1):
         return 0
     print("")
     print("[*] dirs watch (-ws) — Ctrl+C to stop")
@@ -1168,20 +1240,34 @@ def run_scout(
         return max(rc, wait_rc)
 
     print("========================")
-    print(f"[SCOUT] {ip}")
+    case = _scout_case()
+    if case:
+        print(f"[SCOUT] case {case}  target {ip}")
+    else:
+        print(f"[SCOUT] {ip}")
     print("========================")
-    print("[*] phase 1: port scan (top 1000, -sC -sV)")
+
+    skip_scan = False
+    if case and not force_scan and not dry_run and case_has_basic_scan(case):
+        print("[*] phase 1: port scan skipped (case already has basic scan on a prior IP)")
+        print("[i] use scout --force to rescan this target")
+        skip_scan = True
+    else:
+        print("[*] phase 1: port scan (top 1000, -sC -sV)")
     print("")
 
-    rc = run_scan(
-        ip,
-        profile=PROFILE_BASIC,
-        force=force_scan,
-        dry_run=dry_run,
-        quiet_ports=quiet_ports,
-    )
-    if rc != 0:
-        return rc
+    if skip_scan:
+        rc = 0
+    else:
+        rc = run_scan(
+            ip,
+            profile=PROFILE_BASIC,
+            force=force_scan,
+            dry_run=dry_run,
+            quiet_ports=quiet_ports,
+        )
+        if rc != 0:
+            return rc
 
     rc = _run_probe_phase(ip, dry_run=dry_run)
     if rc != 0:

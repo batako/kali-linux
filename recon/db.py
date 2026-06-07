@@ -895,6 +895,91 @@ def list_scout_jobs(ip, *, kind=None, status=None, limit=50):
     return rows
 
 
+def list_scout_jobs_for_case(case_name: str, *, kind=None, status=None, limit=200):
+    from case_scope import list_case_ips
+
+    ips = list_case_ips(case_name)
+    scope, params = _case_scope_sql(case_name, ips=ips)
+    conn = connect()
+    sql = f"""
+    SELECT id, ip, kind, url, port, wordlist, command, log_path,
+           status, pid, exit_code, hits_summary, started_at, ended_at
+    FROM scout_jobs
+    WHERE {scope}
+    """
+    if kind:
+        sql += " AND kind = ?"
+        params.append(kind)
+    if status:
+        sql += " AND status = ?"
+        params.append(status)
+    sql += " ORDER BY started_at DESC, id DESC LIMIT ?"
+    params.append(int(limit))
+    rows = conn.execute(sql, params).fetchall()
+    conn.close()
+    return rows
+
+
+def fetch_merged_open_ports(current_ip: str):
+    """Union open ports across the current case; prefer current_ip service info."""
+    case = _current_case_name()
+    order: list[str] = []
+    if case:
+        from case_scope import list_case_ips
+
+        order.extend(list_case_ips(case))
+    if current_ip not in order:
+        order.append(current_ip)
+    elif current_ip in order:
+        order = [ip for ip in order if ip != current_ip] + [current_ip]
+
+    merged: dict[int, tuple] = {}
+    for ip in order:
+        for row in _fetch_ports(ip, "open"):
+            merged[int(row[0])] = row
+    return [merged[p] for p in sorted(merged)]
+
+
+def fetch_merged_closed_ports(current_ip: str):
+    case = _current_case_name()
+    order: list[str] = []
+    if case:
+        from case_scope import list_case_ips
+
+        order.extend(list_case_ips(case))
+    if current_ip not in order:
+        order.append(current_ip)
+    elif current_ip in order:
+        order = [ip for ip in order if ip != current_ip] + [current_ip]
+
+    merged: dict[int, tuple] = {}
+    for ip in order:
+        for row in _fetch_ports(ip, closed_with_service=True):
+            merged[int(row[0])] = row
+    return [merged[p] for p in sorted(merged)]
+
+
+def format_scan_snapshot_case_lines(case_name: str, current_ip: str, progress_line: str):
+    """Case-scoped port snapshot (union across room IPs, same machine config)."""
+    lines = [progress_line]
+    lines.extend(format_port_section_lines("OPEN", fetch_merged_open_ports(current_ip)))
+    lines.extend(
+        format_port_section_lines("CLOSED", fetch_merged_closed_ports(current_ip))
+    )
+    return lines
+
+
+def case_has_basic_scan(case_name: str) -> bool:
+    from case_scope import list_case_ips
+    from scan_run import PROFILE_BASIC
+    from scan_run import is_profile_coverage_complete
+
+    for ip in list_case_ips(case_name):
+        if is_profile_coverage_complete(ip, PROFILE_BASIC):
+            return True
+    return False
+
+
 def _find_scout_job(ip, kind, url, wordlist, *, status):
     from url_util import canonicalize_url
 
@@ -936,6 +1021,49 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
             if canonicalize_url(candidate["url"] or "") == url:
                 row = candidate
                 break
+
+    if row is None:
+        case = _current_case_name()
+        if case:
+            from case_scope import list_case_ips
+            from url_util import url_path_key
+
+            want_path = url_path_key(url)
+            scope_ips = [x for x in list_case_ips(case) if x != ip]
+            batches: list = []
+            if scope_ips:
+                placeholders = ",".join("?" * len(scope_ips))
+                batches.extend(
+                    cur.execute(
+                        f"""
+                        SELECT id, ip, kind, url, port, wordlist, command, log_path,
+                               status, pid, exit_code, hits_summary, started_at, ended_at
+                        FROM scout_jobs
+                        WHERE kind = ? AND wordlist = ? AND status = ?
+                          AND ip IN ({placeholders})
+                        ORDER BY id DESC
+                        LIMIT 200
+                        """,
+                        (kind, wordlist, status, *scope_ips),
+                    ).fetchall()
+                )
+            batches.extend(
+                cur.execute(
+                    """
+                    SELECT id, ip, kind, url, port, wordlist, command, log_path,
+                           status, pid, exit_code, hits_summary, started_at, ended_at
+                    FROM scout_jobs
+                    WHERE kind = ? AND wordlist = ? AND status = ? AND case_name = ?
+                    ORDER BY id DESC
+                    LIMIT 200
+                    """,
+                    (kind, wordlist, status, case),
+                ).fetchall()
+            )
+            for candidate in batches:
+                if url_path_key(candidate["url"] or "") == want_path:
+                    row = candidate
+                    break
 
     conn.close()
     return row

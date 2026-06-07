@@ -51,7 +51,7 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは案件ルート（`CASE_HOME`）に直接置いてよい。
 
-**THM で IP が変わったとき:** `ta <新IP>` するだけ。`el` / `cl` / `hl` は **case 単位**（過去に `ta` した IP も `case_ips` に残る）。ポートスキャン・scout dirs は **新 IP で再実行**が必要。
+**THM で IP が変わったとき:** `ta <新IP>` するだけ。`el` / `cl` / `hl` / **`s -r`** は **case 単位**（過去 IP の scan・dirs・exploit も統合表示）。`-p next` / dirs skip も **URL path 単位**（`/island/` 済みなら新 IP でも skip）。ポート再 scan は `--force` または case 内に basic scan 未済のときのみ。
 
 ```bash
 cs startup
@@ -139,7 +139,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | コマンド | 説明 |
 |----------|------|
 | `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `--report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
+| `scout -r` / `--report [ip]` | DB の偵察サマリ（**case 統合**ポート + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
