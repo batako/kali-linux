@@ -51,6 +51,8 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは案件ルート（`CASE_HOME`）に直接置いてよい。
 
+**THM で IP が変わったとき:** `ta <新IP>` するだけ。`el` / `cl` / `hl` は **case 単位**（過去に `ta` した IP も `case_ips` に残る）。ポートスキャン・scout dirs は **新 IP で再実行**が必要。
+
 ```bash
 cs startup
 # [+] case: startup
@@ -316,7 +318,7 @@ hr 3          # id=3 を削除
 | コマンド | 説明 |
 |----------|------|
 | `creds-add [ip] <user> <pass>` / `ca` | 手動登録（`???` 等の仮置きは `noglob` 付き alias。更新後は `exec zsh`） |
-| `creds-list [ip]` / `cl` | 一覧 |
+| `creds-list [ip]` / `cl` | 一覧。**`cs` 済みなら case 内の全 IP**（IP 列付き）。`cl 10.x.x.x` で単一 IP |
 | `creds-rm [ip] [user]` / `cr` | 削除（user 省略で IP の creds すべて。`?` 等は `noglob` 付き alias） |
 | `hydrassh [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
@@ -452,7 +454,7 @@ ftprsh -U http://10.49.140.156/files/ftp/shell.php -u
 | `x [ip] <cmd...>` | コマンド実行を記録（`exec-run`） |
 | `xs ...` | サイレント（出力抑制寄り） |
 | `xc` / `xcs` | キャッシュ付き（同一 ip+cmd は再利用可） |
-| `el [ip]` / `exec-list` | 実行一覧（`el -l` で全ホスト） |
+| `el [ip]` / `exec-list` | 実行一覧。**`cs` 済みなら case 内の全 IP**（`ta` で IP が変わっても旧履歴を表示）。`el -l` で全ホスト |
 | `ev <id> [--tail N]` | 出力表示 |
 | `exec-form <id> [--shell]` | 実行 stdout からアップロードフォーム解析 |
 | `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |

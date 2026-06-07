@@ -13,6 +13,7 @@ from db import add_artifact
 from db import creds_delete
 from db import creds_upsert
 from db import list_ssh_creds
+from db import list_ssh_creds_for_case
 from db import get_ssh_last_user
 from db import set_ssh_last_user
 from db import list_executions
@@ -26,6 +27,8 @@ from hints import add_hint
 from hints import delete_hint
 from hints import format_hint_list_lines
 from hints import hint_scope
+from case_scope import case_name_from_env
+from case_scope import register_case_ip
 import json
 
 from scanner import network_scan
@@ -678,8 +681,17 @@ def main():
                 print("-----")
             print(f"executed: exec_id={exec_id}")
 
+    elif cmd == "case-register-ip":
+        ip = sys.argv[2] if len(sys.argv) >= 3 else os.environ.get("IP")
+        case = case_name_from_env()
+        if not case or not ip:
+            print("usage: recon.py case-register-ip <ip>  (requires CASE)")
+            sys.exit(1)
+        register_case_ip(case, ip)
+        print(f"[+] case {case}: registered ip {ip}")
+
     elif cmd == "exec-list":
-        # list recent executions; default = target IP ($IP), -l = all hosts
+        # list recent executions; default = current CASE, else $IP; -l = all hosts
         args = sys.argv[2:]
         list_all = False
 
@@ -687,20 +699,28 @@ def main():
             list_all = True
             args = args[1:]
 
+        case = case_name_from_env()
         if args:
             ip = args[0]
+            rows = list_executions(ip=ip, limit=50)
+            label = ip
         elif list_all:
-            ip = None
+            rows = list_executions(limit=50)
+            label = "all hosts"
+        elif case:
+            rows = list_executions(case_name=case, limit=50)
+            label = f"case {case}"
         else:
             ip = os.environ.get("IP")
             if not ip:
                 print("usage: recon.py exec-list [-l] [ip]")
-                print("hint: target-set <ip>  or  exec-list -l  for all hosts")
+                print("hint: cs <case>  or  target-set <ip>  or  exec-list -l")
                 sys.exit(1)
-
-        rows = list_executions(ip=ip, limit=50)
+            rows = list_executions(ip=ip, limit=50)
+            label = ip
 
         print("")
+        print(f"executions ({label})")
         print("EXEC_ID\tIP\tSTATUS\tEXIT\tENDED_AT\tCOMMAND")
         for r in rows:
             ended = r["ended_at"] or "-"
@@ -996,20 +1016,31 @@ def main():
             args = args[1:]
 
         ip = args[0] if args else None
-        if not ip:
-            print("usage: recon.py creds-list [--json] <ip>")
-            sys.exit(1)
-
-        rows = list_ssh_creds(ip)
-        if as_json:
-            # omit passwords in json? user needs them for ssh - include
-            print(json.dumps(rows))
-        else:
-            if not rows:
-                print(f"(no ssh creds for {ip})")
+        case = case_name_from_env()
+        if ip:
+            rows = list_ssh_creds(ip)
+            if as_json:
+                print(json.dumps(rows))
             else:
-                for r in rows:
-                    print(f"{r['username']}\t{r['password']}")
+                if not rows:
+                    print(f"(no ssh creds for {ip})")
+                else:
+                    for r in rows:
+                        print(f"{r['username']}\t{r['password']}")
+        elif case:
+            rows = list_ssh_creds_for_case(case)
+            if as_json:
+                print(json.dumps(rows))
+            else:
+                if not rows:
+                    print(f"(no ssh creds for case {case})")
+                else:
+                    for r in rows:
+                        print(f"{r['ip']}\t{r['username']}\t{r['password']}")
+        else:
+            print("usage: recon.py creds-list [--json] [ip]")
+            print("hint: cs <case>  or  pass ip")
+            sys.exit(1)
 
     elif cmd == "creds-import-hydra":
         if len(sys.argv) < 3:

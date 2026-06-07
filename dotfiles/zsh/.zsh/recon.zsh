@@ -20,6 +20,9 @@ target-load() {
   ip="$(head -1 "$f" | tr -d '[:space:]')"
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   export IP="$ip"
+  if [[ -n "${CASE:-}" ]]; then
+    python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
+  fi
   return 0
 }
 
@@ -30,6 +33,9 @@ target-save() {
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   f="$(_case-target-file)" || return 1
   print -r -- "$ip" >"$f"
+  if [[ -n "${CASE:-}" ]]; then
+    python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
+  fi
   return 0
 }
 
@@ -243,7 +249,7 @@ xcs() {
 }
 
 exec-list() {
-  # usage: exec-list [-l] [ip]   default: current target ($IP)
+  # usage: exec-list [-l] [ip]   default: current CASE (all IPs in room), else $IP
   python3 "$RECON_APP" exec-list "$@"
 }
 
@@ -313,12 +319,15 @@ alias creds-add='noglob _creds-add'
 alias ca='noglob _creds-add'
 
 creds-list() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "usage: creds-list [ip]"
+  if [[ -n "${1:-}" ]]; then
+    python3 "$RECON_APP" creds-list "$1"
+    return $?
+  fi
+  if [[ -z "${CASE:-}" && -z "${IP:-}" ]]; then
+    echo "usage: creds-list [ip]  (or: cs <case> first)"
     return 1
   fi
-  python3 "$RECON_APP" creds-list "$ip"
+  python3 "$RECON_APP" creds-list
 }
 
 # usage: creds-rm [ip] [username]   (no username → all creds for ip)

@@ -51,7 +51,7 @@ def add_hint(scope: str, text: str, *, tag: str = "") -> tuple[str, int]:
     if existing:
         return "unchanged", int(existing["id"])
 
-    art_id = add_artifact(ip=scope, kind=HINT_KIND, key=tag, value=text, execution_id=None)
+    art_id = add_artifact(ip=scope, kind=HINT_KIND, key=tag, value=text, execution_id=None, case_name=scope)
     return "saved", art_id
 
 

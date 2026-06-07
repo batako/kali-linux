@@ -195,8 +195,19 @@ def ensure_schema(conn):
     ON scout_jobs (ip, status, started_at DESC)
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS case_ips (
+        case_name TEXT NOT NULL,
+        ip TEXT NOT NULL,
+        first_seen TEXT,
+        last_seen TEXT,
+        PRIMARY KEY (case_name, ip)
+    )
+    """)
+
     # Backward-compatible migrations for older DBs
     _migrate_tasks_table(cur)
+    _migrate_case_scope_columns(cur)
     _backfill_task_defaults(cur)
 
     conn.commit()
@@ -214,6 +225,40 @@ def _migrate_tasks_table(cur):
 
     if "requires_human_ok" not in cols:
         cur.execute("ALTER TABLE tasks ADD COLUMN requires_human_ok INTEGER DEFAULT 1")
+
+
+def _migrate_case_scope_columns(cur):
+    for table in ("executions", "artifacts", "scout_jobs"):
+        cols = _table_columns(cur, table)
+        if "case_name" not in cols:
+            cur.execute(f"ALTER TABLE {table} ADD COLUMN case_name TEXT")
+
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_executions_case
+        ON executions (case_name, id DESC)
+        """
+    )
+    cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_scout_jobs_case
+        ON scout_jobs (case_name, started_at DESC)
+        """
+    )
+
+
+def _current_case_name() -> str | None:
+    from case_scope import case_name_from_env
+
+    return case_name_from_env()
+
+
+def _touch_case_ip(ip: str) -> None:
+    from case_scope import looks_like_ipv4
+    from case_scope import register_case_ip_from_env
+
+    if looks_like_ipv4(ip or ""):
+        register_case_ip_from_env(ip)
 
 
 def _backfill_task_defaults(cur):
@@ -773,19 +818,21 @@ def insert_scout_job(
     status="running",
     pid=None,
 ):
+    case_name = _current_case_name()
+    _touch_case_ip(ip)
     conn = connect()
     cur = conn.cursor()
     cur.execute(
         """
         INSERT INTO scout_jobs (
             ip, kind, url, port, wordlist, command, log_path,
-            status, pid, started_at
+            status, pid, started_at, case_name
         ) VALUES (
             ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, datetime('now')
+            ?, ?, datetime('now'), ?
         )
         """,
-        (ip, kind, url, port, wordlist, command, log_path, status, pid),
+        (ip, kind, url, port, wordlist, command, log_path, status, pid, case_name),
     )
     job_id = int(cur.lastrowid)
     conn.commit()
@@ -1114,16 +1161,18 @@ def show_tasks():
 # =========================
 
 def add_execution(task_id, ip, task_type, command, cwd="/", status="running"):
+    case_name = _current_case_name()
+    _touch_case_ip(ip)
     conn = connect()
     cur = conn.cursor()
 
     cur.execute("""
     INSERT INTO executions (
-        task_id, ip, task_type, command, cwd, status, started_at
+        task_id, ip, task_type, command, cwd, status, started_at, case_name
     ) VALUES (
-        ?, ?, ?, ?, ?, ?, datetime('now')
+        ?, ?, ?, ?, ?, ?, datetime('now'), ?
     )
-    """, (task_id, ip, task_type, command, cwd, status))
+    """, (task_id, ip, task_type, command, cwd, status, case_name))
 
     exec_id = cur.lastrowid
     conn.commit()
@@ -1150,7 +1199,11 @@ def finish_execution(execution_id, status, exit_code=None, stdout="", stderr="")
 
 
 def find_done_execution(ip: str, command: str):
-    """Return latest successful execution for ip+command, or None."""
+    """Return latest successful execution for ip+command, or None.
+
+    Falls back to other IPs registered on the current CASE when the target
+    IP changed (THM machine reboot).
+    """
     from url_util import canonicalize_probe_command
 
     command = (command or "").strip()
@@ -1162,7 +1215,7 @@ def find_done_execution(ip: str, command: str):
     conn = connect()
     cur = conn.cursor()
 
-    def _fetch(exact: str):
+    def _fetch_for_ip(target_ip: str, exact: str):
         return cur.execute(
             """
             SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
@@ -1174,13 +1227,15 @@ def find_done_execution(ip: str, command: str):
             ORDER BY id DESC
             LIMIT 1
             """,
-            (ip, exact),
+            (target_ip, exact),
         ).fetchone()
 
-    row = _fetch(canon)
-    if row is None and command != canon:
-        row = _fetch(command)
-    if row is None:
+    def _fetch_canonical_for_ip(target_ip: str):
+        row = _fetch_for_ip(target_ip, canon)
+        if row is None and command != canon:
+            row = _fetch_for_ip(target_ip, command)
+        if row is not None:
+            return row
         rows = cur.execute(
             """
             SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
@@ -1191,24 +1246,65 @@ def find_done_execution(ip: str, command: str):
             ORDER BY id DESC
             LIMIT 200
             """,
-            (ip,),
+            (target_ip,),
         ).fetchall()
         for candidate in rows:
             if canonicalize_probe_command(candidate["command"]) == canon:
-                row = candidate
-                break
+                return candidate
+        return None
+
+    row = _fetch_canonical_for_ip(ip)
+    if row is None:
+        case = _current_case_name()
+        if case:
+            from case_scope import list_case_ips
+
+            for alt_ip in list_case_ips(case):
+                if alt_ip == ip:
+                    continue
+                row = _fetch_canonical_for_ip(alt_ip)
+                if row is not None:
+                    break
+            if row is None:
+                candidates = cur.execute(
+                    """
+                    SELECT id, ip, command, status, exit_code, stdout, stderr, started_at, ended_at
+                    FROM executions
+                    WHERE case_name = ?
+                      AND status = 'done'
+                      AND exit_code = 0
+                    ORDER BY id DESC
+                    LIMIT 200
+                    """,
+                    (case,),
+                ).fetchall()
+                for candidate in candidates:
+                    cmd = candidate["command"] or ""
+                    if cmd == command or cmd == canon:
+                        row = candidate
+                        break
+                    if canonicalize_probe_command(cmd) == canon:
+                        row = candidate
+                        break
 
     conn.close()
     return row
 
 
-def add_artifact(ip, kind, key, value, execution_id=None):
+def add_artifact(ip, kind, key, value, execution_id=None, *, case_name=None):
     """
     Insert artifact if (ip, kind, key, value) is new.
     On duplicate: skip insert; refresh execution_id when provided.
     Returns artifact id.
     """
     key = key or ""
+    if case_name is None:
+        case_name = _current_case_name()
+    from case_scope import looks_like_ipv4
+
+    if looks_like_ipv4(ip or ""):
+        _touch_case_ip(ip)
+
     conn = connect()
     cur = conn.cursor()
 
@@ -1225,14 +1321,16 @@ def add_artifact(ip, kind, key, value, execution_id=None):
 
     if row:
         art_id = int(row["id"])
-        if execution_id is not None:
+        if execution_id is not None or case_name:
             cur.execute(
                 """
                 UPDATE artifacts
-                SET execution_id = ?, created_at = datetime('now')
+                SET execution_id = COALESCE(?, execution_id),
+                    case_name = COALESCE(?, case_name),
+                    created_at = datetime('now')
                 WHERE id = ?
                 """,
-                (execution_id, art_id),
+                (execution_id, case_name, art_id),
             )
             conn.commit()
         conn.close()
@@ -1241,10 +1339,10 @@ def add_artifact(ip, kind, key, value, execution_id=None):
     cur.execute(
         """
         INSERT INTO artifacts (
-            ip, kind, key, value, execution_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ip, kind, key, value, execution_id, created_at, case_name
+        ) VALUES (?, ?, ?, ?, ?, datetime('now'), ?)
         """,
-        (ip, kind, key, value, execution_id),
+        (ip, kind, key, value, execution_id, case_name),
     )
     art_id = int(cur.lastrowid)
     conn.commit()
@@ -1291,6 +1389,9 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
     if not ip or not username or not password:
         raise ValueError("ip, username, and password required")
 
+    case_name = _current_case_name()
+    _touch_case_ip(ip)
+
     existing = _get_password_artifact(ip, username)
     if existing and (existing["value"] or "") == password:
         return "unchanged"
@@ -1302,20 +1403,21 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
         cur.execute(
             """
             UPDATE artifacts
-            SET value = ?, execution_id = ?, created_at = datetime('now')
+            SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                created_at = datetime('now')
             WHERE id = ?
             """,
-            (password, execution_id, int(existing["id"])),
+            (password, execution_id, case_name, int(existing["id"])),
         )
         status = "updated"
     else:
         cur.execute(
             """
             INSERT INTO artifacts (
-                ip, kind, key, value, execution_id, created_at
-            ) VALUES (?, 'password', ?, ?, ?, datetime('now'))
+                ip, kind, key, value, execution_id, created_at, case_name
+            ) VALUES (?, 'password', ?, ?, ?, datetime('now'), ?)
             """,
-            (ip, username, password, execution_id),
+            (ip, username, password, execution_id, case_name),
         )
         status = "saved"
 
@@ -1332,10 +1434,10 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
         cur.execute(
             """
             INSERT INTO artifacts (
-                ip, kind, key, value, execution_id, created_at
-            ) VALUES (?, 'username', '', ?, ?, datetime('now'))
+                ip, kind, key, value, execution_id, created_at, case_name
+            ) VALUES (?, 'username', '', ?, ?, datetime('now'), ?)
             """,
-            (ip, username, execution_id),
+            (ip, username, execution_id, case_name),
         )
 
     conn.commit()
@@ -1403,6 +1505,42 @@ def list_ssh_creds(ip: str):
     ).fetchall()
     conn.close()
     return [{"username": r["username"], "password": r["password"]} for r in rows]
+
+
+def _case_scope_sql(case_name: str, *, ips: list[str]) -> tuple[str, list]:
+    if ips:
+        placeholders = ",".join("?" * len(ips))
+        return f"(case_name = ? OR ip IN ({placeholders}))", [case_name, *ips]
+    return "case_name = ?", [case_name]
+
+
+def list_ssh_creds_for_case(case_name: str):
+    """Return [{ip, username, password}, ...] for all IPs seen in this case."""
+    from case_scope import list_case_ips
+
+    ips = list_case_ips(case_name)
+    scope, params = _case_scope_sql(case_name, ips=ips)
+    conn = connect()
+    rows = conn.execute(
+        f"""
+        SELECT a.ip AS ip, a.key AS username, a.value AS password
+        FROM artifacts a
+        INNER JOIN (
+            SELECT MAX(id) AS id
+            FROM artifacts
+            WHERE kind = 'password' AND key != ''
+              AND {scope}
+            GROUP BY ip, key
+        ) d ON a.id = d.id
+        ORDER BY a.ip, a.key
+        """,
+        params,
+    ).fetchall()
+    conn.close()
+    return [
+        {"ip": r["ip"], "username": r["username"], "password": r["password"]}
+        for r in rows
+    ]
 
 
 def get_ssh_last_user(ip: str):
@@ -1528,7 +1666,10 @@ def print_host_summary_json(ip: str, executions_limit: int = 10, artifacts_limit
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
-def list_executions(ip: str = None, limit: int = 50):
+def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50):
+    if case_name:
+        return list_executions_for_case(case_name, limit=limit)
+
     conn = connect()
     cur = conn.cursor()
 
@@ -1554,6 +1695,26 @@ def list_executions(ip: str = None, limit: int = 50):
             (int(limit),),
         ).fetchall()
 
+    conn.close()
+    return rows
+
+
+def list_executions_for_case(case_name: str, *, limit: int = 50):
+    from case_scope import list_case_ips
+
+    ips = list_case_ips(case_name)
+    scope, params = _case_scope_sql(case_name, ips=ips)
+    conn = connect()
+    rows = conn.execute(
+        f"""
+        SELECT id, ip, task_id, task_type, status, exit_code, started_at, ended_at, command
+        FROM executions
+        WHERE {scope}
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (*params, int(limit)),
+    ).fetchall()
     conn.close()
     return rows
 
