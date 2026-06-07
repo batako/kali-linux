@@ -14,10 +14,25 @@ _stegcracker-bin() {
 _steg-info() {
   local file="$1"
   local bin out
-  bin="$(_steg-bin)" || return 1
+  bin="$(_steg-bin)" || {
+    echo "[-] steghide not in PATH" >&2
+    return 1
+  }
   out="$(printf 'y\n' | "$bin" info "$file" 2>&1 </dev/null)" || true
-  print -r -- "$out"
-  print -r -- "$out" | grep -qE 'format:|capacity:'
+  if print -r -- "$out" | grep -qE 'format:|capacity:'; then
+    print -r -- "$out"
+    return 0
+  fi
+  if print -r -- "$out" | grep -qi 'not supported'; then
+    echo "[-] steghide: file format not supported" >&2
+    print -r -- "$out" >&2
+  elif [[ -n "$out" ]]; then
+    echo "[-] steghide info:" >&2
+    print -r -- "$out" >&2
+  else
+    echo "[-] steghide info failed (empty output)" >&2
+  fi
+  return 1
 }
 
 _steg-has-embedded() {
@@ -46,6 +61,57 @@ _steg-log-path() {
   ts="$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$logs"
   echo "$logs/steg_${file:t:r}_${ts}.log"
+}
+
+# steghide 0.5.x: jpeg, bmp, wav, au only (not png/gif)
+_steg-steghide-supported() {
+  local file="$1"
+  local kind
+  kind="$(file -b "$file" 2>/dev/null)" || return 1
+  [[ "$kind" == *[Jj][Pp][Ee][Gg]* || "$kind" == *BMP* || "$kind" == *WAV* || "$kind" == *AU\ audio* ]]
+}
+
+# fixmagic when header corrupt; echo path to use (original or *_fixed.*)
+_steg-prepare-file() {
+  local file="$1"
+  local analyze fm_status dest
+
+  file="$(realpath "$file" 2>/dev/null || echo "$file")"
+  [[ -f "$file" ]] || return 1
+
+  if (( $+functions[_fixmagic-analyze] )); then
+    analyze="$(_fixmagic-analyze "$file" 2>/dev/null)" || {
+      echo "$file"
+      return 0
+    }
+    IFS=$'\t' read -r _ fm_status _ <<< "${analyze%%$'\n'*}"
+
+    if [[ "$fm_status" == "fix" ]]; then
+      dest="$(_fixmagic-out-path "$file")"
+      if [[ ! -f "$dest" ]]; then
+        echo "[*] corrupt header — running fixmagic" >&2
+        fixmagic "$file" || return 1
+      else
+        echo "[*] using existing: $dest" >&2
+      fi
+      echo "$dest"
+      return 0
+    fi
+  fi
+
+  echo "$file"
+}
+
+_steg-reject-unsupported() {
+  local file="$1"
+  local kind
+  kind="$(file -b "$file" 2>/dev/null)"
+  echo "[-] steghide supports JPEG/BMP/WAV/AU only (not PNG/GIF)" >&2
+  echo "[*] file: $kind" >&2
+  echo "[+] open / inspect: $file" >&2
+  echo "[i] corrupt header? fixmagic → image_fixed.png, then open visually" >&2
+  echo "[i] for steghide use a JPEG: stegx image.jpg" >&2
+  return 1
 }
 
 # Wordlist crack via stegcracker, or steghide loop if stegcracker missing
@@ -126,9 +192,10 @@ steg-extract() {
     case "$1" in
       -h|--help)
         echo "usage: steg-extract <image> [wordlist]"
-        echo "  1. steghide info (embedded data check)"
-        echo "  2. try empty passphrase extract"
+        echo "  1. fixmagic when header corrupt (auto → *_fixed.*)"
+        echo "  2. steghide info + extract (JPEG/BMP/WAV/AU only)"
         echo "  3. stegcracker + wordlist if needed"
+        echo "  PNG/GIF: not supported — fixmagic if needed, then inspect visually"
         echo "  default wordlist: \$RECON_PASSLIST"
         echo "  output: cases/<case>/exports/<name>.steg.out"
         echo "  zip output: auto zip-crack + 7z extract"
@@ -174,8 +241,19 @@ steg-extract() {
   out="$(_steg-out-path "$file")"
   rm -f "$out"
 
+  local work="$(_steg-prepare-file "$file")" || return 1
+  if [[ "$work" != "$file" ]]; then
+    file="$work"
+    out="$(_steg-out-path "$file")"
+    rm -f "$out"
+  fi
+
+  if ! _steg-steghide-supported "$file"; then
+    _steg-reject-unsupported "$file"
+    return 1
+  fi
+
   if ! info="$(_steg-info "$file")"; then
-    echo "[-] steghide info failed (is steghide installed?)" >&2
     return 1
   fi
 

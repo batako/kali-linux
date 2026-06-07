@@ -88,6 +88,29 @@ _ftp-connect-creds() {
   rm -f "$netrc"
 }
 
+_ftp-connect-interactive() {
+  local ip="$1" user="$2"
+  local logfile="$3"
+  shift 3
+  local -a extra=("$@")
+
+  local -a cmd=(command ftp)
+  (( ${#extra[@]} )) && cmd+=("${extra[@]}")
+  if [[ -n "$user" ]]; then
+    cmd+=("${user}@${ip}")
+  else
+    cmd+=("$ip")
+  fi
+
+  if [[ -n "$logfile" ]]; then
+    echo "[+] logging: $logfile"
+    script -q -f "$logfile" -c "${(q)cmd}"
+    echo "[+] session log saved: $logfile"
+  else
+    "${cmd[@]}"
+  fi
+}
+
 ftp-login() {
   local log=false
   local -a rest=() pos=() a
@@ -118,23 +141,33 @@ ftp-login() {
   user="$_RECON_USER"
 
   if [[ -z "$user" ]]; then
-    user="$(_recon-pick-user "$ip")" || return 1
+    user="$(_recon-pick-user "$ip")" || {
+      echo "[*] no saved creds — interactive login to ${ip}" >&2
+      local logfile=""
+      if $log; then
+        logfile="$(_ftp-log-path "$ip" "session")" || return 1
+      fi
+      _ftp-connect-interactive "$ip" "" "$logfile" "${rest[@]}"
+      return $?
+    }
   fi
-
-  if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
-    echo "[-] no saved creds for ${user}@${ip} (cl / hydraftp / hydrassh first)" >&2
-    command ftp "${rest[@]}" "${pos[@]}"
-    return 1
-  fi
-
-  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
-
-  echo "[+] connecting: ftp://${user}@${ip}" >&2
 
   local logfile=""
   if $log; then
     logfile="$(_ftp-log-path "$ip" "${user}")" || return 1
   fi
+
+  if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
+    echo "[*] no saved creds for ${user}@${ip} — interactive login" >&2
+    python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+    echo "[+] connecting: ftp://${user}@${ip}" >&2
+    _ftp-connect-interactive "$ip" "$user" "$logfile" "${rest[@]}"
+    return $?
+  fi
+
+  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+
+  echo "[+] connecting: ftp://${user}@${ip}" >&2
 
   _ftp-connect-creds "$ip" "$user" "$pass" "$logfile" "${rest[@]}"
 }
@@ -157,8 +190,10 @@ ftp() {
         shift
         ;;
       -h|--help)
-        echo "usage: ftp [-l] [ftp-options...] [host]"
-        echo "  saved creds (hydrassh/hydraftp/cl): ftp / ftp user / ftp user@ip"
+        echo "usage: ftp [-l] [user] [ip]"
+        echo "  ftp vigilante        user + \$IP — cl あれば自動、なければ対話ログイン"
+        echo "  ftp vigilante@\$IP   explicit"
+        echo "  ftp                  \$IP のみ（cl から user 選択 or 対話）"
         echo "  anonymous: ftp -A <host>  or  ftpa"
         echo "  plain: command ftp ..."
         return 0
@@ -171,25 +206,17 @@ ftp() {
   done
 
   if ! $anon; then
-    local ip="" a
-    for a in "${args[@]}"; do
-      if [[ "$a" == *@* ]]; then
-        ip="${a#*@}"
-        break
-      fi
-      if [[ "$a" =~ $(_recon-ip-re) ]]; then
-        ip="$a"
-        break
-      fi
-    done
-    [[ -z "$ip" ]] && ip="$(_recon-ip-default 2>/dev/null)"
+    (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null
+    (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
 
-    if [[ -n "$ip" ]] && _recon-has-creds "$ip"; then
-      local -a login_args=()
-      $log && login_args+=(-l)
-      login_args+=("${args[@]}")
-      ftp-login "${login_args[@]}"
-      return $?
+    if _recon-parse-user-ip "${args[@]}"; then
+      if [[ -n "$_RECON_IP" ]]; then
+        local -a login_args=()
+        $log && login_args+=(-l)
+        login_args+=("${args[@]}")
+        ftp-login "${login_args[@]}"
+        return $?
+      fi
     fi
   fi
 

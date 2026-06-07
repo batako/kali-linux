@@ -297,17 +297,51 @@ _creds-add() {
   local ip=""
   local user=""
   local pass=""
+  local from_args=false
 
-  # usage: creds-add [ip] <username> <password>
+  # usage: creds-add [ip] <username> [<password>]
+  #        password omitted → prompt (paste ok; no shell quoting needed)
   if [[ $# -ge 3 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-    ip="$1"; user="$2"; pass="$3"
-  else
+    ip="$1"
+    user="$2"
+    shift 2
+  elif [[ $# -ge 1 ]]; then
     ip="${IP:-}"
-    user="$1"; pass="$2"
+    user="$1"
+    shift
+  else
+    echo "usage: creds-add | ca [ip] <username> [<password>]"
+    echo "       ca vigilante              # prompt for password (paste ok)"
+    echo "       ca vigilante -            # password from stdin / pipe"
+    echo "       ca vigilante '!#th3h00d'  # inline (quote when pass has # or !)"
+    return 1
   fi
 
-  if [[ -z "$ip" || -z "$user" || -z "$pass" ]]; then
-    echo "usage: creds-add | ca [ip] <username> <password>"
+  if [[ $# -eq 1 && "$1" == "-" ]]; then
+    pass="$(cat)"
+    pass="${pass//$'\n'/}"
+  elif [[ $# -ge 1 ]]; then
+    pass="$*"
+    from_args=true
+  elif [[ -t 0 ]]; then
+    read -r "pass?password for ${user}@${ip} (paste ok): "
+  else
+    pass="$(cat)"
+    pass="${pass//$'\n'/}"
+  fi
+
+  if [[ -z "$ip" ]]; then
+    echo "[-] no target ip — ts <ip> / ta first" >&2
+    return 1
+  fi
+  if [[ -z "$user" || -z "$pass" ]]; then
+    echo "[-] empty username or password" >&2
+    return 1
+  fi
+  if $from_args && [[ "$pass" == "!" ]]; then
+    echo "[-] password looks truncated — # starts a shell comment without quotes" >&2
+    echo "      ca ${user}              # prompt instead" >&2
+    echo "      ca ${user} '!#th3h00d'" >&2
     return 1
   fi
 
