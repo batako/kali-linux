@@ -11,6 +11,10 @@ HYDRA_FTP_FOUND = re.compile(
     r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
+HYDRA_POP3_FOUND = re.compile(
+    r"\[\d+\]\[pop3\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
 HYDRA_HTTP_FOUND = re.compile(
     r"\[\d+\]\[(?:https?-(?:post|get)-form)\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
@@ -67,11 +71,16 @@ def import_hydra_http(text: str, ip: str = None, execution_id=None):
     return _import_hydra_matches(text, HYDRA_HTTP_FOUND, ip=ip, execution_id=execution_id)
 
 
+def import_hydra_pop3(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for pop3 valid pairs."""
+    return _import_hydra_matches(text, HYDRA_POP3_FOUND, ip=ip, execution_id=execution_id)
+
+
 def import_hydra(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for ssh, ftp, and http-form valid pairs."""
     combined = []
     seen = set()
-    for importer in (import_hydra_ssh, import_hydra_ftp, import_hydra_http):
+    for importer in (import_hydra_ssh, import_hydra_ftp, import_hydra_http, import_hydra_pop3):
         for row in importer(text, ip=ip, execution_id=execution_id):
             key = (row["ip"], row["username"], row["password"])
             if key not in seen:

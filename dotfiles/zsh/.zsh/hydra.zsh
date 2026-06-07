@@ -179,3 +179,71 @@ hydraftp() {
 
   _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" 16 hydraftp
 }
+
+# usage: hydrapop3 [target] -L users.txt -P passes.txt
+#        hydrapop3 [target] <user> [wordlist]   (single user, like hydrassh)
+hydrapop3() {
+  local target="" userfile="" passfile="" threads=16
+  local -a args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -L)
+        userfile="$2"
+        shift 2
+        ;;
+      -P)
+        passfile="$2"
+        shift 2
+        ;;
+      -t)
+        threads="$2"
+        shift 2
+        ;;
+      -h|--help)
+        echo "usage: hydrapop3 [target] -L users.txt -P passes.txt"
+        echo "       hydrapop3 [target] <user> [wordlist]"
+        echo "  hits saved to cl via creds-import-hydra"
+        echo "  examples:"
+        echo "    hydrapop3 -L users.txt -P passes.txt"
+        echo "    hydrapop3 seina \$RECON_PASSLIST"
+        return 0
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
+
+  if [[ -n "$userfile" && -n "$passfile" ]]; then
+    target="${args[1]:-${IP:-}}"
+    [[ -z "$target" ]] && {
+      echo "[-] no target ip — ts <ip> first" >&2
+      return 1
+    }
+    [[ -f "$userfile" && -f "$passfile" ]] || {
+      echo "[-] userlist or passlist not found" >&2
+      return 1
+    }
+    echo "[*] target: pop3://$target  -L ${userfile:t}  -P ${passfile:t}" >&2
+    local log rc
+    log="$(mktemp "${TMPDIR:-/tmp}/hydrapop3.XXXXXX")"
+    trap 'rm -f "$log"' EXIT INT TERM
+    hydra -L "$userfile" -P "$passfile" -t "$threads" -f -V \
+      "$target" pop3 2>&1 | tee "$log"
+    rc=${pipestatus[1]}
+    python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
+    return $rc
+  fi
+
+  _hydra-parse-args "" "${args[@]}" || {
+    echo "usage: hydrapop3 [target] -L users.txt -P passes.txt" >&2
+    echo "       hydrapop3 [target] <user> [wordlist]" >&2
+    return 1
+  }
+
+  _hydra-run-service pop3 "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydrapop3
+}

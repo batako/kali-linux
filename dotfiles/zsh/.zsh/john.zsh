@@ -31,6 +31,13 @@ _sshkey_pass_from_show() {
   _john_pass_from_show "$1"
 }
 
+# Remove per-run john inputs/cache under exports/ (creds live in cl; global ~/.john/john.pot unchanged).
+_john_cleanup_workfiles() {
+  local hash_file="$1"
+  [[ -n "$hash_file" ]] || return 0
+  rm -f "$hash_file" "${hash_file}.pot"
+}
+
 # gpg2john --show: keyname:passphrase:::uid::file  (not split(':',1))
 _gpg_pass_from_show() {
   local show="$1"
@@ -197,6 +204,7 @@ sshkey-crack() {
     echo ""
     echo "[i] isolated re-crack: sshkey-crack -f $key"
     echo "[i] or show manual hash: john --show hash.txt"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -208,6 +216,7 @@ sshkey-crack() {
     _sshkey_apply_creds "$prior"
     echo ""
     echo "[i] run again: sshkey-crack -f $key"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -226,9 +235,7 @@ sshkey-crack() {
     _sshkey_apply_creds "$cracked"
   fi
 
-  echo ""
-  echo "[+] hash file: $hash_file"
-
+  _john_cleanup_workfiles "$hash_file"
   return $rc
 }
 
@@ -530,6 +537,7 @@ hash-crack() {
     _hash_crack_apply_creds "$global_show" "$creds_user"
     echo ""
     echo "[i] isolated re-crack: hash-crack -f ${(q)hash_line}"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -551,6 +559,7 @@ hash-crack() {
     _hash_crack_apply_creds "$prior" "$creds_user"
     echo ""
     echo "[i] run again: hash-crack -f ${(q)hash_line}"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -574,9 +583,7 @@ hash-crack() {
     rc=1
   fi
 
-  echo ""
-  echo "[+] hash file: $hash_file"
-
+  _john_cleanup_workfiles "$hash_file"
   return $rc
 }
 
@@ -793,6 +800,7 @@ gpg-crack() {
     fi
     echo ""
     echo "[i] isolated re-crack: gpg-crack -f $key"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -809,6 +817,7 @@ gpg-crack() {
     fi
     echo ""
     echo "[i] run again: gpg-crack -f $key"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -838,9 +847,7 @@ gpg-crack() {
     rc=1
   fi
 
-  echo ""
-  echo "[+] hash file: $hash_file"
-
+  _john_cleanup_workfiles "$hash_file"
   return $rc
 }
 
@@ -953,9 +960,11 @@ zip-crack() {
         ls -la "$extract_dir"
       else
         echo "[-] 7z extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
         return 1
       fi
     fi
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -1010,11 +1019,13 @@ for line in sys.stdin:
         ls -la "$extract_dir"
       else
         echo "[-] 7z extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
         return 1
       fi
     fi
     echo ""
     echo "[i] isolated re-crack: zip-crack -f $zip"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -1031,11 +1042,13 @@ for line in sys.stdin:
         ls -la "$extract_dir"
       else
         echo "[-] 7z extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
         return 1
       fi
     fi
     echo ""
     echo "[i] run again: zip-crack -f $zip"
+    _john_cleanup_workfiles "$hash_file"
     return 0
   fi
 
@@ -1067,8 +1080,6 @@ for line in sys.stdin:
     rc=1
   fi
 
-  echo ""
-  echo "[+] hash file: $hash_file"
-
+  _john_cleanup_workfiles "$hash_file"
   return $rc
 }
