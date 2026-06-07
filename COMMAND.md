@@ -137,7 +137,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | コマンド | 説明 |
 |----------|------|
 | `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `--report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS** + **EXPLOITS**）。再実行なし |
+| `scout -r` / `--report [ip]` | DB の偵察サマリ（ポート + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
@@ -275,7 +275,7 @@ http://10.49.140.183/
 
 | 種別 | 確認方法 |
 |------|----------|
-| 偵察サマリ（ポート + PROBES + PATHS + EXPLOITS） | **`scout -r`** |
+| 偵察サマリ（ポート + PROBES + PATHS + HINTS + EXPLOITS） | **`scout -r`** |
 | ポートのみ | **`scout -rp`** |
 | PATHS ツリーのみ | **`scout -rt`** |
 | exploit 一覧（DB） | **`scout -re`** |
@@ -284,6 +284,30 @@ http://10.49.140.183/
 | ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
 
 手動で gobuster を回す場合は **`scout -ds`**（並列）または **`scout -d`**（単一 wordlist）。
+
+---
+
+## ヒント / メモ（recon DB）
+
+ページから拾った文字列・codeword・「あとで調べる」メモを **案件（`CASE`）単位**で DB に保存。`cs` 済みなら IP 不要。`scout -r` の **HINTS** セクションにも出る。
+
+| コマンド | 説明 |
+|----------|------|
+| `hint-add` / `ha [-t tag] text...` | ヒントを保存 |
+| `hint-list` / `hl` | 一覧（id 付き） |
+| `hint-rm` / `hr <id>` | 削除 |
+
+```bash
+cs lianyu
+ha go!go!go!
+ha -t codeword vigilante
+ha -t island-page 'The Code Word is: </p><h2 style="color:white"> vigilante</style><'
+hl
+s -r          # --- HINTS --- に表示（CASE 設定時）
+hr 3          # id=3 を削除
+```
+
+`-t` / `--tag` は任意ラベル。同じ case + tag + 本文は重複保存しない。
 
 ---
 
@@ -622,6 +646,7 @@ hydraweb   # 引数不足時に usage 表示
 
 `cs` `case-show` `case-clear` `case-open` · `ts` `target-show` `target-clear` `scout` `s` `s -rp` `s -re` `s -se` `s -r` `s -d` `s -s` `s -ws` `scan` ·
 `creds-add` `ca` `cl` `creds-rm` `cr` `hydrassh` `hydraftp` `hydraweb` ·
+`hint-add` `ha` `hl` `hr` ·
 `ssh` `ssh-list` `sget` · `ftp` `ftpa` · `listen` `rcecurl` · `ftprsh` `ftp-put-shell` ·
 `stegx` · `recon-init` `net-scan` `net-view` `scan` `host-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·

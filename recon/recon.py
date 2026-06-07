@@ -22,6 +22,10 @@ from db import delete_artifact
 from creds import import_hydra
 from creds import RECON_CREDS_BANNER
 from creds import emit_import_results
+from hints import add_hint
+from hints import delete_hint
+from hints import format_hint_list_lines
+from hints import hint_scope
 import json
 
 from scanner import network_scan
@@ -879,6 +883,71 @@ def main():
         print(f"rejected exploits for {ip}:")
         for line in list_exploit_reject_lines(ip):
             print(line)
+
+    elif cmd == "hint-add":
+        args = sys.argv[2:]
+        tag = ""
+        text = ""
+
+        while args:
+            a = args[0]
+            if a in ("-t", "--tag") and len(args) >= 2:
+                tag = args[1]
+                args = args[2:]
+            elif a == "--":
+                text = " ".join(args[1:]).strip()
+                break
+            elif a == "-" and len(args) == 1:
+                text = sys.stdin.read().strip()
+                break
+            else:
+                text = " ".join(args).strip()
+                break
+
+        if not text and not sys.stdin.isatty():
+            text = sys.stdin.read().strip()
+
+        try:
+            case = hint_scope()
+        except ValueError as e:
+            print(f"[-] {e}")
+            sys.exit(1)
+
+        if not text:
+            print("usage: recon.py hint-add [--tag TAG] TEXT")
+            print("       recon.py hint-add [--tag TAG] -   # stdin")
+            sys.exit(1)
+
+        try:
+            status, art_id = add_hint(case, text, tag=tag)
+        except ValueError as e:
+            print(f"[-] {e}")
+            sys.exit(1)
+
+        if status == "unchanged":
+            print(f"[=] hint unchanged (id={art_id})")
+        else:
+            print(f"[+] hint saved (id={art_id})")
+
+    elif cmd == "hint-list":
+        try:
+            case = hint_scope()
+        except ValueError as e:
+            print(f"[-] {e}")
+            sys.exit(1)
+        print(f"hints ({case}):")
+        for line in format_hint_list_lines(case):
+            print(line)
+
+    elif cmd == "hint-rm":
+        if len(sys.argv) < 3:
+            print("usage: recon.py hint-rm <hint_id>")
+            sys.exit(1)
+        if delete_hint(int(sys.argv[2])):
+            print("ok")
+        else:
+            print("not found (or not a hint id)")
+            sys.exit(1)
 
     elif cmd == "artifact-add":
         # manually register a finding so it shows up in host-summary / host-view

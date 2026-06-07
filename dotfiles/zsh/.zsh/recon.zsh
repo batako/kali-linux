@@ -465,3 +465,71 @@ exploit-rejects() {
 alias erj='noglob _exploit-reject'
 alias eru='noglob _exploit-unreject'
 alias erl='exploit-rejects'
+
+_hint-add() {
+  local tag=""
+  local -a text_parts=()
+
+  if [[ -z "${CASE:-}" ]]; then
+    echo "[-] cs <case> first" >&2
+    return 1
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -t|--tag)
+        [[ -n "${2:-}" ]] || { echo "usage: ha [-t tag] text..." >&2; return 1; }
+        tag="$2"; shift 2 ;;
+      --)
+        shift
+        text_parts+=("$@")
+        break ;;
+      -)
+        if [[ $# -eq 1 ]]; then
+          local stdin_text
+          stdin_text="$(cat)"
+          [[ -n "$stdin_text" ]] && text_parts+=("$stdin_text")
+          break
+        fi
+        text_parts+=("$1"); shift ;;
+      *)
+        text_parts+=("$1"); shift ;;
+    esac
+  done
+
+  if [[ ${#text_parts[@]} -eq 0 ]]; then
+    echo "usage: hint-add | ha [-t tag] text..."
+    echo "  ha go!go!go!"
+    echo "  ha -t codeword vigilante"
+    echo "  ha -t island-page 'The Code Word is: ...'"
+    echo "  ha -t codeword -   # paste via stdin"
+    return 1
+  fi
+
+  local -a args=(hint-add)
+  [[ -n "$tag" ]] && args+=(-t "$tag")
+  args+=(-- "${text_parts[@]}")
+  python3 "$RECON_APP" "${args[@]}"
+}
+
+hint-add() { _hint-add "$@"; }
+
+hint-list() {
+  if [[ -z "${CASE:-}" ]]; then
+    echo "[-] cs <case> first" >&2
+    return 1
+  fi
+  python3 "$RECON_APP" hint-list
+}
+
+hint-rm() {
+  if [[ $# -lt 1 ]]; then
+    echo "usage: hint-rm <hint_id>"
+    return 1
+  fi
+  python3 "$RECON_APP" hint-rm "$1"
+}
+
+alias ha='noglob _hint-add'
+alias hl='hint-list'
+alias hr='hint-rm'

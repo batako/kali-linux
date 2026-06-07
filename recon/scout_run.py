@@ -1034,6 +1034,17 @@ def show_scout_report(ip: str) -> int:
     latest, findings, running = _fetch_paths_report_state(ip)
     _print_paths_section(ip, latest, findings, running=running)
     print("")
+    print("--- HINTS ---")
+    from hints import format_hint_report_lines
+    from hints import hint_scope_optional
+
+    case = hint_scope_optional()
+    if case:
+        for line in format_hint_report_lines(case):
+            print(line)
+    else:
+        print("(none — cs <case> to attach hints)")
+    print("")
     print("--- EXPLOITS ---")
     from scout_exploit import format_exploit_report_lines
 
@@ -1042,6 +1053,7 @@ def show_scout_report(ip: str) -> int:
         print(line)
     print("")
     print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re  |  scout -rt")
+    print("[i] hints: ha <text>  |  hl  |  hr <id>")
     print("[i] tried & N/A: erj <EDB>  |  undo: eru <EDB>")
     return 0
 
