@@ -329,6 +329,8 @@ def main():
         force_dirs = False
         dry_run = False
         quiet_ports = False
+        full_ports = False
+        scan_jobs = DEFAULT_FULL_JOBS
         dirs_only = False
         dirs_multi = False
         dirs_only_flag = False
@@ -423,6 +425,19 @@ def main():
             elif a in ("-q", "--quiet"):
                 quiet_ports = True
                 args = args[1:]
+            elif a in ("-fp", "--full-ports"):
+                full_ports = True
+                args = args[1:]
+            elif a in ("-j", "--jobs"):
+                if len(args) < 2:
+                    print("usage: recon.py scout -fp -j <N> [ip]")
+                    sys.exit(1)
+                try:
+                    scan_jobs = int(args[1])
+                except ValueError:
+                    print("[-] scout -j requires an integer")
+                    sys.exit(1)
+                args = args[2:]
             elif a in ("-w", "--wordlist"):
                 args = args[1:]
                 if args and not args[0].startswith("-"):
@@ -515,6 +530,19 @@ def main():
             print("[-] repeat -w requires scout -ds")
             sys.exit(1)
 
+        if scan_jobs != DEFAULT_FULL_JOBS and not full_ports:
+            print("[-] scout -j requires -fp (--full-ports)")
+            sys.exit(1)
+
+        if full_ports and (
+            dirs_only
+            or status_mode
+            or wait_dirs_mode
+            or search_exploits_only
+        ):
+            print("[-] -fp is port scan only — do not combine with -d, -ds, -s, -ws, or -se")
+            sys.exit(1)
+
         wordlists: list[str] | None = None
         wordlist: str | None = None
 
@@ -560,6 +588,8 @@ def main():
             force_dirs=force_dirs,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
+            full_ports=full_ports,
+            scan_jobs=scan_jobs,
             dirs_only=dirs_only and not dirs_multi,
             dirs_multi=dirs_multi,
             dirs_preset=dirs_preset,

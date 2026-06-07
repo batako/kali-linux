@@ -35,8 +35,9 @@ _ssh-consume-flags() {
         shift
         ;;
       -h|--help)
-        echo "usage: ssh [-l] [-i key] [user] [ip]"
+        echo "usage: ssh [-l] [-p port] [-i key] [user] [ip]"
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
+        echo "  ssh -p 6498 boring   → non-default port (OpenSSH -p)"
         echo "  ssh -i keyfile  → \$IP + user from key name, .user sidecar, cl, or picker"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
         echo "  login name: ssh user / ssh user@ip (not ssh -l; use command ssh -l user for OpenSSH)"
@@ -84,8 +85,20 @@ _ssh-parse-args() {
         _SSH_IDENTITY="$2"
         shift 2
         ;;
-      -o|-b|-c|-F|-J|-L|-m|-p|-R|-W|-w)
-        rest+=("$1" "$2")
+      -p[0-9]*)
+        rest+=(-p "${1#-p}")
+        shift
+        ;;
+      -P[0-9]*)
+        rest+=(-p "${1#-P}")
+        shift
+        ;;
+      -o|-b|-c|-F|-J|-L|-m|-p|-P|-R|-W|-w)
+        if [[ "$1" == -P ]]; then
+          rest+=(-p "$2")
+        else
+          rest+=("$1" "$2")
+        fi
         shift 2
         ;;
       -*)
@@ -202,25 +215,21 @@ ssh-key-login() {
 
 ssh-login() {
   local ip="" user="" pass="" logfile=""
-  local -a rest=()
-  local -a pos=()
-  local a
 
-  for a in "${_SSH_ARGS[@]}"; do
-    if [[ "$a" == -* ]]; then
-      rest+=("$a")
-    else
-      pos+=("$a")
-    fi
-  done
-
-  _recon-parse-user-ip "${pos[@]}" || {
-    echo "usage: ssh [--log] [user] [ip]" >&2
+  _ssh-parse-args "${_SSH_ARGS[@]}" || {
+    echo "usage: ssh [--log] [-p port] [user] [ip]" >&2
     return 1
   }
-  ip="$_RECON_IP"
-  user="$_RECON_USER"
-  (( ${#pos[@]} > 2 )) && rest+=("${pos[@]:3}")
+
+  ip="$_SSH_IP"
+  user="$_SSH_USER"
+
+  if [[ -z "$ip" ]]; then
+    ip="$(_recon-ip-default 2>/dev/null)" || {
+      echo "usage: ssh [--log] [-p port] [user] [ip]" >&2
+      return 1
+    }
+  fi
 
   if [[ -z "$user" ]]; then
     user="$(_recon-pick-user "$ip" 1)" || return 1
@@ -238,9 +247,9 @@ ssh-login() {
   if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
     echo "[-] no saved creds for ${user}@${ip}" >&2
     if [[ -n "$logfile" ]]; then
-      _ssh-run-session "$logfile" command ssh "${rest[@]}" -tt "${user}@${ip}"
+      _ssh-run-session "$logfile" command ssh "${_SSH_REST[@]}" -tt "${user}@${ip}"
     else
-      command ssh "${rest[@]}" "${user}@${ip}"
+      command ssh "${_SSH_REST[@]}" "${user}@${ip}"
     fi
     return 1
   fi
@@ -264,7 +273,7 @@ ssh-login() {
     -o PreferredAuthentications=password
     -o PubkeyAuthentication=no
   )
-  (( ${#rest[@]} )) && cmd+=("${rest[@]}")
+  (( ${#_SSH_REST[@]} )) && cmd+=("${_SSH_REST[@]}")
   cmd+=(-tt "${user}@${ip}")
 
   _ssh-run-session "$logfile" "${cmd[@]}"

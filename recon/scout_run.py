@@ -34,8 +34,12 @@ from db import _fetch_ports
 from db import count_tcp_coverage_in_ports
 from executor import run_command_or_cache
 from scan_run import PROFILE_BASIC
+from scan_run import PROFILE_FULL
+from scan_run import is_profile_coverage_complete
 from scan_run import run_scan
 from url_util import canonicalize_url
+from url_util import dirs_origin_url
+from url_util import normalize_dirs_scan_url
 from url_util import normalize_web_url
 from url_util import url_path_key
 from case_scope import case_name_from_env
@@ -130,6 +134,8 @@ def is_dirs_path_arg(s: str) -> bool:
         return False
     if s.startswith(("http://", "https://", "/")):
         return True
+    if _parse_port_path_shorthand(s) is not None:
+        return True
     if looks_like_ipv4(s):
         return False
     return True
@@ -139,11 +145,45 @@ def looks_like_ipv4(s: str) -> bool:
     return bool(re.match(r"^\d+\.\d+\.\d+\.\d+$", (s or "").strip()))
 
 
+def _parse_port_path_shorthand(s: str) -> tuple[int, str] | None:
+    """Parse :65524/hidden/ → (65524, /hidden/) using current target IP."""
+    raw = (s or "").strip()
+    if not raw.startswith(":"):
+        return None
+    rest = raw[1:]
+    if not rest or not rest[0].isdigit():
+        return None
+    if "/" in rest:
+        port_s, path_tail = rest.split("/", 1)
+    else:
+        port_s, path_tail = rest, ""
+    if not port_s.isdigit():
+        return None
+    path_tail = path_tail.strip("/")
+    path = f"/{path_tail}/" if path_tail else "/"
+    return int(port_s), path
+
+
 def resolve_dirs_target(ip: str, path_or_url: str) -> str:
-    """Turn /admin, admin, or full URL into a gobuster -u target."""
+    """Turn /admin, :65524/hidden/, admin, or full URL into a gobuster -u target."""
     s = (path_or_url or "").strip()
     if s.startswith(("http://", "https://")):
         return normalize_web_url(s)
+
+    port_path = _parse_port_path_shorthand(s)
+    if port_path is not None:
+        port, path = port_path
+        if port == 443:
+            scheme = "https"
+        elif port == 80:
+            scheme = "http"
+        else:
+            scheme = "http"
+            for web_port, url in discover_web_targets(ip):
+                if web_port == port:
+                    scheme = urlparse(url).scheme or "http"
+                    break
+        return canonicalize_url(f"{scheme}://{ip}:{port}{path}")
 
     path = s if s.startswith("/") else f"/{s}/"
     if not path.endswith("/"):
@@ -830,7 +870,7 @@ def _latest_dirs_jobs(jobs, *, group_by_path: bool = False) -> list:
     for row in jobs:
         if row["kind"] != "dirs":
             continue
-        key = url_path_key(row["url"] or "") if group_by_path else row["url"]
+        key = url_path_key(row["url"] or "") if group_by_path else normalize_dirs_scan_url(row["url"] or "")
         prev = by_url.get(key)
         if prev is None or int(row["id"]) > int(prev["id"]):
             by_url[key] = row
@@ -883,7 +923,9 @@ def _paths_tree_lines(tree: dict, *, depth: int = 0) -> list[str]:
         indent = "  " * (depth + 1)
         st = entry["status"]
         suffix = f"  {st}" if st is not None else ""
-        lines.append(f"{indent}{name}/{suffix}")
+        is_leaf = st is not None and not entry["children"]
+        label = name if is_leaf and _looks_like_file(f"/{name}") else f"{name}/"
+        lines.append(f"{indent}{label}{suffix}")
         lines.extend(_paths_tree_lines(entry["children"], depth=depth + 1))
     return lines
 
@@ -907,54 +949,65 @@ def format_paths_tree(
     return lines
 
 
-def _paths_root_label(ip: str, rows) -> str:
+def _paths_report_groups(rows) -> list[tuple[str, list]]:
+    """Group dirs jobs by site origin (scheme + host + port), merge scan bases."""
+    groups: dict[str, list] = {}
     for row in rows:
-        url = row["url"] or ""
-        if url:
-            parsed = urlparse(normalize_url(url))
-            if parsed.scheme and parsed.netloc:
-                return f"{parsed.scheme}://{parsed.netloc}/"
-    return f"http://{ip}/"
+        key = dirs_origin_url(row["url"] or "")
+        if not key:
+            continue
+        groups.setdefault(key, []).append(row)
+    return [(url, groups[url]) for url in sorted(groups.keys(), key=str.lower)]
 
 
-def _fetch_paths_report_state(ip: str) -> tuple[list, list[tuple[str, int]], bool]:
-    """Latest dirs job per URL path → merged findings and running flag."""
+def _fetch_paths_report_state(ip: str) -> tuple[list, bool]:
+    """Latest dirs job per full URL → rows and any-running flag."""
     reconcile_scout_jobs(ip)
     jobs = _scout_jobs(ip, kind="dirs", limit=200)
-    group_by_path = bool(_scout_case())
-    latest = _latest_dirs_jobs(jobs, group_by_path=group_by_path)
-    if not latest:
-        return [], [], False
-    findings = _merge_job_findings(latest)
+    latest = _latest_dirs_jobs(jobs, group_by_path=False)
     running = any(r["status"] == "running" for r in latest)
-    return latest, findings, running
+    return latest, running
 
 
 def _print_paths_section(
     ip: str,
-    latest,
-    findings: list[tuple[str, int]],
+    rows,
     *,
-    running: bool,
+    header: bool = True,
 ) -> None:
-    print("--- PATHS ---")
-    if not latest:
+    if header:
+        print("--- PATHS ---")
+    if not rows:
         print("(none)")
         return
-    if findings:
-        for line in format_paths_tree(findings, root_label=_paths_root_label(ip, latest)):
-            print(line)
-    elif running:
-        print(_paths_root_label(ip, latest))
-        print("  (running)")
-    else:
+
+    groups = _paths_report_groups(rows)
+    if not groups:
+        print("(none)")
+        return
+
+    printed = False
+    for origin, origin_rows in groups:
+        findings = _merge_job_findings(origin_rows)
+        url_running = any(r["status"] == "running" for r in origin_rows)
+
+        if printed:
+            print("")
+        printed = True
+
+        if findings:
+            for line in format_paths_tree(findings, root_label=origin):
+                print(line)
+        elif url_running:
+            print(origin)
+            print("  (running)")
+
+    if not printed:
         print("(none)")
 
 
 def _print_paths_tree(rows, *, ip: str) -> None:
-    findings = _merge_job_findings(rows)
-    running = any(r["status"] == "running" for r in rows)
-    _print_paths_section(ip, rows, findings, running=running)
+    _print_paths_section(ip, rows)
     print("")
 
 
@@ -1041,7 +1094,7 @@ def show_scout_report_exploits(ip: str) -> int:
 
 def show_scout_report_paths(ip: str) -> int:
     """DB snapshot: PATHS tree only (no gobuster)."""
-    latest, findings, running = _fetch_paths_report_state(ip)
+    latest, _running = _fetch_paths_report_state(ip)
     case = _scout_case()
     print("")
     if case:
@@ -1049,7 +1102,7 @@ def show_scout_report_paths(ip: str) -> int:
     else:
         print(f"[*] report-paths {ip}")
     print("")
-    _print_paths_section(ip, latest, findings, running=running)
+    _print_paths_section(ip, latest)
     print("")
     print("[i] detail: scout -s  |  scout -ws  |  scout -r")
     return 0
@@ -1099,8 +1152,8 @@ def show_scout_report(ip: str) -> int:
             print(f"         $ {row['command']}")
     print("")
 
-    latest, findings, running = _fetch_paths_report_state(ip)
-    _print_paths_section(ip, latest, findings, running=running)
+    latest, _running = _fetch_paths_report_state(ip)
+    _print_paths_section(ip, latest)
     print("")
     print("--- HINTS ---")
     from hints import format_hint_report_lines
@@ -1205,6 +1258,8 @@ def run_scout(
     force_dirs: bool = False,
     dry_run: bool = False,
     quiet_ports: bool = False,
+    full_ports: bool = False,
+    scan_jobs: int = 1,
     dirs_only: bool = False,
     dirs_multi: bool = False,
     dirs_preset: str = "standard",
@@ -1217,6 +1272,41 @@ def run_scout(
     extensions: Optional[str] = None,
 ):
     upsert_host(ip, status="up")
+
+    if full_ports and (dirs_only or dirs_multi):
+        print("[-] use -fp or -d/-ds, not both")
+        return 1
+
+    if full_ports:
+        print("========================")
+        case = _scout_case()
+        if case:
+            print(f"[SCOUT] case {case}  target {ip}  (full port scan)")
+        else:
+            print(f"[SCOUT] {ip}  (full port scan)")
+        print("========================")
+
+        skip_scan = False
+        if not force_scan and not dry_run and is_profile_coverage_complete(ip, PROFILE_FULL):
+            print("[*] full port scan skipped (TCP 1-65535 already complete on {ip})".format(ip=ip))
+            print("[i] use scout -fp --force to rescan")
+            skip_scan = True
+        else:
+            print("[*] port scan (full TCP 1-65535, -sC -sV)")
+            if scan_jobs > 1:
+                print(f"[*] parallel workers: {scan_jobs}")
+        print("")
+
+        if skip_scan:
+            return 0
+        return run_scan(
+            ip,
+            profile=PROFILE_FULL,
+            force=force_scan,
+            dry_run=dry_run,
+            quiet_ports=quiet_ports,
+            jobs=scan_jobs,
+        )
 
     if dirs_only or dirs_multi:
         if not dirs_urls and not discover_web_targets(ip):
@@ -1247,12 +1337,19 @@ def run_scout(
         print(f"[SCOUT] {ip}")
     print("========================")
 
+    scan_profile = PROFILE_BASIC
     skip_scan = False
-    if case and not force_scan and not dry_run and case_has_basic_scan(case):
-        print("[*] phase 1: port scan skipped (case already has basic scan on a prior IP)")
-        print("[i] use scout --force to rescan this target")
-        skip_scan = True
-    else:
+    if not force_scan and not dry_run:
+        if is_profile_coverage_complete(ip, scan_profile):
+            print(f"[*] phase 1: port scan skipped (top 1000 already complete on {ip})")
+            print("[i] use scout --force to rescan this target")
+            skip_scan = True
+        elif case and case_has_basic_scan(case, current_ip=ip):
+            print("[*] phase 1: port scan skipped (case already has basic scan on a prior IP)")
+            print("[i] use scout --force to rescan this target")
+            skip_scan = True
+
+    if not skip_scan:
         print("[*] phase 1: port scan (top 1000, -sC -sV)")
     print("")
 
@@ -1261,10 +1358,11 @@ def run_scout(
     else:
         rc = run_scan(
             ip,
-            profile=PROFILE_BASIC,
+            profile=scan_profile,
             force=force_scan,
             dry_run=dry_run,
             quiet_ports=quiet_ports,
+            jobs=1,
         )
         if rc != 0:
             return rc

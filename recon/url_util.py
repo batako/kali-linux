@@ -33,6 +33,47 @@ def canonicalize_url(url: str) -> str:
     return f"{scheme}://{host}:{port}{path}"
 
 
+def normalize_dirs_scan_url(url: str) -> str:
+    """Canonical gobuster -u target; path suffix always ends with /."""
+    s = canonicalize_url((url or "").strip())
+    if not s:
+        return s
+    parsed = urlparse(s)
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    scheme = (parsed.scheme or "http").lower()
+    host = parsed.hostname
+    if not host:
+        return s
+    port = parsed.port
+    if port is None:
+        port = _DEFAULT_PORTS.get(scheme, 80)
+    default = _DEFAULT_PORTS.get(scheme)
+    if default and port == default:
+        return f"{scheme}://{host}{path}"
+    return f"{scheme}://{host}:{port}{path}"
+
+
+def dirs_origin_url(url: str) -> str:
+    """Site root for PATHS grouping: http://host/ or http://host:port/."""
+    s = normalize_dirs_scan_url(url or "")
+    if not s:
+        return ""
+    parsed = urlparse(s)
+    scheme = (parsed.scheme or "http").lower()
+    host = parsed.hostname
+    if not host:
+        return ""
+    port = parsed.port
+    if port is None:
+        port = _DEFAULT_PORTS.get(scheme, 80)
+    default = _DEFAULT_PORTS.get(scheme)
+    if default and port == default:
+        return f"{scheme}://{host}/"
+    return f"{scheme}://{host}:{port}/"
+
+
 def url_path_key(url: str) -> str:
     """Path-only key for cross-IP dirs cache within the same case (/island/)."""
     s = canonicalize_url((url or "").strip())

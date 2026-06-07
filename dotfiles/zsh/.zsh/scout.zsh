@@ -18,7 +18,7 @@ scout() {
     fi
   fi
 
-  local ip="" force="" dry="" quiet="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
+  local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local wordlist="" threads="" ext=""
   local report="" report_ports="" report_exploits="" report_paths="" search_exploits=""
   local -a extra_urls=()
@@ -50,6 +50,10 @@ scout() {
         echo "  erj <EDB> [--port 80/tcp]       hide from scout -re"
         echo "  eru <EDB> [--port 80/tcp]       undo"
         echo "  erl [ip]                        list rejected"
+        echo ""
+        echo "ports (scan only — like -d for gobuster):"
+        echo "  -fp, --full-ports              TCP 1-65535 only (no probes/dirs/exploits)"
+        echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
         echo ""
         echo "other:"
         echo "  -d, --dirs [path]              gobuster dir only (single wordlist)"
@@ -95,8 +99,13 @@ scout() {
         echo "  s -ds -x php /backup          # ext fuzz, standard tier"
         echo "  s -ds -x bak -p next /api     # next ext tier"
         echo "  s -d /config -w dirbuster-small"
+        echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
+        echo "  s -ds :443/hoge                # https://\$IP/hoge/"
+        echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
         echo "  s -rp                         # port list (not -p)"
         echo "  s -rt                         # dirs PATHS tree only"
+        echo "  s -fp                         # full port scan only (65535)"
+        echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
         return 0
         ;;
       -rp|--report-ports)
@@ -213,6 +222,14 @@ scout() {
         quiet="-q"
         shift
         ;;
+      -fp|--full-ports)
+        full_ports="--full-ports"
+        shift
+        ;;
+      -j|--jobs)
+        scan_jobs="-j $2"
+        shift 2
+        ;;
       -w|--wordlist)
         shift
         if [[ -n "${1:-}" && "${1:-}" != -* ]]; then
@@ -297,6 +314,16 @@ scout() {
     return 1
   fi
 
+  if [[ -n "$scan_jobs" && -z "$full_ports" ]]; then
+    echo "[-] scout -j requires -fp (--full-ports)" >&2
+    return 1
+  fi
+
+  if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
+    echo "[-] -fp is port scan only — do not combine with report/status/dirs flags" >&2
+    return 1
+  fi
+
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
       echo "[-] no target (ti <ip> / cs <case>)" >&2
@@ -328,6 +355,8 @@ scout() {
   [[ -n "$force" ]] && args+=("$force")
   [[ -n "$dry" ]] && args+=(-n)
   [[ -n "$quiet" ]] && args+=(-q)
+  [[ -n "$full_ports" ]] && args+=("$full_ports")
+  [[ -n "$scan_jobs" ]] && args+=(${=scan_jobs})
   args+=("${extra_urls[@]}")
   [[ -n "$threads" ]] && args+=(${=threads})
   [[ -n "$ext" ]] && args+=(${=ext})
@@ -357,6 +386,8 @@ _scout() {
     '-p[preset light|standard|wide|deep|next with -ds]:preset:(light standard wide deep next)' \
     '--preset[preset with -ds]:preset:(light standard wide deep next)' \
     '--force[rescan ports / re-dispatch dirs]' \
+    '-fp[full TCP 1-65535 scan only]' '--full-ports[full TCP 1-65535 scan only]' \
+    '-j[parallel full scan workers with -fp]:jobs:' '--jobs[parallel full scan workers with -fp]:jobs:' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \
     '-w[wordlist]:wordlist:_files' \

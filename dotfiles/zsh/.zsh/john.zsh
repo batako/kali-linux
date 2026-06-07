@@ -314,7 +314,7 @@ elif re.fullmatch(r'[a-fA-F0-9]{32}', h):
 elif re.fullmatch(r'[a-fA-F0-9]{40}', h):
     formats = ['Raw-SHA1']
 elif re.fullmatch(r'[a-fA-F0-9]{64}', h):
-    formats = ['Raw-SHA256']
+    formats = ['Raw-SHA256', 'gost']
 elif h.startswith('\$6a\$') or h.startswith('\$argon2'):
     formats = ['argon2']
 else:
@@ -570,16 +570,16 @@ hash-crack() {
   rc=$?
 
   echo ""
-  echo "[+] cracked (if any):"
-  print -r -- "$cracked"
-
   if _hash_crack_cracked_p "$cracked"; then
+    echo "[+] cracked:"
+    print -r -- "$cracked"
     local pass
     pass="$(_john_pass_from_show "$cracked")"
     [[ -n "$pass" ]] && echo "[+] password: $pass"
     _hash_crack_apply_creds "$cracked" "$creds_user"
-  elif (( rc == 0 )); then
-    echo "[-] john finished but no password found" >&2
+  else
+    echo "[-] no password found" >&2
+    [[ -n "$cracked" ]] && print -r -- "$cracked"
     rc=1
   fi
 
