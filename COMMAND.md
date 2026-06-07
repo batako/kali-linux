@@ -186,6 +186,18 @@ Phase 2 の後（`scout` 本番実行時）、**open ポート**の `service` / 
 
 **`scout -r` の EXPLOITS は再検索不要:** 各候補に **title / 絶対パス / run コマンド / `searchsploit -m EDB`** を載せる。生 JSON は `ev <id>`（`executions` キャッシュ）に残る。
 
+**試して非該当と確認した候補**は手動で reject して `-re` / `-r` から除外する（未試行の候補はそのまま表示）。
+
+```bash
+erj 50383                      # EDB-50383 を非表示（$IP 向け）
+erj --port 80/tcp 50383        # ポート限定
+erj 50383 --note "400 Bad Request"
+erl                            # reject 一覧
+eru 50383                      # 元に戻す
+```
+
+`scout -se` で再検索しても reject は維持される。
+
 | 入力例 | searchsploit クエリ |
 |--------|---------------------|
 | `http` + `Apache httpd 2.4.49` | `Apache httpd 2.4.49` |

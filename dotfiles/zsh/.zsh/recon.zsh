@@ -374,3 +374,94 @@ artifact-del() {
   fi
   python3 "$RECON_APP" artifact-del "$1"
 }
+
+_exploit-reject() {
+  local ip="" edb="" port="" note=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port|-P)
+        [[ -n "${2:-}" ]] || { echo "usage: erj [--port 80/tcp] <EDB>" >&2; return 1; }
+        port="$2"; shift 2 ;;
+      --note)
+        [[ -n "${2:-}" ]] || { echo "usage: erj [--note text] <EDB>" >&2; return 1; }
+        note="$2"; shift 2 ;;
+      *)
+        if [[ "$1" =~ $(_recon-ip-re) ]]; then
+          ip="$1"
+        elif [[ -z "$edb" ]]; then
+          edb="${1#EDB-}"; edb="${edb#edb-}"
+        else
+          echo "usage: exploit-reject | erj [--port 80/tcp] [--note text] [ip] <EDB>" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$ip" ]]; then
+    ip="$(target-current 2>/dev/null)" || true
+  fi
+  if [[ -z "$ip" || -z "$edb" ]]; then
+    echo "usage: exploit-reject | erj [--port 80/tcp] [--note text] [ip] <EDB>"
+    echo "  erj 50383              # hide EDB-50383 from scout -re"
+    echo "  erj --port 80/tcp 50383"
+    return 1
+  fi
+
+  local -a args=(exploit-reject "$ip" "$edb")
+  [[ -n "$port" ]] && args+=(--port "$port")
+  [[ -n "$note" ]] && args+=(--note "$note")
+  python3 "$RECON_APP" "${args[@]}"
+}
+
+_exploit-unreject() {
+  local ip="" edb="" port=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --port|-P)
+        [[ -n "${2:-}" ]] || { echo "usage: eru [--port 80/tcp] <EDB>" >&2; return 1; }
+        port="$2"; shift 2 ;;
+      *)
+        if [[ "$1" =~ $(_recon-ip-re) ]]; then
+          ip="$1"
+        elif [[ -z "$edb" ]]; then
+          edb="${1#EDB-}"; edb="${edb#edb-}"
+        else
+          echo "usage: exploit-unreject | eru [--port 80/tcp] [ip] <EDB>" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$ip" ]]; then
+    ip="$(target-current 2>/dev/null)" || true
+  fi
+  if [[ -z "$ip" || -z "$edb" ]]; then
+    echo "usage: exploit-unreject | eru [--port 80/tcp] [ip] <EDB>"
+    return 1
+  fi
+
+  local -a args=(exploit-unreject "$ip" "$edb")
+  [[ -n "$port" ]] && args+=(--port "$port")
+  python3 "$RECON_APP" "${args[@]}"
+}
+
+exploit-reject() { _exploit-reject "$@"; }
+exploit-unreject() { _exploit-unreject "$@"; }
+exploit-rejects() {
+  local ip="${1:-${IP:-}}"
+  if [[ -z "$ip" ]]; then
+    echo "usage: exploit-rejects [ip]"
+    return 1
+  fi
+  python3 "$RECON_APP" exploit-rejects "$ip"
+}
+
+alias erj='noglob _exploit-reject'
+alias eru='noglob _exploit-unreject'
+alias erl='exploit-rejects'

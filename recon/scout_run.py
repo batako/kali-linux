@@ -918,6 +918,7 @@ def show_scout_report_exploits(ip: str) -> int:
         print(line)
     print("")
     print("[i] detail: ev <id>  |  scout -se  |  scout -r")
+    print("[i] tried & N/A: erj <EDB> [--port 80/tcp]  |  undo: eru <EDB>")
     return 0
 
 
@@ -982,6 +983,7 @@ def show_scout_report(ip: str) -> int:
         print(line)
     print("")
     print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re")
+    print("[i] tried & N/A: erj <EDB>  |  undo: eru <EDB>")
     return 0
 
 

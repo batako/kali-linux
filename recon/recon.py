@@ -36,6 +36,9 @@ from scout_run import show_scout_report
 from scout_run import show_scout_report_exploits
 from scout_run import show_scout_status
 from scout_exploit import run_exploit_phase
+from scout_exploit import reject_exploit
+from scout_exploit import unreject_exploit
+from scout_exploit import list_exploit_reject_lines
 from scout_run import is_dirs_path_arg
 from scout_run import looks_like_ipv4
 from scout_run import DEFAULT_GB_THREADS
@@ -769,6 +772,104 @@ def main():
                 args.append(f"-F {item}")
             args.append(parsed["url"])
             print("  upsh " + " ".join(args))
+
+    elif cmd == "exploit-reject":
+        # mark searchsploit pick as tried and not applicable (hidden from scout -re)
+        args = sys.argv[2:]
+        ip = None
+        edb = None
+        port_key = None
+        note = ""
+
+        while args:
+            a = args[0]
+            if a in ("--port", "-P") and len(args) >= 2:
+                port_key = args[1]
+                args = args[2:]
+            elif a == "--note" and len(args) >= 2:
+                note = args[1]
+                args = args[2:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print(
+                    "usage: recon.py exploit-reject <ip> <edb> [--port 80/tcp] [--note text]"
+                )
+                sys.exit(1)
+            elif ip is None:
+                ip = a
+                args = args[1:]
+            elif edb is None:
+                edb = a
+                args = args[1:]
+            else:
+                print(
+                    "usage: recon.py exploit-reject <ip> <edb> [--port 80/tcp] [--note text]"
+                )
+                sys.exit(1)
+
+        if not ip or not edb:
+            print(
+                "usage: recon.py exploit-reject <ip> <edb> [--port 80/tcp] [--note text]"
+            )
+            sys.exit(1)
+
+        try:
+            keys = reject_exploit(ip, edb, port_key=port_key, note=note)
+        except ValueError as exc:
+            print(f"[-] {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        for key in keys:
+            print(f"rejected: {key}")
+
+    elif cmd == "exploit-unreject":
+        args = sys.argv[2:]
+        ip = None
+        edb = None
+        port_key = None
+
+        while args:
+            a = args[0]
+            if a in ("--port", "-P") and len(args) >= 2:
+                port_key = args[1]
+                args = args[2:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py exploit-unreject <ip> <edb> [--port 80/tcp]")
+                sys.exit(1)
+            elif ip is None:
+                ip = a
+                args = args[1:]
+            elif edb is None:
+                edb = a
+                args = args[1:]
+            else:
+                print("usage: recon.py exploit-unreject <ip> <edb> [--port 80/tcp]")
+                sys.exit(1)
+
+        if not ip or not edb:
+            print("usage: recon.py exploit-unreject <ip> <edb> [--port 80/tcp]")
+            sys.exit(1)
+
+        try:
+            n = unreject_exploit(ip, edb, port_key=port_key)
+        except ValueError as exc:
+            print(f"[-] {exc}", file=sys.stderr)
+            sys.exit(1)
+
+        if n:
+            print(f"restored {n} reject(s)")
+        else:
+            print("no matching reject")
+
+    elif cmd == "exploit-rejects":
+        ip = sys.argv[2] if len(sys.argv) >= 3 else os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py exploit-rejects [ip]")
+            sys.exit(1)
+        print(f"rejected exploits for {ip}:")
+        for line in list_exploit_reject_lines(ip):
+            print(line)
 
     elif cmd == "artifact-add":
         # manually register a finding so it shows up in host-summary / host-view
