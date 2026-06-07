@@ -20,7 +20,7 @@ scout() {
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local wordlist="" threads="" ext=""
-  local report="" report_ports="" report_exploits="" report_paths="" search_exploits=""
+  local report="" report_ports="" report_exploits="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
 
@@ -41,6 +41,7 @@ scout() {
         echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
         echo "  -re, --report-exploits [ip]   EXPLOITS"
         echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
+        echo "  -rtf, --report-tree-fetch [ip]  PATHS → sitemap + local mirror (-n dry-run)"
         echo ""
         echo "search (always refreshes exploit cache; e.g. after searchsploit -u):"
         echo "  -se, --search-exploits [ip]    searchsploit → cache (also in scout)"
@@ -104,6 +105,8 @@ scout() {
         echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
         echo "  s -rp                         # port list (not -p)"
         echo "  s -rt                         # dirs PATHS tree only"
+        echo "  s -rtf                        # PATHS sitemap + download (200/301 + crawl)"
+        echo "  s -rtf -n                     # planned URLs only"
         echo "  s -fp                         # full port scan only (65535)"
         echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
         return 0
@@ -118,6 +121,10 @@ scout() {
         ;;
       -rt|--report-paths)
         report_paths="-rt"
+        shift
+        ;;
+      -rtf|--report-tree-fetch)
+        report_tree_fetch="-rtf"
         shift
         ;;
       -se|--search-exploits)
@@ -282,19 +289,23 @@ scout() {
     esac
   done
 
-  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
-    echo "[-] use one report flag: -r, -rp, -re, or -rt" >&2
+  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -rp, -re, -rt, or -rtf" >&2
     return 1
   fi
-  if [[ -n "$report_exploits" && ( -n "$report" || -n "$report_paths" ) ]]; then
-    echo "[-] use one report flag: -r, -re, or -rt" >&2
+  if [[ -n "$report_exploits" && ( -n "$report" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -re, -rt, or -rtf" >&2
     return 1
   fi
-  if [[ -n "$report_paths" && -n "$report" ]]; then
-    echo "[-] use -r or -rt, not both" >&2
+  if [[ -n "$report_paths" && ( -n "$report" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -rt, or -rtf" >&2
     return 1
   fi
-  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
+  if [[ -n "$report_tree_fetch" && -n "$report" ]]; then
+    echo "[-] use -r or -rtf, not both" >&2
+    return 1
+  fi
+  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
     echo "[-] -se combines with -r only (or use alone)" >&2
     return 1
   fi
@@ -319,7 +330,7 @@ scout() {
     return 1
   fi
 
-  if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" ) ]]; then
+  if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
     echo "[-] -fp is port scan only — do not combine with report/status/dirs flags" >&2
     return 1
   fi
@@ -340,6 +351,8 @@ scout() {
     args+=(-re)
   elif [[ -n "$report_paths" ]]; then
     args+=(-rt)
+  elif [[ -n "$report_tree_fetch" ]]; then
+    args+=(-rtf)
   elif [[ -n "$search_exploits" && -z "$report" ]]; then
     args+=(-se)
   elif [[ -n "$report" ]]; then
@@ -378,6 +391,7 @@ _scout() {
     '-rp[OPEN+CLOSED from DB]' '--report-ports[OPEN+CLOSED from DB]' \
     '-re[EXPLOITS from DB]' '--report-exploits[EXPLOITS from DB]' \
     '-rt[PATHS tree from DB]' '--report-paths[PATHS tree from DB]' \
+    '-rtf[PATHS sitemap + mirror]' '--report-tree-fetch[PATHS sitemap + mirror]' \
     '-se[searchsploit and cache]' '--search-exploits[searchsploit and cache]' \
     '-s[dirs status once]' '--status[dirs status once]' \
     '-ws[wait for dirs jobs]:sec:' '--wait-dirs[wait for dirs jobs]:sec:' \

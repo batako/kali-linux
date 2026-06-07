@@ -432,8 +432,29 @@ def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
 def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
     """Run one planned nmap command; return 0 ok, 1 error."""
     ports_run = info.get("ports_run") or []
-    out = subprocess.getoutput(cmd)
-    return _ingest_chunk_result(ip, profile, out, ports_run)
+    _print_plan_header(ip, profile, info, cmd)
+    sys.stdout.flush()
+
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=None,  # inherit — nmap progress on stderr
+            text=True,
+        )
+        out, _ = proc.communicate()
+    except OSError as exc:
+        print(f"[-] nmap failed to start: {exc}")
+        return 1
+
+    if proc.returncode != 0:
+        print(f"[-] nmap exit code {proc.returncode}")
+        if out and out.strip():
+            return _ingest_chunk_result(ip, profile, out, ports_run)
+        return 1
+
+    return _ingest_chunk_result(ip, profile, out or "", ports_run)
 
 
 def _nmap_subprocess_task(ip: str, profile: str, ports_run):

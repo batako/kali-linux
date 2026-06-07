@@ -1104,7 +1104,7 @@ def show_scout_report_paths(ip: str) -> int:
     print("")
     _print_paths_section(ip, latest)
     print("")
-    print("[i] detail: scout -s  |  scout -ws  |  scout -r")
+    print("[i] detail: scout -s  |  scout -ws  |  scout -r  |  scout -rtf")
     return 0
 
 
@@ -1351,6 +1351,7 @@ def run_scout(
 
     if not skip_scan:
         print("[*] phase 1: port scan (top 1000, -sC -sV)")
+        sys.stdout.flush()
     print("")
 
     if skip_scan:
