@@ -103,12 +103,30 @@ def resolve_dirs_multi_wordlists(
     *,
     preset: str = DEFAULT_DIRS_MULTI_PRESET,
     wordlist_ids: Optional[list[str]] = None,
+    extensions: Optional[str] = None,
+    preset_from_flag: bool = False,
 ) -> list[str]:
-    """Resolve parallel dir wordlists for scout -ds (preset or explicit ids)."""
+    """Resolve parallel dir wordlists for scout -ds.
+
+    - Explicit -w ids: those entries only.
+    - -x set, no -p: all dirs-ext selector entries (same pool as ``-d -x -w`` picker).
+    - -x set + -p: dirs_ext_multi_presets subset (fast/deep/ctf).
+    - -p set (no -x): dirs_multi_presets subset (fast/deep/ctf).
+    - Default (no -x, no -p): all dirs selector entries (same pool as ``-d -w`` picker).
+    """
     catalog = get_catalog()
     if wordlist_ids:
         ids = wordlist_ids
-    else:
+    elif extensions:
+        if preset_from_flag:
+            entries = catalog.list_dirs_ext_multi_preset(preset)
+        else:
+            entries = catalog.list_selector(SELECTOR_DIRS_EXT)
+        ids = [e.id for e in entries]
+    elif preset_from_flag:
         entries = catalog.list_dirs_multi_preset(preset)
+        ids = [e.id for e in entries]
+    else:
+        entries = catalog.list_selector(SELECTOR_DIRS)
         ids = [e.id for e in entries]
     return [catalog.resolve(wid) for wid in ids]

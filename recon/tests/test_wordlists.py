@@ -114,10 +114,20 @@ class WordlistCatalogTests(unittest.TestCase):
         )
         self.assertIsNone(picked)
 
+    def test_dirs_multi_default_dirs_selector(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists()
+        self.assertEqual(len(paths), 3)
+        names = {Path(p).name for p in paths}
+        self.assertIn("common.txt", names)
+        self.assertIn("raft-small-directories.txt", names)
+        self.assertIn("quickhits.txt", names)
+
     def test_dirs_multi_preset_ctf(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
-        paths = resolve_dirs_multi_wordlists(preset="ctf")
+        paths = resolve_dirs_multi_wordlists(preset="ctf", preset_from_flag=True)
         self.assertEqual(len(paths), 3)
         names = {Path(p).name for p in paths}
         self.assertIn("common.txt", names)
@@ -127,8 +137,51 @@ class WordlistCatalogTests(unittest.TestCase):
     def test_dirs_multi_preset_fast(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
 
-        paths = resolve_dirs_multi_wordlists(preset="fast")
+        paths = resolve_dirs_multi_wordlists(preset="fast", preset_from_flag=True)
         self.assertEqual(len(paths), 2)
+
+    def test_dirs_multi_ext_selector(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(extensions="ticket")
+        self.assertEqual(len(paths), 3)
+        names = {Path(p).name for p in paths}
+        self.assertIn("common.txt", names)
+        self.assertIn("DirBuster-2007_directory-list-2.3-small.txt", names)
+        self.assertIn("DirBuster-2007_directory-list-2.3-medium.txt", names)
+
+    def test_dirs_multi_ext_preset_fast(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(
+            preset="fast",
+            extensions="ticket",
+            preset_from_flag=True,
+        )
+        self.assertEqual(len(paths), 2)
+        names = {Path(p).name for p in paths}
+        self.assertIn("common.txt", names)
+        self.assertIn("DirBuster-2007_directory-list-2.3-small.txt", names)
+
+    def test_dirs_multi_ext_preset_deep(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        paths = resolve_dirs_multi_wordlists(
+            preset="deep",
+            extensions="ticket",
+            preset_from_flag=True,
+        )
+        self.assertEqual(len(paths), 4)
+
+    def test_dirs_multi_ext_unknown_preset(self) -> None:
+        from wordlists.scout import resolve_dirs_multi_wordlists
+
+        with self.assertRaises(ValueError):
+            resolve_dirs_multi_wordlists(
+                preset="nope",
+                extensions="ticket",
+                preset_from_flag=True,
+            )
 
     def test_dirs_multi_custom_ids(self) -> None:
         from wordlists.scout import resolve_dirs_multi_wordlists
@@ -142,7 +195,7 @@ class WordlistCatalogTests(unittest.TestCase):
         from wordlists.scout import resolve_dirs_multi_wordlists
 
         with self.assertRaises(ValueError):
-            resolve_dirs_multi_wordlists(preset="nope")
+            resolve_dirs_multi_wordlists(preset="nope", preset_from_flag=True)
 
     def test_unique_paths_and_ids(self) -> None:
         ids = [e.id for e in self.catalog.entries]

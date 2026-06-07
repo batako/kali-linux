@@ -31,14 +31,17 @@
 | コマンド | 用途 |
 |----------|------|
 | `scout -d [path]` | 1 ワードリスト |
-| `scout -ds [path]` | 複数リスト並列（preset ctf / fast / deep） |
+| `scout -ds [path]` | 複数リスト並列（dirs selector 全件） |
+| `scout -ds -x <ext>` | ext fuzz 並列（dirs-ext selector 全件） |
+| `scout -ds -x <ext> -p fast` | common + dirbuster-small（2 jobs） |
 
 `gb-dirs` は非推奨（内部で `scout -ds` に委譲）。
 
 ```bash
 scout -d /            # catalog default（common）
-scout -ds             # parallel preset ctf
-scout -ds /island
+scout -ds             # dirs selector (3 jobs)
+scout -ds -x ticket /island/2100
+scout -ds -x ticket -p fast
 scout -ds -p fast
 scout -ds -n
 ```

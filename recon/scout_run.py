@@ -563,6 +563,7 @@ def _run_dirs_phase(
     wordlists: Optional[list[str]] = None,
     dirs_multi: bool = False,
     dirs_preset: str = "ctf",
+    dirs_multi_preset_from_flag: bool = False,
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     dry_run: bool = False,
@@ -578,11 +579,21 @@ def _run_dirs_phase(
 
     print("")
     if dirs_multi:
-        print(
-            "[*] phase 3: directory brute (multi, preset="
-            f"{dirs_preset}, {len(wl_batch)} wordlist(s), background)"
-        )
-        if dirs_preset == "deep" and not dry_run:
+        if extensions:
+            if dirs_multi_preset_from_flag:
+                src = f"preset {dirs_preset} ({len(wl_batch)} wordlists, -x {extensions})"
+            else:
+                src = f"dirs-ext ({len(wl_batch)} wordlists, -x {extensions})"
+        elif dirs_multi_preset_from_flag:
+            src = f"preset {dirs_preset} ({len(wl_batch)} wordlists)"
+        else:
+            src = f"dirs ({len(wl_batch)} wordlists)"
+        print(f"[*] phase 3: directory brute (multi, {src}, background)")
+        if (
+            dirs_multi_preset_from_flag
+            and dirs_preset == "deep"
+            and not dry_run
+        ):
             print(
                 f"[!] deep preset runs {len(wl_batch)} jobs per URL"
                 " — consider: scout -ds -p deep -t 10",
@@ -1052,6 +1063,7 @@ def run_scout(
     dirs_only: bool = False,
     dirs_multi: bool = False,
     dirs_preset: str = "ctf",
+    dirs_multi_preset_from_flag: bool = False,
     dirs_urls: Optional[list[str]] = None,
     wordlist: Optional[str] = None,
     wordlists: Optional[list[str]] = None,
@@ -1071,6 +1083,7 @@ def run_scout(
             wordlists=wordlists,
             dirs_multi=dirs_multi,
             dirs_preset=dirs_preset,
+            dirs_multi_preset_from_flag=dirs_multi_preset_from_flag,
             threads=threads,
             extensions=extensions,
             dry_run=dry_run,

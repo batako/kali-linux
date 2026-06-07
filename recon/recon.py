@@ -302,6 +302,7 @@ def main():
         dirs_multi = False
         dirs_only_flag = False
         dirs_preset = "ctf"
+        dirs_preset_from_flag = False
         search_exploits_only = False
         force_exploit = False
         status_mode = False
@@ -368,6 +369,7 @@ def main():
                     print("usage: recon.py scout -ds -p ctf|fast|deep [ip|url]")
                     sys.exit(1)
                 dirs_preset = args[1]
+                dirs_preset_from_flag = True
                 args = args[2:]
             elif a in SCOUT_SEARCH_EXPLOITS_FLAGS:
                 search_exploits_only = True
@@ -471,7 +473,7 @@ def main():
             )
             sys.exit(0 if rc == 0 else 1)
 
-        if dirs_preset != "ctf" and not dirs_multi:
+        if dirs_preset_from_flag and not dirs_multi:
             print("[-] -p/--preset requires scout -ds")
             sys.exit(1)
 
@@ -489,13 +491,23 @@ def main():
                 wordlists = resolve_dirs_multi_wordlists(
                     preset=dirs_preset,
                     wordlist_ids=wordlist_ids or None,
+                    extensions=extensions,
+                    preset_from_flag=dirs_preset_from_flag,
                 )
             except ValueError as exc:
                 print(f"[-] {exc}", file=sys.stderr)
-                print(
-                    "[i] presets: ctf, fast, deep — recon.py wordlist list --for dirs",
-                    file=sys.stderr,
-                )
+                if extensions:
+                    print(
+                        "[i] -ds -x -p presets: ctf, fast, deep"
+                        " — default uses all dirs-ext selector entries",
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        "[i] -ds -p presets: ctf, fast, deep"
+                        " — default uses all dirs selector entries",
+                        file=sys.stderr,
+                    )
                 sys.exit(1)
         else:
             try:
@@ -527,6 +539,7 @@ def main():
             wordlists=wordlists,
             threads=threads,
             extensions=extensions,
+            dirs_multi_preset_from_flag=dirs_preset_from_flag,
         )
         sys.exit(0 if rc == 0 else 1)
 

@@ -36,6 +36,25 @@ dirs_multi_presets:
     - raft-small-directories
     - quickhits
     - discovery-web-content-raft-small-files
+dirs_ext_multi_presets:
+  ctf:
+    description: common + dirbuster-small + dirbuster-medium (parallel, ext fuzz default)
+    entry_ids:
+    - common
+    - dirbuster-small
+    - dirbuster-medium
+  fast:
+    description: common + dirbuster-small (2 jobs)
+    entry_ids:
+    - common
+    - dirbuster-small
+  deep:
+    description: ctf + raft-small-files (4 jobs; use lower -t)
+    entry_ids:
+    - common
+    - dirbuster-small
+    - dirbuster-medium
+    - discovery-web-content-raft-small-files
 categories:
 - id: discovery-dns
   name: Discovery / DNS
