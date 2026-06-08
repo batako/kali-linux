@@ -59,6 +59,7 @@ from scout_run import show_scout_ports
 from scout_run import show_scout_report
 from scout_run import show_scout_report_exploits
 from scout_run import show_scout_report_paths
+from scout_run import show_scout_exploit_pack
 from scout_run import show_scout_status
 from scout_paths_fetch import run_paths_tree_fetch
 from scout_exploit import run_exploit_phase
@@ -84,6 +85,7 @@ SCOUT_REPORT_EXPLOITS_FLAGS = ("-re", "--report-exploits")
 SCOUT_REPORT_PATHS_FLAGS = ("-rt", "--report-paths")
 SCOUT_REPORT_TREE_FETCH_FLAGS = ("-rtf", "--report-tree-fetch")
 SCOUT_SEARCH_EXPLOITS_FLAGS = ("-se", "--search-exploits")
+SCOUT_EXPLOIT_PACK_FLAGS = ("-ep", "--exploit-pack")
 SCOUT_LEGACY_FLAG_MAP = {
     "-p": "--report-ports",
     "--ports": "--report-ports",
@@ -325,6 +327,14 @@ def main():
                 ignore_force=True,
             )
             rc = run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
+            sys.exit(0 if rc == 0 else 1)
+
+        if args and args[0] in SCOUT_EXPLOIT_PACK_FLAGS:
+            ip, _, _, _ = _scout_parse_tail(
+                args[1:],
+                usage="usage: recon.py scout -ep|--exploit-pack [ip]",
+            )
+            rc = show_scout_exploit_pack(ip)
             sys.exit(0 if rc == 0 else 1)
 
         if args and args[0] in SCOUT_REPORT_FLAGS:

@@ -25,6 +25,9 @@ services:
       - ./dotfiles/zsh/.zshrc:/home/kali/.zshrc
       - ./kali/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
+      # exploitdb
+      - ./exploitdb:/usr/share/exploitdb
+
     tty: true
     stdin_open: true
 
@@ -40,3 +43,6 @@ services:
       - "6080:6080" # noVNC
       - "7681:7681" # ttyd
       - "8080:8080" # HTTP
+
+volumes:
+  exploitdb:

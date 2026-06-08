@@ -164,6 +164,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + probes + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** only (DB) |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** only (DB, no re-search) |
+| `scout -ep` / `--exploit-pack [ip]` | **AI submission pack** — refresh searchsploit + Metasploit, save Markdown under `cases/<room>/plans/` (prints paths only) |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** tree only (DB, merged dirs hits) |
 | `scout -se` / `--search-exploits [ip]` | Run and cache searchsploit |
 | `scout -r -se [ip]` | Search first, then full report |
@@ -305,6 +306,7 @@ Numbers are gobuster HTTP status. Only 200 / 301 / 302 / 401 are shown (noise an
 | Ports only | **`scout -rp`** |
 | PATHS tree only | **`scout -rt`** |
 | exploit list (DB) | **`scout -re`** |
+| AI submission pack (searchsploit + MSF) | **`scout -ep`** |
 | exploit search (refresh cache) | **`scout -se`** / **`scout -r -se`** |
 | scan and synchronous probes | Console, `exec-list` / `exec-view` (probe shows `(cached)` if already successful) |
 | directory discovery (jobs + PATHS tree) | **`scout -s`** / **`scout -ws`**, log files |
@@ -708,7 +710,7 @@ Full names only. Alias is shown in parentheses.
 
 `case-set` (`cs`) `case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set` (`ts`) `target-show` `target-clear` ·
-`scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
+`scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·

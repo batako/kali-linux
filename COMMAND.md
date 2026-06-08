@@ -164,6 +164,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
+| `scout -ep` / `--exploit-pack [ip]` | **AI 提出資料** — searchsploit + Metasploit を更新し `cases/<room>/plans/` に Markdown 保存（パスのみ表示） |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
 | `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
 | `scout -r -se [ip]` | search してからフルレポート |
@@ -305,6 +306,7 @@ http://10.49.140.183/
 | ポートのみ | **`scout -rp`** |
 | PATHS ツリーのみ | **`scout -rt`** |
 | exploit 一覧（DB） | **`scout -re`** |
+| AI 提出資料（searchsploit + MSF） | **`scout -ep`** |
 | exploit 検索（キャッシュ更新） | **`scout -se`** / **`scout -r -se`** |
 | スキャン・同期プローブ | コンソール、`exec-list` / `exec-view`（probe は成功済みなら `(cached)`） |
 | ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
@@ -708,7 +710,7 @@ hydraweb   # 引数不足時に usage 表示
 
 `case-set`（`cs`）`case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set`（`ts`）`target-show` `target-clear` ·
-`scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
+`scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·

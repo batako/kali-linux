@@ -1338,6 +1338,13 @@ def show_scout_ports(ip: str) -> int:
     return 0
 
 
+def show_scout_exploit_pack(ip: str) -> int:
+    """Refresh searchsploit + MSF and print AI submission markdown."""
+    from scout_exploit_pack import run_exploit_pack
+
+    return run_exploit_pack(ip)
+
+
 def show_scout_report_exploits(ip: str) -> int:
     """DB snapshot: EXPLOITS section only (no searchsploit)."""
     case = _scout_case()

@@ -20,7 +20,7 @@ scout() {
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local wordlist="" threads="" ext=""
-  local report="" report_ports="" report_exploits="" report_paths="" report_tree_fetch="" search_exploits=""
+  local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
 
@@ -41,6 +41,7 @@ scout() {
         echo "  -r, --report [ip]              full report"
         echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
         echo "  -re, --report-exploits [ip]   EXPLOITS"
+        echo "  -ep, --exploit-pack [ip]       AI submission → cases/<room>/plans/*.md"
         echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
         echo "  -rtf, --report-tree-fetch [ip]  PATHS → sitemap + local mirror (-n dry-run)"
         echo ""
@@ -118,6 +119,10 @@ scout() {
         ;;
       -re|--report-exploits)
         report_exploits="-re"
+        shift
+        ;;
+      -ep|--exploit-pack)
+        report_exploit_pack="-ep"
         shift
         ;;
       -rt|--report-paths)
@@ -290,12 +295,16 @@ scout() {
     esac
   done
 
-  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
-    echo "[-] use one report flag: -r, -rp, -re, -rt, or -rtf" >&2
+  if [[ -n "$report_ports" && ( -n "$report" || -n "$report_exploits" || -n "$report_exploit_pack" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -rp, -re, -ep, -rt, or -rtf" >&2
     return 1
   fi
-  if [[ -n "$report_exploits" && ( -n "$report" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
-    echo "[-] use one report flag: -r, -re, -rt, or -rtf" >&2
+  if [[ -n "$report_exploits" && ( -n "$report" || -n "$report_exploit_pack" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -re, -ep, -rt, or -rtf" >&2
+    return 1
+  fi
+  if [[ -n "$report_exploit_pack" && ( -n "$report" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+    echo "[-] use one report flag: -r, -ep, -rt, or -rtf" >&2
     return 1
   fi
   if [[ -n "$report_paths" && ( -n "$report" || -n "$report_tree_fetch" ) ]]; then
@@ -306,7 +315,7 @@ scout() {
     echo "[-] use -r or -rtf, not both" >&2
     return 1
   fi
-  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+  if [[ -n "$search_exploits" && ( -n "$report_ports" || -n "$report_exploits" || -n "$report_exploit_pack" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
     echo "[-] -se combines with -r only (or use alone)" >&2
     return 1
   fi
@@ -331,7 +340,7 @@ scout() {
     return 1
   fi
 
-  if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
+  if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_exploit_pack" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
     echo "[-] -fp is port scan only — do not combine with report/status/dirs flags" >&2
     return 1
   fi
@@ -350,6 +359,8 @@ scout() {
     args+=(-rp)
   elif [[ -n "$report_exploits" ]]; then
     args+=(-re)
+  elif [[ -n "$report_exploit_pack" ]]; then
+    args+=(-ep)
   elif [[ -n "$report_paths" ]]; then
     args+=(-rt)
   elif [[ -n "$report_tree_fetch" ]]; then
@@ -391,6 +402,7 @@ _scout() {
     '-r[full report from DB]' '--report[full report from DB]' \
     '-rp[OPEN+CLOSED from DB]' '--report-ports[OPEN+CLOSED from DB]' \
     '-re[EXPLOITS from DB]' '--report-exploits[EXPLOITS from DB]' \
+    '-ep[AI exploit submission pack]' '--exploit-pack[AI exploit submission pack]' \
     '-rt[PATHS tree from DB]' '--report-paths[PATHS tree from DB]' \
     '-rtf[PATHS sitemap + mirror]' '--report-tree-fetch[PATHS sitemap + mirror]' \
     '-se[searchsploit and cache]' '--search-exploits[searchsploit and cache]' \
