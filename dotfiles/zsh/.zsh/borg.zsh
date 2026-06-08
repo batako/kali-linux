@@ -28,7 +28,7 @@ _borg_pass_from_cl() {
   local ip user pass
 
   ip="$(_recon-ip-default 2>/dev/null)" || {
-    echo "[-] no target ip for cl (ts <ip> or cs <case> with target)" >&2
+    echo "[-] no target ip for creds-list (target-set <ip> or case-set <room> with target)" >&2
     return 1
   }
 
@@ -36,12 +36,12 @@ _borg_pass_from_cl() {
   if [[ -z "$user" ]]; then
     user="${RECON_BORG_CREDS_USER:-borg}"
     if pass="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)" && [[ -n "$pass" ]]; then
-      echo "[*] passphrase: from cl (${user}@${ip})" >&2
+      echo "[*] passphrase: from creds-list (${user}@${ip})" >&2
       print -r -- "$pass"
       return 0
     fi
     if ! _recon-has-creds "$ip"; then
-      echo "[-] no creds for $ip (cl empty; try: hash-crack -b ...)" >&2
+      echo "[-] no creds for $ip (creds-list empty; try: hash-crack -b ...)" >&2
       return 1
     fi
     user="$(_recon-pick-user "$ip" 1)" || return 1
@@ -49,11 +49,11 @@ _borg_pass_from_cl() {
 
   pass="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)" || pass=""
   if [[ -z "$pass" ]]; then
-    echo "[-] no password for ${user}@${ip} (cl)" >&2
+    echo "[-] no password for ${user}@${ip} (creds-list)" >&2
     return 1
   fi
 
-  echo "[*] passphrase: from cl (${user}@${ip})" >&2
+  echo "[*] passphrase: from creds-list (${user}@${ip})" >&2
   print -r -- "$pass"
 }
 
@@ -78,8 +78,8 @@ borg-crack() {
 usage: borg-crack [-n] [-u user] [-p pass] <dir> [pass]
 
   <dir>   Borg リポジトリ、またはその配下に README があるフォルダ
-  pass    -p / 第2引数 / $BORG_PASSPHRASE / cl ($IP) の順で使用
-  -u      cl のユーザ（省略時は borg → なければ対話選択）
+  pass    -p / 第2引数 / $BORG_PASSPHRASE / creds-list ($IP) の順で使用
+  -u      creds-list のユーザ（省略時は borg → なければ対話選択）
 
   -n  borg list のみ（extract しない）
 

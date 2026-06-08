@@ -184,6 +184,30 @@ class CaseScopeTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["ip"], "10.0.0.1")
 
+    def test_resolve_load_from_auto_inherits_previous(self) -> None:
+        self.case_scope.register_case_ip(self.case, "10.0.0.1")
+        self.db.add_execution(None, "10.0.0.1", "probe", "curl old")
+        self.db.finish_execution(1, "done", exit_code=0)
+
+        load_from = self.case_scope.resolve_load_from(
+            new_ip="10.0.0.2",
+            previous_ip="10.0.0.1",
+            mode="auto",
+        )
+        self.assertEqual(load_from, "10.0.0.1")
+
+    def test_resolve_load_from_new_clears_inherit(self) -> None:
+        self.case_scope.register_case_ip(self.case, "10.0.0.1")
+        self.db.add_execution(None, "10.0.0.1", "probe", "curl old")
+        self.db.finish_execution(1, "done", exit_code=0)
+
+        load_from = self.case_scope.resolve_load_from(
+            new_ip="10.0.0.2",
+            previous_ip="10.0.0.1",
+            mode="new",
+        )
+        self.assertIsNone(load_from)
+
     def test_discover_ips_from_case_log_filenames(self) -> None:
         logs = self.case_home / "logs"
         logs.mkdir(parents=True, exist_ok=True)

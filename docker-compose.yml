@@ -13,8 +13,9 @@ services:
       # working directory
       - ./workspace:/workspace
 
-      # recon app
+      # recon app (code read-only; data/ is rw overlay for recon.db)
       - ./recon:/opt/recon:ro
+      - ./recon/data:/opt/recon/data
 
       # configs
       - ./config/openvpn/tryhackme.ovpn:/etc/openvpn/tryhackme.ovpn:ro

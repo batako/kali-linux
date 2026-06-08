@@ -1,5 +1,7 @@
 # ペンテスト Cheatsheet
 
+English: [CHEATSHEET.en.md](CHEATSHEET.en.md)
+
 標準コマンド・定番手順のメモ。
 **このリポジトリの自作コマンド** → [COMMAND.md](COMMAND.md)
 
@@ -97,6 +99,64 @@ strings capture.pcapng | less
 
 `/etc/shadow` が読めない場合は、アプリ DB や `john` / `hashcat` 向けファイルを探す。
 コンテナ内の自動化 → [COMMAND.md](COMMAND.md)（`sshkey-crack`, `hydrassh` など）。
+
+## シェルの安定化（pty upgrade）
+
+PTY が無いシェルでは次のような不具合が出やすい。
+
+- Tab 補完・矢印キーが効かない
+- `Ctrl+C` でシェル全体が落ちる
+- `sudo`, `vim`, `su` が変な挙動をする
+- 出力が二重に見える
+
+**1. ターゲット** — PTY を確保
+
+```bash
+python3 -c 'import pty; pty.spawn("/bin/bash")'
+# python3 が無い: python -c '...' / script -q /dev/null -c bash
+```
+
+`tty` が `/dev/pts/N` などを返せば OK。
+
+**2. Kali** — フォアグラウンドに戻して端末モードを合わせる
+
+`Ctrl+Z` で一旦バックグラウンドにしてから:
+
+```bash
+stty raw -echo; fg
+```
+
+Enter を **2 回** 押す。
+
+**3. ターゲット** — ターミナルサイズと TERM を設定
+
+```bash
+export TERM=xterm-256color
+stty rows 50 columns 120
+```
+
+Kali 側のサイズに合わせる:
+
+```bash
+stty size    # 例: 50 120 → rows columns
+```
+
+**python が無いとき**
+
+```bash
+script -q /dev/null -c bash
+# または
+/usr/bin/script -qc /dev/bash /dev/null
+```
+
+**うまくいかないとき**
+
+| 症状 | 対処 |
+|------|------|
+| `python3` がない | `python` / `script` を試す |
+| `stty: invalid argument` | Kali で `stty size` を確認して rows/columns を再指定 |
+| 改行が崩れる | 手順 2（`Ctrl+Z` → `stty raw -echo; fg`）をやり直す |
+| 接続が切れる | 安定化前に `export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin` |
 
 ## 権限昇格系
 

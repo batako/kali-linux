@@ -12,9 +12,9 @@ workspace/exploits/**
 !workspace/exploits/**/
 !workspace/exploits/**/.keep
 
-workspace/recon/**
-!workspace/recon/**/
-!workspace/recon/**/.keep
+# Recon CLI runtime DB (recon/data/ also holds tracked nmap-top-1000-tcp.txt)
+recon/data/recon.db
+recon/data/recon.db.lock
 
 workspace/cases/**
 !workspace/cases/**/

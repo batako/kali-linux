@@ -685,9 +685,8 @@ enc() {
         echo "  enc -d QXJlYTUx"
         echo "  enc -d a18672860d0510e5ab6699730763b250"
         echo "  enc -d ObsJmP173N2X6dOrAgEAL0Vu"
-        echo "  dec <string>                 alias for enc -d"
-        echo ""
-        echo "aliases: dec b64d b64e b32d b32e b58d b58e b62d b62e b10d b10e"
+        echo "  alias: dec (= enc -d)"
+        echo "  legacy: b64d b64e b32d b32e b58d b58e b62d b62e b10d b10e"
         return 0
         ;;
       -t)
@@ -942,7 +941,7 @@ vig() {
         echo "  vig -d -k KEY 'CIPHER{...}'"
         echo "  vig -K -p TRYHACKME 'CIPHER{...}'"
         echo ""
-        echo "aliases: vigd vige vigall vigkey"
+        echo "  legacy: vigd vige vigall vigkey"
         return 0
         ;;
       -d) mode=de; shift ;;

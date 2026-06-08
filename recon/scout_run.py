@@ -1164,7 +1164,7 @@ def show_scout_report(ip: str) -> int:
         for line in format_hint_report_lines(case):
             print(line)
     else:
-        print("(none — cs <case> to attach hints)")
+        print("(none — case-set <room> to attach hints)")
     print("")
     print("--- EXPLOITS ---")
     from scout_exploit import format_exploit_report_lines

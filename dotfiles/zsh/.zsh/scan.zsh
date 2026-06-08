@@ -22,7 +22,7 @@ scan() {
         echo "  -q, --quiet       no port tables at end"
         echo "  -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)"
         echo ""
-        echo "prep: cs <case>  &&  ti <ip>"
+        echo "prep: case-set <room>  &&  target-set <ip>"
         echo "more: host-view [ip]  (tasks, history, artifacts)"
         return 0
         ;;
@@ -85,7 +85,7 @@ scan() {
 
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
-      echo "[-] no target (ti <ip> / cs <case>)" >&2
+      echo "[-] no target (target-set <ip> / case-set <room>)" >&2
       return 1
     }
   fi
@@ -124,7 +124,7 @@ _scan() {
 host-reset() {
   local ip="${1:-${IP:-}}"
   if [[ -z "$ip" ]]; then
-    echo "[-] usage: host-reset [ip]  (or ti <ip> first)" >&2
+    echo "[-] usage: host-reset [ip]  (or target-set <ip> first)" >&2
     return 1
   fi
   (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null

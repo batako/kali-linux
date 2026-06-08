@@ -27,7 +27,8 @@ scout() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: scout [options] [ip|path|url...]  (alias: s)"
+        echo "usage: scout [options] [ip|path|url...]"
+        echo "  alias: s"
         echo ""
         echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
         echo "  scout -ds           parallel dirs (preset tiers; default standard)"
@@ -48,9 +49,9 @@ scout() {
         echo "  scout -r -se [ip]              refresh exploits then full report"
         echo ""
         echo "exploit reject (manual — only after confirming N/A; untried picks stay):"
-        echo "  erj <EDB> [--port 80/tcp]       hide from scout -re"
-        echo "  eru <EDB> [--port 80/tcp]       undo"
-        echo "  erl [ip]                        list rejected"
+        echo "  exploit-reject <EDB> [--port 80/tcp]    hide from scout -re  (alias: erj)"
+        echo "  exploit-unreject <EDB> [--port 80/tcp]  undo  (alias: eru)"
+        echo "  exploit-rejects [ip]                    list rejected  (alias: erl)"
         echo ""
         echo "ports (scan only — like -d for gobuster):"
         echo "  -fp, --full-ports              TCP 1-65535 only (no probes/dirs/exploits)"
@@ -337,7 +338,7 @@ scout() {
 
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
-      echo "[-] no target (ti <ip> / cs <case>)" >&2
+      echo "[-] no target (target-set <ip> / case-set <room>)" >&2
       return 1
     }
   fi

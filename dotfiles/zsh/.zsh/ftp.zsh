@@ -191,9 +191,9 @@ ftp() {
         ;;
       -h|--help)
         echo "usage: ftp [-l] [user] [ip]"
-        echo "  ftp vigilante        user + \$IP — cl あれば自動、なければ対話ログイン"
+        echo "  ftp vigilante        user + \$IP — creds-list あれば自動、なければ対話ログイン"
         echo "  ftp vigilante@\$IP   explicit"
-        echo "  ftp                  \$IP のみ（cl から user 選択 or 対話）"
+        echo "  ftp                  \$IP のみ（creds-list から user 選択 or 対話）"
         echo "  anonymous: ftp -A <host>  or  ftpa"
         echo "  plain: command ftp ..."
         return 0
@@ -244,8 +244,8 @@ ftpa() {
       -h|--help)
         echo "usage: ftpa [-l] [ip]"
         echo "  connect as anonymous@host (default host: \$IP)"
-        echo "  saves cl entry: anonymous / \$FTP_ANON_PASS (default: anonymous@)"
-        echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)"
+        echo "  saves creds-list entry: anonymous / \$FTP_ANON_PASS (default: anonymous@)"
+        echo "  -l  record to cases/<name>/logs/ (requires case-set <name>, or CASE_LOOSE=1)"
         return 0
         ;;
       *)
@@ -257,7 +257,7 @@ ftpa() {
 
   target="${target:-$(_recon-ip-default 2>/dev/null)}"
   if [[ -z "$target" ]]; then
-    echo "usage: ftpa [-l] [ip]  (or: ts <ip> / ta <ip> / cs <case> first)"
+    echo "usage: ftpa [-l] [ip]  (or: target-set <ip> / case-set <room> first)"
     return 1
   fi
 
@@ -295,7 +295,7 @@ _ftp-shell-case-file() {
   [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/ftp-shell"
 }
 
-# Load cases/<case>/ftp-shell (KEY=value) into FTP_SHELL_* when entering case
+# Load cases/<room>/ftp-shell (KEY=value) into FTP_SHELL_* when entering room
 _ftp-shell-load-case() {
   local f line key val
   f="$(_ftp-shell-case-file)"
@@ -406,8 +406,8 @@ _ftp-shell-help() {
   echo "  -U <url>     full shell URL (skip path math; for -u trigger)"
   echo "  -n <name>    remote filename (default: shell.php)"
   echo "  -p <path>    local payload file"
-  echo "  -P <port>    revshell port (ftprsh only, default: 4444)"
-  echo "  -u           skip upload (ftprsh only)"
+  echo "  -P <port>    revshell port (ftp-revshell only, default: 4444)"
+  echo "  -u           skip upload (ftp-revshell only)"
   echo ""
   echo "per-case: cases/<name>/ftp-shell   session: export FTP_SHELL_*"
   echo "defaults: ftp://\$IP/shell.php  →  http://\$IP/shell.php"
@@ -456,7 +456,7 @@ ftp-put-shell() {
 
   ip="${ip:-${IP:-}}"
   if [[ -z "$ip" ]]; then
-    echo "usage: ftp-put-shell [options] [ip]  (or: ts <ip> first)" >&2
+    echo "usage: ftp-put-shell [options] [ip]  (or: target-set <ip> first)" >&2
     return 1
   fi
 
@@ -486,7 +486,8 @@ ftp-revshell() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        _ftp-shell-help "ftp-revshell (ftprsh)"
+        _ftp-shell-help "ftp-revshell"
+        echo "  alias: ftprsh"
         echo "  prep: listen [port] in another terminal"
         return 0
         ;;
@@ -515,7 +516,8 @@ ftp-revshell() {
 
   ip="${ip:-${IP:-}}"
   if [[ -z "$ip" ]]; then
-    echo "usage: ftprsh [options] [port] [ip]" >&2
+    echo "usage: ftp-revshell [options] [port] [ip]" >&2
+    echo "  alias: ftprsh" >&2
     return 1
   fi
 

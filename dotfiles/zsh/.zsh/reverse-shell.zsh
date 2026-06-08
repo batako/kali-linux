@@ -20,7 +20,7 @@ _webrsh-resolve-url() {
   fi
 
   ip="$(_recon-ip-default 2>/dev/null)" || {
-    echo "[-] webrsh: no \$IP (ts <ip> / cs <case> first)" >&2
+    echo "[-] webrsh: no \$IP (target-set <ip> / case-set <room> first)" >&2
     return 1
   }
 
@@ -129,8 +129,6 @@ webrsh() {
         echo "  webrsh home.php -p command --post"
         echo "  webrsh :8080/home.php -p command -X POST -P 5555"
         echo "  webrsh http://\$IP/shell.php"
-        echo ""
-        echo "alias: rcecurl (deprecated)"
         return 0
         ;;
       -X|--method|--request)
@@ -175,10 +173,6 @@ webrsh() {
   _webrsh-trigger "$target" "$listen_port" "$param" "$method"
 }
 
-# backward-compatible names
-_rcecurl-trigger() { _webrsh-trigger "$@" }
-rcecurl() { webrsh "$@" }
-
 _webrsh() {
   _arguments \
     '-X[HTTP method]:method:(GET POST)' \
@@ -189,4 +183,4 @@ _webrsh() {
     '*:path or url:(/home.php home.php :8080/home.php)'
 }
 
-compdef _webrsh webrsh rcecurl
+compdef _webrsh webrsh

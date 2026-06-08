@@ -5,16 +5,16 @@ from contextlib import contextmanager
 from pathlib import Path
 import json
 
-DEFAULT_CONTAINER_DB_PATH = "/workspace/recon/recon.db"
+DEFAULT_CONTAINER_DB_PATH = "/opt/recon/data/recon.db"
 
 
 def _default_db_path() -> str:
     """
-    Prefer container path (/workspace/...) but allow local fallback.
+    Prefer container path (/opt/recon/data/...) but allow local fallback.
     Priority:
       1) RECON_DB_PATH env var
-      2) /workspace/recon/recon.db if its parent exists
-      3) <repo>/workspace/recon/recon.db
+      2) /opt/recon/data/recon.db if its parent exists (container)
+      3) <recon>/data/recon.db (local tests / repo checkout)
     """
     env = os.environ.get("RECON_DB_PATH")
     if env:
@@ -24,8 +24,8 @@ def _default_db_path() -> str:
     if container_parent.exists():
         return DEFAULT_CONTAINER_DB_PATH
 
-    repo_root = Path(__file__).resolve().parents[1]
-    return str(repo_root / "workspace" / "recon" / "recon.db")
+    recon_root = Path(__file__).resolve().parent
+    return str(recon_root / "data" / "recon.db")
 
 
 DB_PATH = _default_db_path()

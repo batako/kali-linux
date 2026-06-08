@@ -6,7 +6,7 @@ _recon-ip-re() {
   echo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
-# $IP → cases/<case>/target (lazy load when case is set)
+# $IP → cases/<room>/target (lazy load when CASE is set)
 _recon-ip-default() {
   if [[ -n "${IP:-}" ]]; then
     echo "$IP"
@@ -85,7 +85,7 @@ for r in json.load(sys.stdin):
   users=("${filtered[@]}")
 
   if (( ${#users[@]} == 0 )); then
-    echo "[-] no ssh login creds for $ip (cl has only reserved names? ca <user> <pass>)" >&2
+    echo "[-] no ssh login creds for $ip (creds-list has only reserved names? creds-add <user> <pass>)" >&2
     return 1
   fi
 

@@ -68,7 +68,7 @@ _sshkey_import_creds() {
   fi
 
   if [[ -z "$ip" ]]; then
-    echo "[-] creds not saved: ts <ip> first, or cs <case> (cases/<case>/target)" >&2
+    echo "[-] creds not saved: target-set <ip> first, or case-set <room> (cases/<room>/target)" >&2
     return 1
   fi
   if [[ -z "$user" || -z "$pass" ]]; then
@@ -89,7 +89,7 @@ _sshkey_import_creds() {
   echo "    login:    $user"
   echo "    password: $pass"
   echo "    key:      $key_abs"
-  echo "[i] connect: ssh -i $key_abs  (passphrase + user from cl)"
+  echo "[i] connect: ssh -i $key_abs  (passphrase + user from creds-list)"
 }
 
 # ssh2john + john wordlist crack for private keys
@@ -109,7 +109,7 @@ sshkey-crack() {
       -h|--help)
         echo "usage: sshkey-crack [-f] [-u user] <keyfile> [wordlist]"
         echo "  default wordlist: \$RECON_PASSLIST"
-        echo "  on crack: creds-add for \$IP (shows in cl)"
+        echo "  on crack: creds-add for \$IP (shows in creds-list)"
         return 0
         ;;
       *)
@@ -384,7 +384,7 @@ _hash_crack_apply_creds() {
 
   ip="${IP:-}"
   if [[ -z "$ip" ]]; then
-    echo "[-] creds not saved: ts <ip> first (use: cl)" >&2
+    echo "[-] creds not saved: target-set <ip> first (use: creds-list)" >&2
     return 0
   fi
 
@@ -632,7 +632,7 @@ _gpg_crack_import_creds() {
   local creds_status
 
   if [[ -z "$ip" ]]; then
-    echo "[-] creds not saved: ts <ip> first, or cs <case> (cases/<case>/target)" >&2
+    echo "[-] creds not saved: target-set <ip> first, or case-set <room> (cases/<room>/target)" >&2
     return 1
   fi
   if [[ -z "$user" || -z "$pass" ]]; then
@@ -693,7 +693,7 @@ _gpg_crack_decrypt() {
     return 0
   fi
 
-  echo "[-] could not parse user:pass from decrypted text (use: ca <user> <pass>)" >&2
+  echo "[-] could not parse user:pass from decrypted text (use: creds-add <user> <pass>)" >&2
   return 1
 }
 
@@ -717,7 +717,7 @@ gpg-crack() {
         echo "usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]"
         echo "  default wordlist: \$RECON_PASSLIST"
         echo "  default credential: credential.pgp beside <key.asc>"
-        echo "  on success: gpg --decrypt → creds-add (cl) when user:pass in plaintext"
+        echo "  on success: gpg --decrypt → creds-add when user:pass in plaintext"
         return 0
         ;;
       *)

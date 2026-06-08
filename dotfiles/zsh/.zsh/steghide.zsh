@@ -200,7 +200,7 @@ steg-extract() {
         echo "  4. else: empty pass → stegcracker + wordlist if needed"
         echo "  PNG/GIF: not supported — fixmagic if needed, then inspect visually"
         echo "  default wordlist: \$RECON_PASSLIST"
-        echo "  output: cases/<case>/exports/<name>.steg.out"
+        echo "  output: cases/<room>/exports/<name>.steg.out"
         echo "  zip output: auto zip-crack + 7z extract"
         echo ""
         echo "alias: stegx"
@@ -226,8 +226,9 @@ steg-extract() {
   done
 
   if [[ -z "$file" ]]; then
-    echo "usage: steg-extract <image> [wordlist]"
-    echo "       steg-extract -p <pass> <image>"
+    echo "usage: steg-extract <image> [wordlist]" >&2
+    echo "       steg-extract -p <pass> <image>" >&2
+    echo "  alias: stegx" >&2
     return 1
   fi
 

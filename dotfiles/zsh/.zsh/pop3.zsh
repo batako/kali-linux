@@ -76,15 +76,16 @@ _pop3-run-client() {
 
 _pop3-help() {
   echo "usage: pop3 [-l] [-p port] [user] [ip]"
-  echo "       pop3-list | p3l [-p port] [user] [ip]"
-  echo "       pop3-get | p3g <user> <msg#> [ip]"
-  echo "       pop3-dump | p3d [-o dir] [-p port] [user] [ip]"
+  echo "       pop3-list [-p port] [user] [ip]"
+  echo "       pop3-get <user> <msg#> [ip]"
+  echo "       pop3-dump [-o dir] [-p port] [user] [ip]"
+  echo "  alias: p3 / p3l / p3g / p3d"
   echo "  bulk login: hydrapop3 -L users.txt -P passes.txt"
-  echo "  uses cl creds (ca user pass) + \$IP when ip omitted"
+  echo "  uses creds-list + \$IP when ip omitted"
   echo "  -l / --log   session log → cases/.../logs/pop3_*"
   echo "  -p port      default: open 110/tcp from recon.db, else 110"
   echo "examples:"
-  echo "  ca seina <pass>"
+  echo "  creds-add seina <pass>"
   echo "  pop3 seina              # login + interactive (LIST, RETR, ...)"
   echo "  pop3-list seina        # LIST + STAT"
   echo "  pop3-get seina 1       # retrieve message 1"
@@ -134,7 +135,7 @@ pop3-login() {
   fi
 
   if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
-    echo "[-] no saved creds for ${user}@${ip} (ca ${user} <pass>)" >&2
+    echo "[-] no saved creds for ${user}@${ip} (creds-add ${user} <pass>)" >&2
     return 1
   fi
   [[ -z "$pass" ]] && {
@@ -248,7 +249,7 @@ pop3-get() {
   fi
 
   [[ -z "$ip" ]] && ip="$(_recon-ip-default 2>/dev/null)" || {
-    echo "[-] no target ip — ts <ip> first" >&2
+    echo "[-] no target ip — target-set <ip> first" >&2
     return 1
   }
   [[ -z "$port" ]] && port="$(_pop3-default-port "$ip")"

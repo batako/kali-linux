@@ -753,7 +753,7 @@ def main():
     elif cmd == "case-target-set":
         args = sys.argv[2:]
         if not args:
-            print("usage: recon.py case-target-set <ip> [--mode inherit|new|pick] [--previous IP] [--from IP] [-y]")
+            print("usage: recon.py case-target-set <ip> [--mode auto|new|pick] [--previous IP] [--from IP]")
             sys.exit(1)
         new_ip = args[0]
         if not case_looks_like_ipv4(new_ip):
@@ -763,10 +763,9 @@ def main():
         if not case:
             print("usage: recon.py case-target-set <ip>  (requires CASE)")
             sys.exit(1)
-        mode = "inherit"
+        mode = "auto"
         previous_ip = None
         from_ip = None
-        assume_yes = False
         i = 1
         while i < len(args):
             a = args[i]
@@ -779,9 +778,6 @@ def main():
             elif a == "--from" and i + 1 < len(args):
                 from_ip = args[i + 1]
                 i += 2
-            elif a in ("-y", "--yes"):
-                assume_yes = True
-                i += 1
             else:
                 print(f"unknown option: {a}")
                 sys.exit(1)
@@ -792,7 +788,6 @@ def main():
             previous_ip=previous_ip,
             mode=mode,
             from_ip=from_ip,
-            assume_yes=assume_yes,
         )
         if load_from:
             write_load_from(load_from)
@@ -807,8 +802,10 @@ def main():
         scope = recon_scope_ips(new_ip)
         if load_from:
             print(f"[+] target: {new_ip}  (load_from: {load_from})")
-        else:
+        elif mode == "new":
             print(f"[+] target: {new_ip}  (--new, no inherit)")
+        else:
+            print(f"[+] target: {new_ip}")
         if scope:
             print(f"[*] recon scope: {', '.join(scope)}")
 
@@ -897,7 +894,7 @@ def main():
             ip = os.environ.get("IP")
             if not ip:
                 print("usage: recon.py exec-list [-l] [ip]")
-                print("hint: cs <case>  or  target-set <ip>  or  exec-list -l")
+                print("hint: case-set <room>  or  target-set <ip>  or  exec-list -l")
                 sys.exit(1)
             rows = list_executions(ip=ip, limit=50)
             label = ip
@@ -1226,7 +1223,7 @@ def main():
                         print(f"{r['ip']}\t{r['username']}\t{r['password']}")
         else:
             print("usage: recon.py creds-list [--json] [ip]")
-            print("hint: cs <case>  or  pass ip")
+            print("hint: case-set <room>  or  pass ip")
             sys.exit(1)
 
     elif cmd == "creds-import-hydra":

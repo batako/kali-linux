@@ -25,7 +25,7 @@ def case_name_from_env() -> str | None:
 def case_name_required() -> str:
     case = case_name_from_env()
     if not case:
-        raise ValueError("CASE not set — cs <case> first")
+        raise ValueError("CASE not set — case-set <room> first")
     return case
 
 
@@ -58,7 +58,7 @@ def read_load_from() -> str | None:
 def write_load_from(ip: str | None) -> None:
     path = load_from_path()
     if path is None:
-        raise ValueError("CASE_HOME not set — cs <case> first")
+        raise ValueError("CASE_HOME not set — case-set <room> first")
     ip = (ip or "").strip()
     if not ip:
         if path.is_file():
@@ -328,7 +328,6 @@ def list_case_ip_candidates(
     return out
 
 
-PROMPT_INHERIT = "> "
 PROMPT_PICK = "load> "
 
 
@@ -431,13 +430,12 @@ def resolve_load_from(
     previous_ip: str | None,
     mode: str,
     from_ip: str | None = None,
-    assume_yes: bool = False,
 ) -> str | None:
     """
-    Decide load_from IP after ta.
+    Decide load_from IP after target-set.
 
-    mode: inherit (default) | new | pick
-    Returns load_from ip or None.
+    mode: auto (default) | new | pick
+    auto: inherit previous target when it has recon data (no prompt)
     """
     case = case_name_required()
     new_ip = new_ip.strip()
@@ -457,21 +455,6 @@ def resolve_load_from(
         return from_ip
 
     if previous_ip and previous_ip != new_ip and ip_has_recon_data(previous_ip):
-        if assume_yes:
-            return previous_ip
-        if not sys.stdin.isatty():
-            return previous_ip
-        print(f"[?] Continue from {previous_ip}?")
-        print("    Y  inherit (default)   n  --new   p  pick")
-        line = _read_choice(PROMPT_INHERIT).lower()
-        if line in ("n", "no", "new"):
-            return None
-        if line in ("p", "pick", "l", "list"):
-            return pick_load_from_interactive(
-                case,
-                current_ip=new_ip,
-                previous_ip=previous_ip,
-            )
         return previous_ip
 
     return read_load_from()

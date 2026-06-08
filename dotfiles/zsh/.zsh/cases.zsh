@@ -4,17 +4,19 @@
 #
 # File outputs (listen -l, sshkey-crack, …) need a case directory.
 #
-# Default (strict): case unset → error. Use: cs <room>
+# Default (strict): case unset → error. Use: case-set <room>
 # Optional:         export CASE_LOOSE=1 → fallback to cases/_unscoped/ + warning
 #
-# recon/ holds recon.db only (no shells/exports/notes).
+# Recon CLI DB lives in recon/data/ (not under workspace/cases).
 
 export CASE_ROOT="/workspace/cases"
 export CASE_FALLBACK_NAME="_unscoped"
 
 case-set() {
   if [[ $# -lt 1 ]]; then
-    echo "usage: case-set <name>  (sets case and cd to cases/<name>)"
+    echo "usage: case-set <room>"
+    echo "  alias: cs"
+    echo "  cd to cases/<room>/ and set CASE / CASE_HOME"
     return 1
   fi
 
@@ -80,12 +82,12 @@ case-open() {
 # Change load_from for current target (recon scope) without changing IP
 case-load() {
   if [[ -z "${CASE:-}" ]]; then
-    echo "[-] case-load: cs <case> first" >&2
+    echo "[-] case-load: case-set <room> first" >&2
     return 1
   fi
   if [[ $# -lt 1 ]]; then
     echo "usage: case-load <ip|--new|--pick>"
-    echo "  change inherit source for el/cl/scout (current IP unchanged)"
+    echo "  change inherit source for exec-list / creds-list / scout (current IP unchanged)"
     return 1
   fi
   python3 "$RECON_APP" case-load-from "$1"

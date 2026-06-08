@@ -5,7 +5,7 @@
 _hydraweb-usage() {
   echo "usage:"
   echo "  hydraweb [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
-  echo "  omit target when \$IP is set (ta <ip>)"
+  echo "  omit target when \$IP is set (target-set <ip>)"
   echo "  cookie: sent as H=Cookie: ... (e.g. PHPSESSID=abc; security=low)"
   echo
   echo "examples:"
@@ -14,7 +14,7 @@ _hydraweb-usage() {
   echo "  hydraweb 10.10.10.10 /login.php R1ckR0n43 S \"ingredient\" username password \"sub=Login\""
   echo
   echo "extra_post default: sub=Login  (matches login.php submit button)"
-  echo "  on hit: creds saved to cl (creds-import-hydra)"
+  echo "  on hit: creds saved to creds-list (creds-import-hydra)"
 }
 
 hydraweb() {
@@ -34,7 +34,7 @@ hydraweb() {
     fi
     target="${IP:-}"
     if [[ -z "$target" ]]; then
-      echo "no target: ta <ip> or pass IP as first arg" >&2
+      echo "no target: target-set <ip> or pass IP as first arg" >&2
       return 1
     fi
   fi
@@ -203,7 +203,7 @@ hydrapop3() {
       -h|--help)
         echo "usage: hydrapop3 [target] -L users.txt -P passes.txt"
         echo "       hydrapop3 [target] <user> [wordlist]"
-        echo "  hits saved to cl via creds-import-hydra"
+        echo "  hits saved to creds-list via creds-import-hydra"
         echo "  examples:"
         echo "    hydrapop3 -L users.txt -P passes.txt"
         echo "    hydrapop3 seina \$RECON_PASSLIST"
@@ -221,7 +221,7 @@ hydrapop3() {
   if [[ -n "$userfile" && -n "$passfile" ]]; then
     target="${args[1]:-${IP:-}}"
     [[ -z "$target" ]] && {
-      echo "[-] no target ip — ts <ip> first" >&2
+      echo "[-] no target ip — target-set <ip> first" >&2
       return 1
     }
     [[ -f "$userfile" && -f "$passfile" ]] || {

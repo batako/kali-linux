@@ -38,7 +38,7 @@ _ssh-consume-flags() {
         echo "usage: ssh [-l] [-p port] [-i key] [user] [ip]"
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
         echo "  ssh -p 6498 boring   → non-default port (OpenSSH -p)"
-        echo "  ssh -i keyfile  → \$IP + user from cl (ssh-last / single cred / picker)"
+        echo "  ssh -i keyfile  → \$IP + user from creds-list (ssh-last / single cred / picker)"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
         echo "  login name: ssh user / ssh user@ip (not ssh -l; use command ssh -l user for OpenSSH)"
         echo "  plain: command ssh ..."
@@ -158,7 +158,7 @@ ssh-key-login() {
 
   if [[ -z "$_SSH_IP" ]]; then
     _SSH_IP="$(_recon-ip-default 2>/dev/null)" || {
-      echo "[-] no target ip (ta/ts or cs <case> with target file)" >&2
+      echo "[-] no target ip (target-set or case-set <room> with target file)" >&2
       return 1
     }
   fi
@@ -175,7 +175,7 @@ ssh-key-login() {
   fi
 
   if ! pass="$(_recon-creds-for-user "$_SSH_IP" "$_SSH_USER")"; then
-    echo "[-] no saved creds for ${_SSH_USER}@${_SSH_IP} (cl empty? run sshkey-crack)" >&2
+    echo "[-] no saved creds for ${_SSH_USER}@${_SSH_IP} (creds-list empty? run sshkey-crack)" >&2
     if [[ -n "$logfile" ]]; then
       _ssh-run-session "$logfile" command ssh -i "$key_abs" "${_SSH_REST[@]}" -tt "${_SSH_USER}@${_SSH_IP}"
     else
@@ -196,7 +196,7 @@ ssh-key-login() {
   python3 "$RECON_APP" ssh-last-set "$_SSH_IP" "$_SSH_USER" >/dev/null 2>&1
 
   echo "[+] ssh key: ${key_abs}" >&2
-  echo "[+] connecting: ${_SSH_USER}@${_SSH_IP} (passphrase from cl)" >&2
+  echo "[+] connecting: ${_SSH_USER}@${_SSH_IP} (passphrase from creds-list)" >&2
 
   local -a cmd=(
     sshpass -P "Enter passphrase for key" -p "$pass" "$(_ssh-bin)"
@@ -326,7 +326,7 @@ ssh() {
     host="$_SSH_IP"
     [[ -z "$host" ]] && host="$(_recon-ip-default 2>/dev/null)"
     user="${_SSH_USER:-session}"
-    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip (ts/ta/cs)" >&2; return 1; }
+    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip (target-set/cs)" >&2; return 1; }
     logfile="$(_ssh-log-path "$host" "$user")" || return 1
     _ssh-run-session "$logfile" command ssh "${_SSH_ARGS[@]}"
     return $?
@@ -345,17 +345,18 @@ ssh-list() {
 }
 
 _ssh-get-help() {
-  echo "usage: ssh-get | sget [-i key] [-o dir] [-r] [user] [ip] <remote> [remote...]"
-  echo "  download via scp using cl creds (sshpass)"
-  echo "  -i key   private key (passphrase + user from cl)"
+  echo "usage: ssh-get [-i key] [-o dir] [-r] [user] [ip] <remote> [remote...]"
+  echo "  alias: sget"
+  echo "  download via scp using creds-list (sshpass)"
+  echo "  -i key   private key (passphrase + user from creds-list)"
   echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
   echo "  -o dir   local destination (default: .)"
   echo "  -r       scp -r (directory)"
   echo "examples:"
-  echo "  sget tryhackme.asc credential.pgp"
-  echo "  sget -i id_rsa /etc/passwd /etc/shadow"
-  echo "  sget -o workspace/cases/tomghost ~/tryhackme.asc"
-  echo "  sget skyfuck ~/credential.pgp"
+  echo "  ssh-get tryhackme.asc credential.pgp"
+  echo "  ssh-get -i id_rsa /etc/passwd /etc/shadow"
+  echo "  ssh-get -o workspace/cases/tomghost ~/tryhackme.asc"
+  echo "  ssh-get skyfuck ~/credential.pgp"
 }
 
 # True when name is a saved cred user for ip (not a remote filename).
@@ -444,7 +445,7 @@ ssh-get() {
   user="${_SSH_GET_USER:-}"
   if [[ -z "$ip" ]]; then
     ip="$(_recon-ip-default 2>/dev/null)" || {
-      echo "[-] no target ip (ts <ip> or cs <case> with target file)" >&2
+      echo "[-] no target ip (target-set <ip> or case-set <room> with target file)" >&2
       return 1
     }
   fi
@@ -462,7 +463,7 @@ ssh-get() {
   if [[ -z "$user" ]]; then
     if [[ -n "$identity" ]]; then
       user="$(_recon-user-for-ssh-key "$ip" "$identity")" || {
-        echo "[-] could not resolve user (try: sshkey-crack -u user $identity, or sget -i $identity user ...)" >&2
+        echo "[-] could not resolve user (try: sshkey-crack -u user $identity, or ssh-get -i $identity user ...)" >&2
         return 1
       }
     else
@@ -480,12 +481,12 @@ ssh-get() {
   fi
 
   if _recon-skip-ssh-user "$user"; then
-    echo "[-] ssh-get: invalid login user: $user (ca <user> <pass> first)" >&2
+    echo "[-] ssh-get: invalid login user: $user (creds-add <user> <pass> first)" >&2
     return 1
   fi
 
   if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
-    echo "[-] no saved creds for ${user}@${ip} (cl empty? run sshkey-crack)" >&2
+    echo "[-] no saved creds for ${user}@${ip} (creds-list empty? run sshkey-crack)" >&2
     return 1
   fi
   if [[ -z "$pass" ]]; then

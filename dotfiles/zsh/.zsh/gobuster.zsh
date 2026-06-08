@@ -72,7 +72,8 @@ gb-set-dns() {
 
 gb-dirs() {
   if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    echo "deprecated: use scout -ds (alias: s -ds)"
+    echo "deprecated: use scout -ds"
+    echo "  alias: s"
     echo ""
     echo "usage: scout -ds [-p light|standard|wide|deep|next] [-w id]... [-t N] [-x ext] [-n] [path|url]"
     echo "  tiers (light → standard → wide → deep):"
@@ -80,12 +81,12 @@ gb-dirs() {
     echo "    next     — next tier adds only"
     echo ""
     echo "examples:"
-    echo "  s -ds /admin"
-    echo "  s -ds -p next /assets"
-    echo "  s -ds -p wide -n"
+    echo "  scout -ds /admin"
+    echo "  scout -ds -p next /assets"
+    echo "  scout -ds -p wide -n"
     return 0
   fi
-  echo "[!] gb-dirs is deprecated — use: scout -ds (s -ds)" >&2
+  echo "[!] gb-dirs is deprecated — use: scout -ds" >&2
   scout -ds "$@"
 }
 
