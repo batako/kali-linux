@@ -5,7 +5,7 @@
 # gb-vhost only; dir scans use scout -d / scout -ds
 GB_VHOST_WORDLIST="/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt"
 GB_DNS_WORDLIST="/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
-GB_THREADS=40
+GB_THREADS=15
 
 gb-normalize-url() {
   local url="$1"
