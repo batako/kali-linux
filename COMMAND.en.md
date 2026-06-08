@@ -87,6 +87,7 @@ case-set startup
 ├── logs/          # always created by case-set (listen -l, ssh -l, etc.)
 ├── exports/       # always created by case-set (steg-extract, john output, etc.)
 ├── target         # created by target-set (optional but recommended)
+├── hosts          # hosts command (THM vhost → auto-apply /etc/hosts)
 ├── ftp-shell      # optional (room-specific FTP/HTTP path)
 └── ...            # downloaded files, MEMO.md, locks.txt, etc. can be placed at root
 ```
@@ -125,6 +126,8 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 | `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
 | `target-show` | Current IP |
 | `target-clear` | Clear IP |
+| `hosts <ip> <host> [aliases...]` | Write `cases/<room>/hosts` and apply `/etc/hosts` (`hosts -h`) |
+| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (auto on `case-set`) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
 | `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
 | `scan -f` / `scan --full` | **TCP 1-65535 automatically to completion** (single command end-to-end) |
@@ -161,7 +164,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | Command | Description |
 |----------|------|
 | `scout [ip]` | Run Phase 1-3 + **exploit search**. **After dirs dispatch, auto-watch like `-ws`** (ends when running=0) |
-| `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + probes + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
+| `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + **OS** + probes + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** only (DB) |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** only (DB, no re-search) |
 | `scout -ep` / `--exploit-pack [ip]` | **AI submission pack** — refresh searchsploit + Metasploit, save Markdown under `cases/<room>/plans/` (prints paths only) |

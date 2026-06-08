@@ -1420,6 +1420,13 @@ def show_scout_report(ip: str) -> int:
         print(line)
     print("")
 
+    print("--- OS ---")
+    from scout_os import format_os_report_lines
+
+    for line in format_os_report_lines(ip):
+        print(line)
+    print("")
+
     print("--- PROBES ---")
     execs = _fetch_scout_executions(ip)
     if not execs:
@@ -1657,6 +1664,12 @@ def run_scout(
         )
         if rc != 0:
             return rc
+
+    from scout_os import run_os_detect_phase
+
+    os_rc = run_os_detect_phase(ip, dry_run=dry_run, force=force_scan)
+    if os_rc != 0:
+        return os_rc
 
     rc = _run_probe_phase(ip, dry_run=dry_run)
     if rc != 0:

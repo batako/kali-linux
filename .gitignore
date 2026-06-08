@@ -15,6 +15,7 @@ workspace/exploits/**
 # Recon CLI runtime DB (recon/data/ also holds tracked nmap-top-1000-tcp.txt)
 recon/data/recon.db
 recon/data/recon.db.lock
+recon/data/recon.db-*
 
 workspace/cases/**
 !workspace/cases/**/

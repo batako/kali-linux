@@ -87,6 +87,7 @@ case-set startup
 ├── logs/          # case-set で必ず作成（listen -l, ssh -l など）
 ├── exports/       # case-set で必ず作成（steg-extract, john 出力など）
 ├── target         # target-set で作成（任意だが推奨）
+├── hosts          # hosts コマンドで作成（THM vhost → /etc/hosts 自動適用）
 ├── ftp-shell      # 任意（ルーム別 FTP/HTTP パス）
 └── …              # 取得ファイル・MEMO.md・locks.txt 等はルートに直接置いてよい
 ```
@@ -125,6 +126,8 @@ case-set startup
 | `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
+| `hosts <ip> <host> [aliases...]` | `cases/<room>/hosts` に書き込み `/etc/hosts` に適用（`hosts -h`） |
+| `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
 | `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
@@ -161,7 +164,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | コマンド | 説明 |
 |----------|------|
 | `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
+| `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + **OS** + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
 | `scout -ep` / `--exploit-pack [ip]` | **AI 提出資料** — searchsploit + Metasploit を更新し `cases/<room>/plans/` に Markdown 保存（パスのみ表示） |
