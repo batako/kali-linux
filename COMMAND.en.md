@@ -346,7 +346,7 @@ hint-rm 3         # delete id=3
 | `creds-add [ip] <user> <pass>` | Manual add (alias: `ca`. for `???` etc, use `noglob`. run `exec zsh` after update) |
 | `creds-list [ip]` | List creds. **If `case-set` is active: load_from + current IP** (with IP column). `creds-list --all-case` lists all IPs in room (alias: `cl`) |
 | `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
-| `hydrassh [ip] <user> [wordlist]` | hydra SSH -> add to DB on success |
+| `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |
 | `hydraweb ...` | for http-post-form (see `hydraweb -h`) |
 

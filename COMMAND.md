@@ -346,7 +346,7 @@ hint-rm 3         # id=3 を削除
 | `creds-add [ip] <user> <pass>` | 手動登録（alias: `ca`。`???` 等は `noglob` 付き。更新後は `exec zsh`） |
 | `creds-list [ip]` | 一覧。**`case-set` 済みなら lineage + 現在 IP**（IP 列付き）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
-| `hydrassh [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ |
+| `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
 | `hydraweb ...` | http-post-form 用（`hydraweb -h` 参照） |
 

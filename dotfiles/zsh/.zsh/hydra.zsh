@@ -124,24 +124,27 @@ _hydra-run-service() {
   local wordlist="$4"
   local threads="$5"
   local log_prefix="$6"
+  local port="${7:-}"
 
   if [[ ! -f "$wordlist" ]]; then
     echo "wordlist not found: $wordlist"
     return 1
   fi
 
-  echo "[*] target: ${service}://$target  user: $user"
+  local target_label="${service}://$target"
+  [[ -n "$port" ]] && target_label="${target_label}:$port"
+  echo "[*] target: $target_label  user: $user"
   echo "[*] wordlist: $wordlist"
 
   local log rc
   log="$(mktemp "${TMPDIR:-/tmp}/${log_prefix}.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
-  hydra -l "$user" \
-    -P "$wordlist" \
-    -t "$threads" \
-    -f -V \
-    "${service}://$target" 2>&1 | tee "$log"
+  local -a hydra_cmd=(hydra -l "$user" -P "$wordlist" -t "$threads" -f -V)
+  [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
+  hydra_cmd+=("$target" "$service")
+
+  "${hydra_cmd[@]}" 2>&1 | tee "$log"
   rc=${pipestatus[1]}
 
   python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
@@ -149,20 +152,58 @@ _hydra-run-service() {
   return $rc
 }
 
+_hydrassh-usage() {
+  echo "usage: hydrassh [-p port] [target] <user> [wordlist]"
+  echo "  default wordlist: \$RECON_PASSLIST"
+  echo "  omit target when \$IP is set (target-set <ip>)"
+  echo "  on hit: creds saved via creds-import-hydra"
+  echo
+  echo "examples:"
+  echo "  hydrassh root"
+  echo "  hydrassh -p 6498 boring"
+  echo "  hydrassh 10.10.10.10 admin ./wordlist.txt"
+}
+
 hydrassh() {
-  if [[ $# -lt 1 ]]; then
-    echo "usage: hydrassh [target] <user> [wordlist]"
-    echo "  default wordlist: \$RECON_PASSLIST"
-    echo "  omit target when \$IP is set (target-set <ip>)"
+  local port="" threads=32
+  local -a args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p[0-9]*)
+        port="${1#-p}"
+        shift
+        ;;
+      -p)
+        port="$2"
+        shift 2
+        ;;
+      -t)
+        threads="$2"
+        shift 2
+        ;;
+      -h|--help)
+        _hydrassh-usage
+        return 0
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ ${#args[@]} -eq 0 ]]; then
+    _hydrassh-usage >&2
     return 1
   fi
 
-  _hydra-parse-args "" "$@" || {
-    echo "usage: hydrassh [target] <user> [wordlist]  (or: target-set <ip> first)"
+  _hydra-parse-args "" "${args[@]}" || {
+    _hydrassh-usage >&2
     return 1
   }
 
-  _hydra-run-service ssh "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" 32 hydrassh
+  _hydra-run-service ssh "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydrassh "$port"
 }
 
 hydraftp() {

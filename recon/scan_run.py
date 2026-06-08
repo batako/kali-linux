@@ -596,20 +596,16 @@ def run_scan(
             force=force,
         )
 
-    subtitle = "--force" if force else ""
-    _print_scan_banner(ip, profile, subtitle)
-
     cmd, info = plan_scan(ip, profile=profile, force=force)
     mode = info.get("mode")
 
     if mode == "skip":
-        print("[*] nmap skipped (already complete)")
+        _print_plan_header(ip, profile, info, "")
         _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile)
         return 0
 
     if dry_run:
-        if cmd:
-            print(f"[*] {cmd}")
+        _print_plan_header(ip, profile, info, cmd or "")
         _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile)
         return 0
 
