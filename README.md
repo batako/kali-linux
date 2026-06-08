@@ -63,7 +63,7 @@ ssh / ssh -i <key>           # creds-list 経由で接続
 
 短縮 alias: `case-set` → `cs`、`target-set` → `ts`、`scout` → `s`、`creds-list` → `cl`。
 
-同一ルームで IP が変わったら `target-set <新IP>`（前 IP に recon データがあれば自動継承）。pivot は `target-set <ip> --new`。
+同一ルームで IP が変わったら `target-set <新IP>`（recon データがあれば自動継承。旧 IP は `cases/<room>/lineage` に蓄積）。pivot は `target-set <ip> --new`。IP 一覧は `case-ips`。
 
 定番手順 → [CHEATSHEET.md](CHEATSHEET.md)（[EN](CHEATSHEET.en.md)）。コマンド詳細 → [COMMAND.md](COMMAND.md)（[EN](COMMAND.en.md)）。
 

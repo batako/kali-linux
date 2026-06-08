@@ -70,7 +70,7 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは `CASE_HOME` 直下に直接置いてよい。
 
-**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動で load_from 継承**（プロンプトなし）。`exec-list` / `creds-list` / `scout -r` は **load_from + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`、継承元の手動選択は `target-set <ip> --pick`（番号選択のみ）。`-p next` / dirs skip も **URL path 単位**（`/island/` 済みなら新 IP でも skip）。ポート再 scan は `--force` または scope 内に basic scan 未済のときのみ。ルーム全体の監査は `exec-list --all-case` / `creds-list --all-case`。
+**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア）、継承元の手動選択は `target-set <ip> --pick` または `case-ips` で一覧。
 
 ```bash
 case-set startup
@@ -95,9 +95,11 @@ case-set startup
 
 | コマンド | 説明 |
 |----------|------|
-| `case-show` | 現在の `CASE` / `CASE_HOME` / `target` / `load_from` |
-| `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（load_from）だけ変更 |
+| `case-show` | 現在の `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
+| `case-ips` | ルーム内 IP 一覧（lineage / scope / 活動サマリ。`+` = lineage、`*` = load_from） |
+| `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（lineage）だけ変更 |
 | `case-clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
+| `case-reset [-y] [<room>]` | **ルーム情報を全消去** — `cases/<room>/` の全ファイル削除（`logs/` `exports/` は空で再作成）+ recon DB の当該ルーム行 |
 | `case-open` | ルームを変えず `CASE_HOME` に cd し直す |
 
 ### ルーム名のルール
@@ -340,7 +342,7 @@ hint-rm 3         # id=3 を削除
 | コマンド | 説明 |
 |----------|------|
 | `creds-add [ip] <user> <pass>` | 手動登録（alias: `ca`。`???` 等は `noglob` 付き。更新後は `exec zsh`） |
-| `creds-list [ip]` | 一覧。**`case-set` 済みなら load_from + 現在 IP**（IP 列付き）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
+| `creds-list [ip]` | 一覧。**`case-set` 済みなら lineage + 現在 IP**（IP 列付き）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
 | `hydrassh [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
@@ -475,7 +477,7 @@ ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
 | `exec-run [ip] <cmd...>` | コマンド実行を記録（alias: `x`） |
 | `exec-run -s [ip] <cmd...>` | サイレント（出力抑制寄り。alias: `xs`） |
 | `exec-cache [ip] <cmd...>` | キャッシュ付き（同一 ip+cmd は再利用可。alias: `xc` / `xcs` は `-s` 付き） |
-| `exec-list [ip]` | 実行一覧。**`case-set` 済みなら load_from + 現在 IP**（reboot 継承）。`exec-list --all-case` でルーム内全 IP、`exec-list -l` で全ホスト（alias: `el`） |
+| `exec-list [ip]` | 実行一覧。**`case-set` 済みなら lineage + 現在 IP**（reboot 継承）。`exec-list --all-case` でルーム内全 IP、`exec-list -l` で全ホスト（alias: `el`） |
 | `exec-view <id> [--tail N]` | 出力表示（alias: `ev`） |
 | `exec-form <id> [--shell]` | 実行 stdout からアップロードフォーム解析 |
 | `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |
@@ -704,7 +706,7 @@ hydraweb   # 引数不足時に usage 表示
 
 フル名のみ。括弧内は alias。
 
-`case-set`（`cs`）`case-show` `case-clear` `case-open` `case-sync` `case-load` ·
+`case-set`（`cs`）`case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set`（`ts`）`target-show` `target-clear` ·
 `scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·

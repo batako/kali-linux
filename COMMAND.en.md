@@ -70,7 +70,7 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 **Not auto-created** (place manually if needed): `target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
 Those can be placed directly under `CASE_HOME`.
 
-**When TryHackMe IP changes:** `target-set <newIP>` - if recon data exists for the previous target, **load_from inheritance is automatic** (no prompt). `exec-list` / `creds-list` / `scout -r` show recon scope for **load_from + current IP**. Use `target-set <ip> --new` for pivoting, and `target-set <ip> --pick` for manual inheritance source selection (number select only). `-p next` / dirs skip also work **per URL path** (`/island/` already done -> skipped even on new IP). Port re-scan happens only with `--force` or when no basic scan exists in scope. Room-wide auditing is `exec-list --all-case` / `creds-list --all-case`.
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
 
 ```bash
 case-set startup
@@ -95,9 +95,11 @@ case-set startup
 
 | Command | Description |
 |----------|------|
-| `case-show` | Current `CASE` / `CASE_HOME` / `target` / `load_from` |
-| `case-load <ip\|--new\|--pick>` | Keep current IP, change inheritance source only (load_from) |
+| `case-show` | Current `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
+| `case-ips` | Case IP list (lineage / scope / activity; `+` = in lineage, `*` = load_from) |
+| `case-load <ip\|--new\|--pick>` | Keep current IP, change inherit source (lineage) only |
 | `case-clear` | Unset `CASE` / `CASE_HOME` (does not delete directories) |
+| `case-reset [-y] [<room>]` | **Wipe room** — delete all files under `cases/<room>/` (recreate empty `logs/` `exports/`) + recon DB rows for the room |
 | `case-open` | Re-enter `CASE_HOME` without changing room |
 
 ### Room naming rules
@@ -704,7 +706,7 @@ hydraweb   # shows usage when args are missing
 
 Full names only. Alias is shown in parentheses.
 
-`case-set` (`cs`) `case-show` `case-clear` `case-open` `case-sync` `case-load` ·
+`case-set` (`cs`) `case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set` (`ts`) `target-show` `target-clear` ·
 `scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·

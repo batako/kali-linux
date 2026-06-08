@@ -104,6 +104,56 @@ class ScoutCaseScopeTests(unittest.TestCase):
         done = self.db.find_done_scout_job(self.new_ip, "dirs", new_url, wl)
         self.assertIsNone(done)
 
+    def test_known_exclude_length_from_lineage_scope(self) -> None:
+        import importlib
+        import scout_run
+
+        importlib.reload(scout_run)
+
+        old_ip = "10.0.0.1"
+        new_ip = "10.0.0.2"
+        log = self.case_home / "logs" / "gobuster_old_10000_common.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text(
+            ".env                 (Status: 200) [Size: 3704]\n",
+            encoding="utf-8",
+        )
+        self.db.insert_scout_job(
+            old_ip,
+            "dirs",
+            f"https://{old_ip}:10000/",
+            wordlist="/wordlists/common.txt",
+            status="done",
+            log_path=str(log),
+        )
+        self.case_scope.write_lineage([old_ip])
+        os.environ["IP"] = new_ip
+
+        xl = scout_run._known_exclude_length_from_scope(
+            new_ip,
+            f"https://{new_ip}:10000/",
+        )
+        self.assertEqual(xl, 3704)
+
+    def test_scout_jobs_span_lineage_ips(self) -> None:
+        from url_util import canonicalize_url
+
+        third_ip = "10.0.0.3"
+        for ip in (self.old_ip, self.new_ip, third_ip):
+            self.case_scope.register_case_ip(self.case, ip)
+            self.db.insert_scout_job(
+                ip,
+                "dirs",
+                canonicalize_url(f"http://{ip}:10000/"),
+                wordlist="/wordlists/common.txt",
+                status="done",
+            )
+        self.case_scope.write_lineage([self.old_ip, self.new_ip])
+        os.environ["IP"] = third_ip
+
+        jobs = self.db.list_scout_jobs_for_case(self.case, current_ip=third_ip, kind="dirs")
+        self.assertEqual({j["ip"] for j in jobs}, {self.old_ip, self.new_ip, third_ip})
+
     def test_merged_open_ports_from_load_from(self) -> None:
         self.case_scope.register_case_ip(self.case, self.old_ip)
         self.case_scope.register_case_ip(self.case, self.new_ip)

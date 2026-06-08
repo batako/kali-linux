@@ -15,6 +15,7 @@ if str(RECON) not in sys.path:
 from scout_run import build_gobuster_dir_argv
 from scout_run import build_web_url
 from scout_run import coerce_web_url
+from scout_run import parse_soft404_size_from_hits
 from scout_run import parse_wildcard_exclude_length
 from scout_run import probe_wildcard_exclude_length
 from scout_run import resolve_dirs_target
@@ -76,6 +77,18 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = "404\n1234\n"
         self.assertIsNone(probe_wildcard_exclude_length("http://10.0.0.1/"))
+
+    def test_parse_soft404_size_from_hits(self) -> None:
+        import tempfile
+
+        log = ".env                 (Status: 200) [Size: 3704]\n.git/  (Status: 200) [Size: 3704]\n"
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".log") as tmp:
+            tmp.write(log)
+            path = tmp.name
+        try:
+            self.assertEqual(parse_soft404_size_from_hits(path), 3704)
+        finally:
+            Path(path).unlink(missing_ok=True)
 
     def test_parse_wildcard_exclude_length(self) -> None:
         log = (

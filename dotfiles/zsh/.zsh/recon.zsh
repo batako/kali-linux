@@ -77,7 +77,8 @@ target-set() {
     echo "  alias: ts (= target-set)"
     echo "  set \$IP (+ save to cases/<room>/target)"
     echo "  IP change: auto-inherit previous target when it has recon data"
-    echo "  --new   pivot (no inherit)    --pick   numbered load_from picker"
+    echo "  lineage: prior IPs of same VM accumulate in cases/<room>/lineage"
+    echo "  --new   pivot (clear lineage)    --pick   numbered load_from picker"
     echo "  no args: reload from target file"
     return 0
   fi

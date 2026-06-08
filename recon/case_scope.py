@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 
 from db import connect
 
 _IPV4_RE = re.compile(r"^\d{1,3}(?:\.\d{1,3}){3}$")
+_CASE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 LOAD_FROM_FILE = "load_from"
+LINEAGE_FILE = "lineage"
+RESERVED_CASE_NAME = "_unscoped"
 
 
 def looks_like_ipv4(value: str) -> bool:
@@ -72,6 +76,115 @@ def write_load_from(ip: str | None) -> None:
 
 def clear_load_from() -> None:
     write_load_from(None)
+
+
+def lineage_path() -> Path | None:
+    home = case_home_from_env()
+    if home is None:
+        return None
+    return home / LINEAGE_FILE
+
+
+def read_lineage() -> list[str]:
+    """Same-VM IP history for recon scope (excludes current target)."""
+    path = lineage_path()
+    if path is not None and path.is_file():
+        ips: list[str] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            ip = line.strip()
+            if looks_like_ipv4(ip) and ip not in ips:
+                ips.append(ip)
+        return ips
+    # Migration: pre-lineage cases only had load_from (single IP).
+    lf = read_load_from()
+    return [lf] if lf else []
+
+
+def write_lineage(ips: list[str]) -> None:
+    path = lineage_path()
+    if path is None:
+        raise ValueError("CASE_HOME not set — case-set <room> first")
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for raw in ips:
+        ip = (raw or "").strip()
+        if looks_like_ipv4(ip) and ip not in seen:
+            seen.add(ip)
+            deduped.append(ip)
+    if not deduped:
+        if path.is_file():
+            path.unlink()
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(deduped) + "\n", encoding="utf-8")
+
+
+def clear_lineage() -> None:
+    """Explicit empty lineage (file exists → skip auto-bootstrap on pivot --new)."""
+    path = lineage_path()
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("", encoding="utf-8")
+
+
+def append_lineage(ip: str) -> None:
+    ip = (ip or "").strip()
+    if not looks_like_ipv4(ip):
+        return
+    ips = read_lineage()
+    if ip in ips:
+        return
+    write_lineage(ips + [ip])
+
+
+def merge_lineage(extra: list[str]) -> None:
+    ips = read_lineage()
+    for raw in extra:
+        ip = (raw or "").strip()
+        if looks_like_ipv4(ip) and ip not in ips:
+            ips.append(ip)
+    write_lineage(ips)
+
+
+def update_lineage_on_target_set(
+    *,
+    new_ip: str,
+    previous_ip: str | None,
+    mode: str,
+    load_from: str | None,
+) -> list[str]:
+    """Maintain lineage file when target IP changes (THM reboot chain)."""
+    new_ip = new_ip.strip()
+    previous_ip = (previous_ip or "").strip() or None
+    mode = (mode or "auto").strip().lower()
+
+    if mode == "new":
+        clear_lineage()
+        return []
+
+    if mode == "pick":
+        if load_from and load_from != new_ip:
+            merge_lineage([load_from])
+        else:
+            clear_lineage()
+        return read_lineage()
+
+    inherit_ip = (load_from or "").strip() or None
+    if not inherit_ip and previous_ip and previous_ip != new_ip and ip_has_recon_data(previous_ip):
+        inherit_ip = previous_ip
+    if inherit_ip and inherit_ip != new_ip:
+        append_lineage(inherit_ip)
+    return read_lineage()
+
+
+def update_lineage_on_load_from(load_from: str | None) -> list[str]:
+    """Change inherit source without changing target IP (case-load)."""
+    if load_from:
+        merge_lineage([load_from])
+    else:
+        clear_lineage()
+    return read_lineage()
 
 
 def read_target_ip() -> str | None:
@@ -139,10 +252,14 @@ def _ips_from_case_files(case_name: str) -> list[str]:
             seen.add(ip)
             out.append(ip)
 
-    for name in ("target", "load_from"):
+    for name in ("target", "load_from", "lineage"):
         path = home / name
         if path.is_file():
-            add(path.read_text(encoding="utf-8"))
+            if name == "lineage":
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    add(line)
+            else:
+                add(path.read_text(encoding="utf-8"))
 
     logs = home / "logs"
     if logs.is_dir():
@@ -216,16 +333,159 @@ def register_case_ip_from_env(ip: str) -> None:
         register_case_ip(case, ip)
 
 
+def validate_case_name(case_name: str) -> str:
+    case_name = (case_name or "").strip()
+    if not case_name or not _CASE_NAME_RE.match(case_name):
+        raise ValueError(f"invalid case name: {case_name!r}")
+    if case_name == RESERVED_CASE_NAME:
+        raise ValueError(f"reserved case name: {case_name}")
+    return case_name
+
+
+def wipe_case_directory(case_name: str) -> int:
+    """Delete all files under cases/<room>/; recreate empty logs/ and exports/."""
+    validate_case_name(case_name)
+    case_dir = _case_dir(case_name)
+    removed = 0
+    if case_dir.is_dir():
+        for child in case_dir.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+            removed += 1
+    case_dir.mkdir(parents=True, exist_ok=True)
+    (case_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (case_dir / "exports").mkdir(parents=True, exist_ok=True)
+    return removed
+
+
+def reset_case_db_data(case_name: str) -> dict[str, int]:
+    """Remove recon DB rows for one room (executions, scout, ports, hints, …)."""
+    validate_case_name(case_name)
+    ips = discover_case_ips(case_name)
+    artifact_ips = list(dict.fromkeys([*ips, case_name]))
+
+    conn = connect()
+    cur = conn.cursor()
+    counts: dict[str, int] = {}
+
+    def _delete(table: str, where: str, params: tuple) -> int:
+        row = cur.execute(
+            f"SELECT COUNT(*) AS c FROM {table} WHERE {where}",
+            params,
+        ).fetchone()
+        n = int(row["c"] if row else 0)
+        if n:
+            cur.execute(f"DELETE FROM {table} WHERE {where}", params)
+        return n
+
+    counts["case_ips"] = _delete("case_ips", "case_name = ?", (case_name,))
+
+    if ips:
+        placeholders = ",".join("?" * len(ips))
+        counts["executions"] = _delete(
+            "executions",
+            f"case_name = ? OR ip IN ({placeholders})",
+            (case_name, *ips),
+        )
+        counts["scout_jobs"] = _delete(
+            "scout_jobs",
+            f"case_name = ? OR ip IN ({placeholders})",
+            (case_name, *ips),
+        )
+        for table in ("ports", "port_scan_coverage", "scan_ranges", "tasks", "hosts"):
+            counts[table] = _delete(table, f"ip IN ({placeholders})", tuple(ips))
+    else:
+        counts["executions"] = _delete("executions", "case_name = ?", (case_name,))
+        counts["scout_jobs"] = _delete("scout_jobs", "case_name = ?", (case_name,))
+
+    if artifact_ips:
+        placeholders = ",".join("?" * len(artifact_ips))
+        counts["artifacts"] = _delete(
+            "artifacts",
+            f"case_name = ? OR ip IN ({placeholders})",
+            (case_name, *artifact_ips),
+        )
+    else:
+        counts["artifacts"] = _delete("artifacts", "case_name = ?", (case_name,))
+
+    conn.commit()
+    conn.close()
+    return counts
+
+
+def reset_case(case_name: str) -> dict:
+    """Wipe cases/<room>/ files and delete all recon DB data for the room."""
+    validate_case_name(case_name)
+    db_counts = reset_case_db_data(case_name)
+    files_removed = wipe_case_directory(case_name)
+    return {"files_removed": files_removed, "db": db_counts}
+
+
+def _bootstrap_lineage_candidate_ips(case_name: str, current: str) -> list[str]:
+    """Reboot-chain IPs from load_from + case logs + scout jobs (not bare registry)."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str | None) -> None:
+        ip = (raw or "").strip()
+        if not looks_like_ipv4(ip) or ip == current or ip in seen:
+            return
+        seen.add(ip)
+        candidates.append(ip)
+
+    add(read_load_from())
+    for ip in _ips_from_case_files(case_name):
+        add(ip)
+    conn = connect()
+    for row in conn.execute(
+        "SELECT DISTINCT ip FROM scout_jobs WHERE case_name = ?",
+        (case_name,),
+    ):
+        add(row["ip"])
+    conn.close()
+    return [ip for ip in candidates if ip_has_recon_data(ip)]
+
+
+def bootstrap_lineage_if_needed(*, current_ip: str | None = None) -> bool:
+    """
+    One-time backfill when lineage file was never created (pre-lineage cases).
+
+    Triggered from scout report (`s -r`) so legacy reboot chains appear in PATHS.
+    Skipped when lineage file already exists (including empty after target-set --new).
+    """
+    path = lineage_path()
+    if path is None or path.is_file():
+        return False
+    case = case_name_from_env()
+    if not case:
+        return False
+    current = (
+        (current_ip or os.environ.get("IP") or read_target_ip() or "").strip()
+    )
+    if not current:
+        return False
+    candidates = _bootstrap_lineage_candidate_ips(case, current)
+    if not candidates:
+        return False
+    write_lineage(candidates)
+    return True
+
+
 def recon_scope_ips(current_ip: str | None = None) -> list[str]:
-    """IPs whose recon data is active (load_from + current target)."""
+    """IPs whose recon data is active (lineage + current target)."""
     current = (current_ip or os.environ.get("IP") or "").strip()
-    load_from = read_load_from()
     out: list[str] = []
-    if load_from and load_from != current:
-        out.append(load_from)
-    if current and looks_like_ipv4(current):
-        if current not in out:
-            out.append(current)
+    seen: set[str] = set()
+    for ip in read_lineage():
+        if ip == current:
+            continue
+        if ip not in seen:
+            seen.add(ip)
+            out.append(ip)
+    if current and looks_like_ipv4(current) and current not in seen:
+        out.append(current)
     return out
 
 
@@ -282,6 +542,7 @@ def list_case_ip_candidates(
     current = (current_ip or os.environ.get("IP") or "").strip()
     exclude = (exclude_ip or current or "").strip()
     hints = [x for x in (also_ips or []) if x]
+    hints.extend(read_lineage())
     if read_load_from():
         hints.append(read_load_from())
     sync_case_ip_registry(case_name, extra=hints)

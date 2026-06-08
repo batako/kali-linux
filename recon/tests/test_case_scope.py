@@ -147,12 +147,78 @@ class CaseScopeTests(unittest.TestCase):
         self.assertIsNone(self.case_scope.read_load_from())
 
     def test_recon_scope_ips(self) -> None:
+        self.case_scope.write_lineage(["10.0.0.1"])
+        os.environ["IP"] = "10.0.0.2"
+        self.assertEqual(self.case_scope.recon_scope_ips(), ["10.0.0.1", "10.0.0.2"])
+
+        self.case_scope.clear_lineage()
+        self.assertEqual(self.case_scope.recon_scope_ips(), ["10.0.0.2"])
+
+    def test_recon_scope_ips_migrates_load_from(self) -> None:
         self.case_scope.write_load_from("10.0.0.1")
         os.environ["IP"] = "10.0.0.2"
         self.assertEqual(self.case_scope.recon_scope_ips(), ["10.0.0.1", "10.0.0.2"])
 
-        self.case_scope.clear_load_from()
-        self.assertEqual(self.case_scope.recon_scope_ips(), ["10.0.0.2"])
+    def test_lineage_three_ip_reboot_scope(self) -> None:
+        for ip in ("10.0.0.1", "10.0.0.2", "10.0.0.3", "10.0.0.99"):
+            self.case_scope.register_case_ip(self.case, ip)
+        for ip in ("10.0.0.1", "10.0.0.2", "10.0.0.3"):
+            eid = self.db.add_execution(None, ip, "probe", f"curl {ip}")
+            self.db.finish_execution(eid, "done", exit_code=0)
+        self.db.add_execution(None, "10.0.0.99", "probe", "curl pivot")
+        self.db.finish_execution(4, "done", exit_code=0)
+
+        self.case_scope.update_lineage_on_target_set(
+            new_ip="10.0.0.2",
+            previous_ip="10.0.0.1",
+            mode="auto",
+            load_from="10.0.0.1",
+        )
+        self.case_scope.update_lineage_on_target_set(
+            new_ip="10.0.0.3",
+            previous_ip="10.0.0.2",
+            mode="auto",
+            load_from="10.0.0.2",
+        )
+        os.environ["IP"] = "10.0.0.3"
+        self.assertEqual(
+            self.case_scope.recon_scope_ips(),
+            ["10.0.0.1", "10.0.0.2", "10.0.0.3"],
+        )
+
+        rows = self.db.list_executions_for_case(self.case)
+        self.assertEqual({r["ip"] for r in rows}, {"10.0.0.1", "10.0.0.2", "10.0.0.3"})
+        self.assertNotIn("10.0.0.99", {r["ip"] for r in rows})
+
+    def test_lineage_new_clears_on_pivot(self) -> None:
+        self.case_scope.write_lineage(["10.0.0.1", "10.0.0.2"])
+        self.case_scope.update_lineage_on_target_set(
+            new_ip="10.0.0.99",
+            previous_ip="10.0.0.3",
+            mode="new",
+            load_from=None,
+        )
+        self.assertEqual(self.case_scope.read_lineage(), [])
+
+    def test_bootstrap_lineage_from_case_logs(self) -> None:
+        """Pre-lineage case: log filenames + load_from rebuild reboot chain."""
+        self.case_scope.write_load_from("10.0.0.2")
+        logs = self.case_home / "logs"
+        logs.mkdir()
+        for ip in ("10.0.0.1", "10.0.0.2"):
+            (logs / f"gobuster_{ip}_10000_common.log").touch()
+            eid = self.db.add_execution(None, ip, "probe", f"curl {ip}")
+            self.db.finish_execution(eid, "done", exit_code=0)
+        os.environ["IP"] = "10.0.0.3"
+        self.assertTrue(self.case_scope.bootstrap_lineage_if_needed())
+        self.assertEqual(
+            set(self.case_scope.read_lineage()),
+            {"10.0.0.1", "10.0.0.2"},
+        )
+        self.assertEqual(
+            set(self.case_scope.recon_scope_ips()),
+            {"10.0.0.1", "10.0.0.2", "10.0.0.3"},
+        )
 
     def test_read_choice_shows_prompt_with_stream(self) -> None:
         import io
@@ -217,6 +283,47 @@ class CaseScopeTests(unittest.TestCase):
 
         ips = self.case_scope.discover_case_ips(self.case)
         self.assertIn("10.0.0.55", ips)
+
+    def test_reset_case_wipes_files_and_db(self) -> None:
+        ip = "10.0.0.1"
+        (self.case_home / "target").write_text(ip + "\n", encoding="utf-8")
+        self.case_scope.write_lineage([ip])
+        self.case_scope.write_load_from(ip)
+        logs = self.case_home / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        (logs / "probe.log").write_text("x", encoding="utf-8")
+        (self.case_home / "memo.md").write_text("note", encoding="utf-8")
+
+        self.case_scope.register_case_ip(self.case, ip)
+        eid = self.db.add_execution(None, ip, "probe", f"curl {ip}")
+        self.db.finish_execution(eid, "done", exit_code=0)
+        conn = self.db.connect()
+        conn.execute(
+            """
+            INSERT INTO ports (ip, port, proto, state, service, version, first_seen, last_seen)
+            VALUES (?, 22, 'tcp', 'open', 'ssh', '', datetime('now'), datetime('now'))
+            """,
+            (ip,),
+        )
+        conn.commit()
+        conn.close()
+        self.db.creds_upsert(ip, "alice", "pass1")
+        self.db.add_artifact(ip, "hint", "", "go!", case_name=self.case)
+
+        result = self.case_scope.reset_case(self.case)
+
+        self.assertFalse((self.case_home / "target").exists())
+        self.assertFalse((self.case_home / "lineage").exists())
+        self.assertFalse((self.case_home / "load_from").exists())
+        self.assertFalse((self.case_home / "memo.md").exists())
+        self.assertTrue((self.case_home / "logs").is_dir())
+        self.assertTrue((self.case_home / "exports").is_dir())
+        self.assertEqual(list(logs.iterdir()), [])
+
+        self.assertGreater(result["db"]["executions"], 0)
+        self.assertGreater(result["db"]["ports"], 0)
+        self.assertEqual(self.case_scope.list_case_ips(self.case), [])
+        self.assertEqual(self.db.list_executions_for_case(self.case), [])
 
 
 if __name__ == "__main__":

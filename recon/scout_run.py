@@ -82,6 +82,8 @@ GOBUSTER_WILDCARD_HINT_RE = re.compile(
     re.I,
 )
 GOBUSTER_WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)")
+GOBUSTER_HIT_SIZE_RE = re.compile(r"\[Size:\s*(\d+)\]")
+_EXCLUDE_LENGTH_CMD_RE = re.compile(r"--exclude-length\s+(\d+)")
 
 # Hidden paths worth showing when found (not extension-fuzz noise).
 _HIDDEN_DIR_OK = frozenset({".git", ".svn", ".well-known", ".env"})
@@ -248,7 +250,7 @@ def _scout_case() -> str | None:
 def _scout_jobs(ip: str, **kwargs):
     case = _scout_case()
     if case:
-        return list_scout_jobs_for_case(case, **kwargs)
+        return list_scout_jobs_for_case(case, current_ip=ip, **kwargs)
     return list_scout_jobs(ip, **kwargs)
 
 
@@ -402,6 +404,49 @@ def parse_wildcard_exclude_length(log_path: str) -> Optional[int]:
     return int(match.group(1)) if match else None
 
 
+def parse_soft404_size_from_hits(log_path: str) -> Optional[int]:
+    """When every hit shares one body size, treat it as wildcard exclude-length."""
+    path = Path(log_path)
+    if not path.is_file():
+        return None
+    sizes: list[int] = []
+    for line in path.read_text(errors="replace").splitlines():
+        if not GOBUSTER_HIT_RE.match(line):
+            continue
+        match = GOBUSTER_HIT_SIZE_RE.search(line)
+        if match:
+            sizes.append(int(match.group(1)))
+    if sizes and len(set(sizes)) == 1:
+        return sizes[0]
+    return None
+
+
+def _known_exclude_length_from_scope(target_ip: str, url: str) -> Optional[int]:
+    """Reuse exclude-length learned on lineage IPs for the same scan base."""
+    from url_util import url_path_key
+
+    want = url_path_key(coerce_web_url(url))
+    if not want:
+        return None
+    for row in _scout_jobs(target_ip, kind="dirs", limit=200):
+        if url_path_key(row["url"] or "") != want:
+            continue
+        cmd = row["command"] or ""
+        match = _EXCLUDE_LENGTH_CMD_RE.search(cmd)
+        if match:
+            return int(match.group(1))
+        log_path = row["log_path"] or ""
+        if not log_path:
+            continue
+        xl = parse_wildcard_exclude_length(log_path)
+        if xl is not None:
+            return xl
+        xl = parse_soft404_size_from_hits(log_path)
+        if xl is not None:
+            return xl
+    return None
+
+
 def _threads_from_gobuster_command(command: str) -> int:
     match = re.search(r"(?:^|\s)-t\s+(\d+)", command or "")
     if match:
@@ -441,6 +486,7 @@ def build_gobuster_dir_argv(
 def build_dirs_plan(
     url: str,
     *,
+    ip: Optional[str] = None,
     port: Optional[int] = None,
     wordlist: Optional[str] = None,
     threads: Optional[int] = None,
@@ -459,10 +505,20 @@ def build_dirs_plan(
     if not dry_run and not Path(wl).is_file():
         raise FileNotFoundError(f"wordlist not found: {wl}")
 
+    target_ip = (ip or urlparse(coerce_web_url(url)).hostname or "").strip()
+
     if exclude_length_override is not None:
         exclude_length = exclude_length_override
     else:
         exclude_length = probe_wildcard_exclude_length(url)
+        if exclude_length is None and target_ip:
+            exclude_length = _known_exclude_length_from_scope(target_ip, url)
+            if exclude_length is not None:
+                print(
+                    f"    [i] exclude-length {exclude_length}"
+                    " (from lineage / prior scan)",
+                    file=sys.stderr,
+                )
         if exclude_length is None:
             print(
                 "    [!] wildcard probe failed — gobuster may stop;"
@@ -671,6 +727,7 @@ def reconcile_scout_job(job_id: int) -> None:
             try:
                 plan = build_dirs_plan(
                     row["url"] or "",
+                    ip=row["ip"],
                     wordlist=row["wordlist"],
                     threads=_threads_from_gobuster_command(row["command"] or ""),
                     exclude_length_override=xl,
@@ -703,19 +760,28 @@ def _dispatch_dirs_job(
     dry_run: bool = False,
     force: bool = False,
 ) -> Optional[int]:
+    if force:
+        print("    [i] --force: re-dispatch dirs")
+
     if not force:
         running = find_running_scout_job(ip, "dirs", plan.url, plan.wordlist)
         if running:
+            where = (
+                f" on lineage {running['ip']}"
+                if running["ip"] != ip
+                else ""
+            )
             print(
-                f"    -> skip (running job id={running['id']} pid={running['pid']})"
+                f"    -> skip (running{where} job id={running['id']} pid={running['pid']})"
                 " — use --force to start another"
             )
             return None
 
         done = find_done_scout_job(ip, "dirs", plan.url, plan.wordlist)
         if done:
+            where = f" on lineage {done['ip']}" if done["ip"] != ip else ""
             print(
-                f"    -> skip (done job id={done['id']})"
+                f"    -> skip (done{where} job id={done['id']})"
                 " — use --force to rerun"
             )
             return None
@@ -867,6 +933,7 @@ def _run_dirs_phase(
             try:
                 plan = build_dirs_plan(
                     url,
+                    ip=ip,
                     port=port,
                     wordlist=wl,
                     threads=threads,
@@ -964,10 +1031,11 @@ def _fetch_scout_executions(ip: str):
                 SELECT id, task_type, command, status, exit_code, stdout, ended_at
                 FROM executions
                 WHERE task_type LIKE 'scout-%'
+                  AND case_name = ?
                   AND ip IN ({placeholders})
                 ORDER BY id ASC
                 """,
-                ips,
+                (case, *ips),
             ).fetchall()
         else:
             rows = cur.execute(
@@ -1108,13 +1176,45 @@ def _paths_report_groups(rows) -> list[tuple[str, list]]:
     return [(url, groups[url]) for url in sorted(groups.keys(), key=str.lower)]
 
 
+def _service_key_from_scan_url(url: str) -> str:
+    """Listener key for merging reboot-chain dirs (scheme + port, not host)."""
+    coerced = coerce_web_url((url or "").strip())
+    parsed = urlparse(coerced)
+    if not parsed.hostname:
+        return ""
+    port = parsed.port
+    if port is None:
+        port = {"http": 80, "https": 443}.get((parsed.scheme or "http").lower(), 80)
+    scheme = web_scheme_for_port(port)
+    return f"{scheme}:{port}"
+
+
+def _display_origin_for_service(current_ip: str, service_key: str) -> str:
+    _scheme, port_s = service_key.split(":", 1)
+    port = int(port_s)
+    return dirs_origin_url(build_web_url(current_ip, port, ""))
+
+
+def _paths_report_groups_case(rows, *, current_ip: str) -> list[tuple[str, list]]:
+    """Merge lineage dirs by service; display roots on the current target IP."""
+    groups: dict[str, list] = {}
+    for row in rows:
+        key = _service_key_from_scan_url(row["url"] or "")
+        if not key:
+            continue
+        groups.setdefault(key, []).append(row)
+    return [
+        (_display_origin_for_service(current_ip, key), groups[key])
+        for key in sorted(groups.keys())
+    ]
+
+
 def _fetch_paths_report_state(ip: str) -> tuple[list, bool]:
-    """Latest dirs job per full URL → rows and any-running flag."""
+    """All dirs jobs in recon scope (merged per origin in _print_paths_section)."""
     reconcile_scout_jobs(ip)
     jobs = _scout_jobs(ip, kind="dirs", limit=200)
-    latest = _latest_dirs_jobs(jobs, group_by_path=False)
-    running = any(r["status"] == "running" for r in latest)
-    return latest, running
+    running = any(r["status"] == "running" for r in jobs)
+    return jobs, running
 
 
 def _print_paths_section(
@@ -1129,7 +1229,11 @@ def _print_paths_section(
         print("(none)")
         return
 
-    groups = _paths_report_groups(rows)
+    case = _scout_case()
+    if case:
+        groups = _paths_report_groups_case(rows, current_ip=ip)
+    else:
+        groups = _paths_report_groups(rows)
     if not groups:
         print("(none)")
         return
@@ -1138,25 +1242,24 @@ def _print_paths_section(
     for origin, origin_rows in groups:
         findings = _merge_job_findings(origin_rows)
         url_running = any(r["status"] == "running" for r in origin_rows)
-
-        if printed:
-            print("")
-        printed = True
+        if not findings and not url_running:
+            continue
 
         if findings:
+            if printed:
+                print("")
             for line in format_paths_tree(findings, root_label=origin):
                 print(line)
+            printed = True
         elif url_running:
+            if printed:
+                print("")
             print(origin)
             print("  (running)")
+            printed = True
 
     if not printed:
         print("(none)")
-
-
-def _print_paths_tree(rows, *, ip: str) -> None:
-    _print_paths_section(ip, rows)
-    print("")
 
 
 def _job_sort_key(row) -> tuple:
@@ -1195,6 +1298,21 @@ def _print_scout_job_row(row) -> None:
     print("")
 
 
+def _print_recon_scope_header(ip: str) -> None:
+    from case_scope import bootstrap_lineage_if_needed
+    from case_scope import read_lineage
+    from case_scope import recon_scope_ips
+
+    if bootstrap_lineage_if_needed(current_ip=ip):
+        print("[*] lineage bootstrapped from case history")
+    lineage = read_lineage()
+    scope = recon_scope_ips(ip)
+    if lineage:
+        print(f"[*] lineage: {', '.join(lineage)}")
+    if scope:
+        print(f"[*] recon scope: {', '.join(scope)}")
+
+
 def show_scout_ports(ip: str) -> int:
     """DB snapshot: OPEN + CLOSED port tables only (no scan, no probes)."""
     from port_sets import FULL_TCP_END
@@ -1209,6 +1327,7 @@ def show_scout_ports(ip: str) -> int:
     print("")
     if case:
         print(f"[*] report-ports case {case}  target {ip}")
+        _print_recon_scope_header(ip)
         port_lines = format_scan_snapshot_case_lines(case, ip, progress)
     else:
         print(f"[*] report-ports {ip}")
@@ -1225,6 +1344,7 @@ def show_scout_report_exploits(ip: str) -> int:
     print("")
     if case:
         print(f"[*] report-exploits case {case}  target {ip}")
+        _print_recon_scope_header(ip)
     else:
         print(f"[*] report-exploits {ip}")
     print("")
@@ -1242,14 +1362,18 @@ def show_scout_report_exploits(ip: str) -> int:
 
 def show_scout_report_paths(ip: str) -> int:
     """DB snapshot: PATHS tree only (no gobuster)."""
+    if _scout_case():
+        from case_scope import bootstrap_lineage_if_needed
+
+        bootstrap_lineage_if_needed(current_ip=ip)
     latest, _running = _fetch_paths_report_state(ip)
     case = _scout_case()
     print("")
     if case:
         print(f"[*] report-paths case {case}  target {ip}")
+        _print_recon_scope_header(ip)
     else:
         print(f"[*] report-paths {ip}")
-    print("")
     _print_paths_section(ip, latest)
     print("")
     print("[i] detail: scout -s  |  scout -ws  |  scout -r  |  scout -rtf")
@@ -1262,6 +1386,10 @@ def show_scout_report(ip: str) -> int:
     from port_sets import full_tcp_ports
     from port_sets import nmap_top1000_tcp
 
+    if _scout_case():
+        from case_scope import bootstrap_lineage_if_needed
+
+        bootstrap_lineage_if_needed(current_ip=ip)
     reconcile_scout_jobs(ip)
 
     basic_cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
@@ -1272,6 +1400,7 @@ def show_scout_report(ip: str) -> int:
     print("========================")
     if case:
         print(f"[SCOUT REPORT] case {case}  target {ip}")
+        _print_recon_scope_header(ip)
     else:
         print(f"[SCOUT REPORT] {ip}")
     print("========================")
@@ -1371,7 +1500,13 @@ def show_scout_status(
             for row in rows:
                 _print_scout_job_row(row)
 
-            _print_paths_tree(rows, ip=ip)
+            if case:
+                from case_scope import bootstrap_lineage_if_needed
+
+                bootstrap_lineage_if_needed(current_ip=ip)
+            paths_rows, _ = _fetch_paths_report_state(ip)
+            _print_paths_section(ip, paths_rows)
+            print("")
 
             if wait_dirs:
                 sys.stdout.flush()

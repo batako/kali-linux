@@ -34,12 +34,18 @@ from case_scope import sync_case_ip_registry
 from case_scope import read_load_from
 from case_scope import write_load_from
 from case_scope import clear_load_from
+from case_scope import read_lineage
+from case_scope import update_lineage_on_target_set
+from case_scope import update_lineage_on_load_from
 from case_scope import read_target_ip
 from case_scope import resolve_load_from
 from case_scope import list_case_ip_candidates
 from case_scope import format_candidate_line
 from case_scope import recon_scope_ips
 from case_scope import looks_like_ipv4 as case_looks_like_ipv4
+from case_scope import discover_case_ips
+from case_scope import reset_case
+from case_scope import validate_case_name
 import json
 
 from scanner import network_scan
@@ -747,8 +753,61 @@ def main():
         if not case:
             print("usage: recon.py case-sync-ips  (requires CASE)")
             sys.exit(1)
-        ips = sync_case_ip_registry(case, extra=[read_load_from(), read_target_ip()])
+        ips = sync_case_ip_registry(
+            case,
+            extra=[read_load_from(), read_target_ip(), *read_lineage()],
+        )
         print(f"[+] case {case}: {len(ips)} ip(s) — {', '.join(ips) or '(none)'}")
+
+    elif cmd == "case-reset":
+        args = sys.argv[2:]
+        yes = False
+        case = None
+        i = 0
+        while i < len(args):
+            a = args[i]
+            if a in ("-y", "--yes"):
+                yes = True
+                i += 1
+            elif a in ("-h", "--help"):
+                print("usage: recon.py case-reset [-y|--yes] [<room>]")
+                print("  wipe cases/<room>/ (all files) + recon DB rows for the room")
+                sys.exit(0)
+            else:
+                case = a
+                i += 1
+        if not case:
+            case = case_name_from_env()
+        if not case:
+            print("usage: recon.py case-reset [-y|--yes] [<room>]")
+            sys.exit(1)
+        try:
+            validate_case_name(case)
+        except ValueError as exc:
+            print(f"[-] {exc}")
+            sys.exit(1)
+        ips = discover_case_ips(case)
+        if not yes:
+            root = (os.environ.get("CASE_ROOT") or "/workspace/cases").strip()
+            print(f"[!] case-reset {case}")
+            print(f"    path: {root}/{case}/  (all files deleted)")
+            print(f"    db:   executions, scout_jobs, ports, artifacts, hints, …")
+            if ips:
+                print(f"    ips:  {', '.join(ips)}")
+            try:
+                ans = input("reset? [y/N] ").strip().lower()
+            except EOFError:
+                ans = ""
+            if ans not in ("y", "yes"):
+                print("[-] cancelled")
+                sys.exit(1)
+        result = reset_case(case)
+        print(f"[+] case-reset {case}")
+        print(f"    files removed: {result['files_removed']} top-level item(s)")
+        for table, n in sorted(result["db"].items()):
+            if n:
+                print(f"    {table}: {n} row(s) deleted")
+        print("[i] re-enter: case-set {case}  |  target-set <ip>".format(case=case))
 
     elif cmd == "case-target-set":
         args = sys.argv[2:]
@@ -789,6 +848,12 @@ def main():
             mode=mode,
             from_ip=from_ip,
         )
+        lineage = update_lineage_on_target_set(
+            new_ip=new_ip,
+            previous_ip=previous_ip,
+            mode=mode,
+            load_from=load_from,
+        )
         if load_from:
             write_load_from(load_from)
         else:
@@ -806,6 +871,8 @@ def main():
             print(f"[+] target: {new_ip}  (--new, no inherit)")
         else:
             print(f"[+] target: {new_ip}")
+        if lineage:
+            print(f"[*] lineage: {', '.join(lineage)}")
         if scope:
             print(f"[*] recon scope: {', '.join(scope)}")
 
@@ -817,6 +884,7 @@ def main():
             sys.exit(1)
         if args[0] in ("--new", "new", "none"):
             clear_load_from()
+            update_lineage_on_load_from(None)
             print("[+] load_from cleared (--new)")
         elif args[0] in ("--pick", "pick"):
             from case_scope import pick_load_from_interactive
@@ -827,6 +895,7 @@ def main():
                 current_ip=current,
                 previous_ip=read_load_from(),
             )
+            lineage = update_lineage_on_load_from(load_from)
             if load_from:
                 register_case_ip(case, load_from)
                 write_load_from(load_from)
@@ -834,14 +903,19 @@ def main():
             else:
                 clear_load_from()
                 print("[+] load_from cleared (--new)")
+            if lineage:
+                print(f"[*] lineage: {', '.join(lineage)}")
         else:
             ip = args[0].strip()
             if not case_looks_like_ipv4(ip):
                 print(f"invalid ip: {ip!r}")
                 sys.exit(1)
             register_case_ip(case, ip)
+            lineage = update_lineage_on_load_from(ip)
             write_load_from(ip)
             print(f"[+] load_from: {ip}")
+            if lineage:
+                print(f"[*] lineage: {', '.join(lineage)}")
         scope = recon_scope_ips(os.environ.get("IP"))
         if scope:
             print(f"[*] recon scope: {', '.join(scope)}")
@@ -853,13 +927,24 @@ def main():
             sys.exit(1)
         current = os.environ.get("IP")
         load_from = read_load_from()
+        lineage = read_lineage()
         print(f"case {case}")
         if current:
             print(f"target: {current}")
         print(f"load_from: {load_from or '(none)'}")
+        if lineage:
+            print(f"lineage: {', '.join(lineage)}")
+        scope = recon_scope_ips(current)
+        if scope:
+            print(f"recon scope: {', '.join(scope)}")
         print("")
+        lineage_set = set(lineage)
         for row in list_case_ip_candidates(case, current_ip=current):
-            marker = "*" if load_from and row["ip"] == load_from else ""
+            marker = ""
+            if row["ip"] in lineage_set:
+                marker = "+"
+            if load_from and row["ip"] == load_from:
+                marker = "*"
             print(format_candidate_line(row, marker=marker))
 
     elif cmd == "exec-list":

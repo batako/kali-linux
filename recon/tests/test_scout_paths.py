@@ -13,8 +13,11 @@ RECON = Path(__file__).resolve().parents[1]
 if str(RECON) not in sys.path:
     sys.path.insert(0, str(RECON))
 
+import os
+
 from scout_run import _parse_port_path_shorthand
 from scout_run import _paths_report_groups
+from scout_run import _paths_report_groups_case
 from scout_run import _print_paths_section
 from scout_run import format_paths_tree
 from scout_run import resolve_dirs_target
@@ -81,6 +84,91 @@ class ScoutPathsReportTest(unittest.TestCase):
         self.assertIn("  index.html  200", "\n".join(lines))
         self.assertIn("  robots.txt  200", "\n".join(lines))
         self.assertNotIn("index.html/", "\n".join(lines))
+
+    def test_paths_report_groups_case_merges_lineage_by_service(self) -> None:
+        rows = [
+            {
+                "url": "https://10.0.0.1:10000/",
+                "log_path": "",
+                "hits_summary": "/admin/  200",
+                "status": "done",
+            },
+            {
+                "url": "http://10.0.0.2:10000/",
+                "log_path": "",
+                "hits_summary": "/login/  301",
+                "status": "done",
+            },
+        ]
+        groups = _paths_report_groups_case(rows, current_ip="10.0.0.99")
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0][0], "https://10.0.0.99:10000/")
+        self.assertEqual(len(groups[0][1]), 2)
+
+    def test_print_paths_section_case_uses_current_ip_label(self) -> None:
+        rows = [
+            {
+                "url": "https://10.0.0.1:10000/",
+                "log_path": "",
+                "hits_summary": "/panel/  200",
+                "status": "done",
+            },
+        ]
+        old_case = os.environ.get("CASE")
+        old_home = os.environ.get("CASE_HOME")
+        os.environ["CASE"] = "room"
+        os.environ["CASE_HOME"] = "/tmp/room"
+        try:
+            buf = io.StringIO()
+            with redirect_stdout(buf):
+                _print_paths_section("10.0.0.99", rows)
+            out = buf.getvalue()
+            self.assertIn("https://10.0.0.99:10000/", out)
+            self.assertIn("  panel/  200", out)
+            self.assertNotIn("10.0.0.1", out)
+        finally:
+            if old_case is None:
+                os.environ.pop("CASE", None)
+            else:
+                os.environ["CASE"] = old_case
+            if old_home is None:
+                os.environ.pop("CASE_HOME", None)
+            else:
+                os.environ["CASE_HOME"] = old_home
+
+    def test_print_paths_section_skips_empty_failed_origins(self) -> None:
+        rows = [
+            {"url": "http://10.0.0.1:10000/", "log_path": "", "hits_summary": "", "status": "failed"},
+            {"url": "https://10.0.0.2:10000/", "log_path": "", "hits_summary": "", "status": "failed"},
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _print_paths_section("10.0.0.2", rows)
+        out = buf.getvalue()
+        self.assertEqual(out, "--- PATHS ---\n(none)\n")
+
+    def test_print_paths_section_merges_findings_across_jobs(self) -> None:
+        rows = [
+            {
+                "url": "https://10.0.0.1:10000/",
+                "log_path": "",
+                "hits_summary": "",
+                "status": "failed",
+            },
+            {
+                "url": "https://10.0.0.1:10000/",
+                "log_path": "",
+                "hits_summary": "/admin/  200",
+                "status": "done",
+            },
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _print_paths_section("10.0.0.1", rows)
+        out = buf.getvalue()
+        self.assertIn("https://10.0.0.1:10000/", out)
+        self.assertIn("  admin/  200", out)
+        self.assertNotIn("\n\n\n", out)
 
     def test_print_paths_section_merges_port80_scan_bases(self) -> None:
         rows = [

@@ -56,6 +56,13 @@ case-show() {
     else
       echo "load_from: (none)"
     fi
+    if [[ -f "${CASE_HOME}/lineage" ]]; then
+      echo "lineage: $(grep -E '^[0-9]+\.' "${CASE_HOME}/lineage" | paste -sd, -)"
+    elif [[ -f "${CASE_HOME}/load_from" ]]; then
+      echo "lineage: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')  (migrated from load_from)"
+    else
+      echo "lineage: (none)"
+    fi
     return 0
   fi
   if [[ "${CASE_LOOSE:-}" == 1 ]]; then
@@ -70,6 +77,61 @@ case-show() {
 case-clear() {
   unset CASE CASE_HOME
   echo "[+] case cleared"
+}
+
+# Wipe cases/<room>/ files + recon DB rows for the room (target, lineage, logs, …)
+case-reset() {
+  local yes="" room="" arg
+  while [[ $# -gt 0 ]]; do
+    arg="$1"
+    case "$arg" in
+      -y|--yes) yes="--yes" ;;
+      -h|--help)
+        echo "usage: case-reset [-y] [<room>]"
+        echo "  delete all files under cases/<room>/ and recon DB data for the room"
+        echo "  default room: current CASE (requires case-set or pass <room>)"
+        return 0
+        ;;
+      *)
+        if [[ -n "$room" ]]; then
+          echo "[-] unexpected argument: $arg" >&2
+          return 1
+        fi
+        room="$arg"
+        ;;
+    esac
+    shift
+  done
+
+  if [[ -z "$room" ]]; then
+    if [[ -z "${CASE:-}" ]]; then
+      echo "[-] case-reset: case-set <room> first, or: case-reset <room>" >&2
+      return 1
+    fi
+    room="$CASE"
+  fi
+
+  if [[ ! "$room" =~ '^[a-zA-Z0-9][a-zA-Z0-9._-]*$' ]]; then
+    echo "[-] invalid name (use letters, numbers, . _ -)" >&2
+    return 1
+  fi
+  if [[ "$room" == "$CASE_FALLBACK_NAME" ]]; then
+    echo "[-] reserved name: $CASE_FALLBACK_NAME" >&2
+    return 1
+  fi
+
+  local -a reset_args=(case-reset)
+  [[ -n "$yes" ]] && reset_args+=("$yes")
+  reset_args+=("$room")
+  python3 "$RECON_APP" "${reset_args[@]}" || return $?
+
+  if [[ "${CASE:-}" == "$room" ]]; then
+    unset IP
+    mkdir -p "$CASE_ROOT/$room"/{logs,exports}
+    export CASE_HOME="$CASE_ROOT/$room"
+    cd "$CASE_HOME" || return 1
+    echo "[+] cwd: $CASE_HOME  (target/lineage cleared — target-set <ip>)"
+  fi
 }
 
 case-open() {
@@ -91,6 +153,20 @@ case-load() {
     return 1
   fi
   python3 "$RECON_APP" case-load-from "$1"
+}
+
+# List IPs in current case (lineage, scope, activity summary)
+case-ips() {
+  if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
+    echo "usage: case-ips"
+    echo "  list case IPs with lineage / load_from markers (+ in lineage, * latest load_from)"
+    return 0
+  fi
+  if [[ -z "${CASE:-}" ]]; then
+    echo "[-] case-ips: case-set <room> first" >&2
+    return 1
+  fi
+  python3 "$RECON_APP" case-ip-list
 }
 
 cs() { case-set "$@" }

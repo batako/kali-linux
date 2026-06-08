@@ -901,8 +901,15 @@ def _recon_scope_ips(current_ip: str | None = None) -> list[str]:
     return recon_scope_ips(current_ip or os.environ.get("IP"))
 
 
-def list_scout_jobs_for_case(case_name: str, *, kind=None, status=None, limit=200):
-    ips = _recon_scope_ips()
+def list_scout_jobs_for_case(
+    case_name: str,
+    *,
+    current_ip: str | None = None,
+    kind=None,
+    status=None,
+    limit=200,
+):
+    ips = _recon_scope_ips(current_ip)
     scope, params = _case_scope_sql(case_name, ips=ips)
     conn = connect()
     sql = f"""
@@ -1601,7 +1608,10 @@ def list_ssh_creds(ip: str):
 def _case_scope_sql(case_name: str, *, ips: list[str]) -> tuple[str, list]:
     if ips:
         placeholders = ",".join("?" * len(ips))
-        return f"ip IN ({placeholders})", list(ips)
+        return (
+            f"ip IN ({placeholders}) AND (case_name = ? OR case_name IS NULL)",
+            [*ips, case_name],
+        )
     return "case_name = ?", [case_name]
 
 
