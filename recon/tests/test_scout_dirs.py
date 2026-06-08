@@ -12,7 +12,10 @@ RECON = Path(__file__).resolve().parents[1]
 if str(RECON) not in sys.path:
     sys.path.insert(0, str(RECON))
 
+from db import dirs_job_host_matches
 from scout_run import build_gobuster_dir_argv
+from scout_run import is_dirs_path_arg
+from scout_run import looks_like_vhost_hostname
 from scout_run import build_web_url
 from scout_run import coerce_web_url
 from scout_run import parse_soft404_size_from_hits
@@ -41,6 +44,23 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         )
         self.assertEqual(argv[argv.index("--exclude-length") + 1], "240")
 
+    def test_build_gobuster_dir_argv_host_header(self) -> None:
+        argv = build_gobuster_dir_argv(
+            "http://10.0.0.1/",
+            "/tmp/common.txt",
+            40,
+            host_header="mafialive.thm",
+        )
+        self.assertEqual(argv[argv.index("-H") + 1], "Host:mafialive.thm")
+
+    def test_dirs_job_host_matches(self) -> None:
+        plain = "gobuster dir -u http://10.0.0.1/ -w /tmp/common.txt"
+        vhost = "gobuster dir -u http://10.0.0.1/ -H Host:mafialive.thm -w /tmp/common.txt"
+        self.assertTrue(dirs_job_host_matches(plain, None))
+        self.assertFalse(dirs_job_host_matches(vhost, None))
+        self.assertTrue(dirs_job_host_matches(vhost, "mafialive.thm"))
+        self.assertFalse(dirs_job_host_matches(plain, "mafialive.thm"))
+
     def test_build_web_url_webmin_uses_https(self) -> None:
         url = build_web_url("10.0.0.1", 10000, "MiniServ 1.890 Webmin httpd")
         self.assertEqual(url, "https://10.0.0.1:10000/")
@@ -61,6 +81,13 @@ class ScoutDirsGobusterTest(unittest.TestCase):
             "https://10.0.0.1:10000/",
         )
 
+    def test_vhost_hostname_not_dirs_path(self) -> None:
+        self.assertTrue(looks_like_vhost_hostname("mafialive.thm"))
+        self.assertFalse(looks_like_vhost_hostname("admin"))
+        self.assertFalse(looks_like_vhost_hostname("/admin"))
+        self.assertFalse(is_dirs_path_arg("mafialive.thm"))
+        self.assertTrue(is_dirs_path_arg("admin"))
+
     @patch("scout_run.subprocess.run")
     def test_probe_wildcard_exclude_length(self, mock_run) -> None:
         mock_run.return_value.returncode = 56
@@ -71,6 +98,21 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         )
         args = mock_run.call_args[0][0]
         self.assertIn("-k", args)
+
+    @patch("scout_run.subprocess.run")
+    def test_probe_wildcard_exclude_length_host_header(self, mock_run) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "200\n512\n"
+        self.assertEqual(
+            probe_wildcard_exclude_length(
+                "http://10.0.0.1/",
+                host_header="mafialive.thm",
+            ),
+            512,
+        )
+        args = mock_run.call_args[0][0]
+        self.assertIn("-H", args)
+        self.assertIn("Host: mafialive.thm", args)
 
     @patch("scout_run.subprocess.run")
     def test_probe_wildcard_exclude_length_ignores_404(self, mock_run) -> None:

@@ -109,6 +109,7 @@ class DirsPlan:
     command: str
     log_path: str
     exclude_length: Optional[int] = None
+    host_header: Optional[str] = None
 
 
 def _normalize_service(service: str) -> str:
@@ -166,9 +167,25 @@ def normalize_url(url_or_host: str) -> str:
     return s
 
 
+def looks_like_vhost_hostname(s: str) -> bool:
+    """Bare FQDN for scout -d/-H (mafialive.thm), not a URL path segment."""
+    raw = (s or "").strip()
+    if not raw or raw.startswith(("-", "/", ".", "http")):
+        return False
+    if raw.startswith(":") or looks_like_ipv4(raw):
+        return False
+    if "/" in raw:
+        return False
+    if "." not in raw:
+        return False
+    return bool(re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]*\.)+[a-zA-Z0-9-]+$", raw))
+
+
 def is_dirs_path_arg(s: str) -> bool:
-    """Path or URL for scout -d (not an IP or flag)."""
+    """Path or URL for scout -d (not an IP, vhost hostname, or flag)."""
     if not s or s.startswith("-"):
+        return False
+    if looks_like_vhost_hostname(s):
         return False
     if s.startswith(("http://", "https://", "/")):
         return True
@@ -333,7 +350,13 @@ def _wordlist_slug(wordlist: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "_", base)
 
 
-def build_dirs_log_path(url: str, wordlist: str, *, dry_run: bool = False) -> str:
+def build_dirs_log_path(
+    url: str,
+    wordlist: str,
+    *,
+    dry_run: bool = False,
+    host_header: Optional[str] = None,
+) -> str:
     logs = _case_logs_dir()
     if not logs:
         if dry_run:
@@ -342,6 +365,9 @@ def build_dirs_log_path(url: str, wordlist: str, *, dry_run: bool = False) -> st
             raise RuntimeError("case not set — cs <name> first (or export CASE_LOOSE=1)")
 
     host = _url_host_slug(url)
+    if host_header:
+        vh = re.sub(r"[^a-zA-Z0-9._-]", "_", host_header.strip())
+        host = f"{host}_{vh}"
     slug = _wordlist_slug(wordlist)
     ts = datetime.now().strftime("%Y%m%d-%H%M%S")
     return str(Path(logs) / f"gobuster_{host}_{slug}_{ts}.log")
@@ -351,7 +377,12 @@ def build_dirs_log_path(url: str, wordlist: str, *, dry_run: bool = False) -> st
 _GOBUSTER_WILDCARD_STATUS = frozenset({200, 204, 301, 302, 307, 401, 403})
 
 
-def probe_wildcard_exclude_length(url: str, *, timeout_sec: Optional[int] = None) -> Optional[int]:
+def probe_wildcard_exclude_length(
+    url: str,
+    *,
+    timeout_sec: Optional[int] = None,
+    host_header: Optional[str] = None,
+) -> Optional[int]:
     """Probe a random path; if the server soft-404s with a fixed body, return its length."""
     if timeout_sec is None:
         timeout_sec = DEFAULT_GB_TIMEOUT_SEC
@@ -370,6 +401,8 @@ def probe_wildcard_exclude_length(url: str, *, timeout_sec: Optional[int] = None
     ]
     if parsed.scheme == "https":
         curl_args.append("-k")
+    if host_header:
+        curl_args.extend(["-H", f"Host: {host_header.strip()}"])
     curl_args.append(probe)
     try:
         result = subprocess.run(
@@ -460,6 +493,7 @@ def build_gobuster_dir_argv(
     threads: int,
     extensions: Optional[str] = None,
     exclude_length: Optional[int] = None,
+    host_header: Optional[str] = None,
 ) -> list[str]:
     args = [
         "gobuster",
@@ -476,6 +510,8 @@ def build_gobuster_dir_argv(
     ]
     if urlparse(url).scheme == "https":
         args.append("-k")
+    if host_header:
+        args.extend(["-H", f"Host:{host_header.strip()}"])
     if exclude_length is not None:
         args.extend(["--exclude-length", str(exclude_length)])
     if extensions:
@@ -493,6 +529,7 @@ def build_dirs_plan(
     extensions: Optional[str] = None,
     dry_run: bool = False,
     exclude_length_override: Optional[int] = None,
+    host_header: Optional[str] = None,
 ) -> DirsPlan:
     from wordlists.scout import resolve_scout_wordlist
 
@@ -507,10 +544,12 @@ def build_dirs_plan(
 
     target_ip = (ip or urlparse(coerce_web_url(url)).hostname or "").strip()
 
+    vhost = (host_header or "").strip() or None
+
     if exclude_length_override is not None:
         exclude_length = exclude_length_override
     else:
-        exclude_length = probe_wildcard_exclude_length(url)
+        exclude_length = probe_wildcard_exclude_length(url, host_header=vhost)
         if exclude_length is None and target_ip:
             exclude_length = _known_exclude_length_from_scope(target_ip, url)
             if exclude_length is not None:
@@ -525,8 +564,15 @@ def build_dirs_plan(
                 " retry will parse Length from log if needed",
                 file=sys.stderr,
             )
-    argv = build_gobuster_dir_argv(url, wl, th, extensions, exclude_length=exclude_length)
-    log_path = build_dirs_log_path(url, wl, dry_run=dry_run)
+    argv = build_gobuster_dir_argv(
+        url,
+        wl,
+        th,
+        extensions,
+        exclude_length=exclude_length,
+        host_header=vhost,
+    )
+    log_path = build_dirs_log_path(url, wl, dry_run=dry_run, host_header=vhost)
     command = " ".join(shlex.quote(a) for a in argv)
     return DirsPlan(
         url=url,
@@ -537,6 +583,7 @@ def build_dirs_plan(
         command=command,
         log_path=log_path,
         exclude_length=exclude_length,
+        host_header=vhost,
     )
 
 
@@ -764,7 +811,9 @@ def _dispatch_dirs_job(
         print("    [i] --force: re-dispatch dirs")
 
     if not force:
-        running = find_running_scout_job(ip, "dirs", plan.url, plan.wordlist)
+        running = find_running_scout_job(
+            ip, "dirs", plan.url, plan.wordlist, host_header=plan.host_header
+        )
         if running:
             where = (
                 f" on lineage {running['ip']}"
@@ -777,7 +826,9 @@ def _dispatch_dirs_job(
             )
             return None
 
-        done = find_done_scout_job(ip, "dirs", plan.url, plan.wordlist)
+        done = find_done_scout_job(
+            ip, "dirs", plan.url, plan.wordlist, host_header=plan.host_header
+        )
         if done:
             where = f" on lineage {done['ip']}" if done["ip"] != ip else ""
             print(
@@ -787,6 +838,8 @@ def _dispatch_dirs_job(
             return None
 
     print(f"    -> dirs {plan.url}")
+    if plan.host_header:
+        print(f"    [i] vhost Host: {plan.host_header}")
     if plan.exclude_length is not None:
         print(f"    [i] wildcard soft-404 — exclude-length {plan.exclude_length}")
     print(f"    $ {plan.command}")
@@ -805,6 +858,7 @@ def _dispatch_dirs_job(
                 plan.threads,
                 plan.extensions,
                 exclude_length=plan.exclude_length,
+                host_header=plan.host_header,
             ),
             stdout=logf,
             stderr=subprocess.STDOUT,
@@ -838,6 +892,7 @@ def _run_dirs_phase(
     dirs_multi_preset_is_next: bool = False,
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
+    host_header: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> int:
@@ -877,6 +932,7 @@ def _run_dirs_phase(
                     preset_is_next=True,
                     ip=ip,
                     url=url,
+                    host_header=host_header,
                 )
             except ValueError as e:
                 print(f"[-] {e}")
@@ -939,6 +995,7 @@ def _run_dirs_phase(
                     threads=threads,
                     extensions=extensions,
                     dry_run=dry_run,
+                    host_header=host_header,
                 )
             except FileNotFoundError as e:
                 print(f"[-] {e}")
@@ -1567,6 +1624,7 @@ def run_scout(
     wordlists: Optional[list[str]] = None,
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
+    host_header: Optional[str] = None,
 ):
     upsert_host(ip, status="up")
 
@@ -1620,6 +1678,7 @@ def run_scout(
             dirs_multi_preset_is_next=dirs_multi_preset_is_next,
             threads=threads,
             extensions=extensions,
+            host_header=host_header,
             dry_run=dry_run,
             force=force_dirs,
         )
@@ -1687,6 +1746,7 @@ def run_scout(
         wordlist=wordlist,
         threads=threads,
         extensions=extensions,
+        host_header=host_header,
         dry_run=dry_run,
         force=force_dirs,
     )

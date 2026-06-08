@@ -182,6 +182,8 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -ds -p next [path]` | 次 tier の adds のみ（済み job スキップ） |
 | `scout -ds -p light\|standard\|wide\|deep` | 指定 tier まで累積 |
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
+| `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
+| `scout -d mafialive.thm` | FQDN（`.` あり）は `-H` と同義（`/mafialive.thm/` にはならない） |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -267,6 +269,8 @@ scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
+scout -d -H mafialive.thm
+scout -ds -H mafialive.thm /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads

@@ -67,6 +67,7 @@ from scout_exploit import reject_exploit
 from scout_exploit import unreject_exploit
 from scout_exploit import list_exploit_reject_lines
 from scout_run import is_dirs_path_arg
+from scout_run import looks_like_vhost_hostname
 from scout_run import looks_like_ipv4
 from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_DIRS_MULTI_THREADS
@@ -380,6 +381,7 @@ def main():
             except ValueError:
                 pass
         extensions = None
+        host_header = None
         dirs_urls = []
 
         while args:
@@ -412,7 +414,13 @@ def main():
                 dirs_only = True
                 dirs_only_flag = True
                 args = args[1:]
-                if args and is_dirs_path_arg(args[0]):
+                if args and looks_like_vhost_hostname(args[0]):
+                    if host_header:
+                        print("[-] use one vhost hostname (-H or positional FQDN)")
+                        sys.exit(1)
+                    host_header = args[0]
+                    args = args[1:]
+                elif args and is_dirs_path_arg(args[0]):
                     dirs_urls.append(args[0])
                     args = args[1:]
             elif a in ("-ds", "--dirs-multi"):
@@ -422,7 +430,13 @@ def main():
                 dirs_multi = True
                 dirs_only = True
                 args = args[1:]
-                if args and is_dirs_path_arg(args[0]):
+                if args and looks_like_vhost_hostname(args[0]):
+                    if host_header:
+                        print("[-] use one vhost hostname (-H or positional FQDN)")
+                        sys.exit(1)
+                    host_header = args[0]
+                    args = args[1:]
+                elif args and is_dirs_path_arg(args[0]):
                     dirs_urls.append(args[0])
                     args = args[1:]
             elif a in ("-p", "--preset"):
@@ -502,8 +516,20 @@ def main():
                     sys.exit(1)
                 extensions = args[1]
                 args = args[2:]
+            elif a in ("-H", "--host"):
+                if len(args) < 2:
+                    print("usage: recon.py scout -d -H <hostname> [path] [ip]")
+                    sys.exit(1)
+                host_header = args[1]
+                args = args[2:]
             elif a.startswith("http://") or a.startswith("https://"):
                 dirs_urls.append(a)
+                args = args[1:]
+            elif dirs_only and looks_like_vhost_hostname(a):
+                if host_header:
+                    print("[-] use one vhost hostname (-H or positional FQDN)")
+                    sys.exit(1)
+                host_header = a
                 args = args[1:]
             elif dirs_only and is_dirs_path_arg(a):
                 dirs_urls.append(a)
@@ -555,6 +581,10 @@ def main():
 
         if wordlist_ids and not dirs_multi:
             print("[-] repeat -w requires scout -ds")
+            sys.exit(1)
+
+        if host_header and not dirs_only:
+            print("[-] -H/--host requires scout -d or -ds")
             sys.exit(1)
 
         if scan_jobs != DEFAULT_FULL_JOBS and not full_ports:
@@ -627,6 +657,7 @@ def main():
             extensions=extensions,
             dirs_multi_preset_from_flag=dirs_preset_from_flag,
             dirs_multi_preset_is_next=dirs_preset_is_next,
+            host_header=host_header,
         )
         sys.exit(0 if rc == 0 else 1)
 

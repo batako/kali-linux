@@ -1,9 +1,15 @@
 import fcntl
+import json
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-import json
+
+_DIRS_HOST_CMD_RE = re.compile(
+    r"""-H\s+(?:'|")?Host:\s*([^\s'"]+)""",
+    re.IGNORECASE,
+)
 
 DEFAULT_CONTAINER_DB_PATH = "/opt/recon/data/recon.db"
 
@@ -990,7 +996,29 @@ def case_has_basic_scan(case_name: str, *, current_ip: str | None = None) -> boo
     return False
 
 
-def _find_scout_job(ip, kind, url, wordlist, *, status):
+def normalize_dirs_host_header(host) -> str:
+    h = (host or "").strip()
+    if h.lower().startswith("host:"):
+        h = h.split(":", 1)[1].strip()
+    return h.lower()
+
+
+def dirs_command_host_header(command) -> str | None:
+    match = _DIRS_HOST_CMD_RE.search(command or "")
+    if not match:
+        return None
+    return normalize_dirs_host_header(match.group(1))
+
+
+def dirs_job_host_matches(command, host_header) -> bool:
+    want = normalize_dirs_host_header(host_header)
+    got = dirs_command_host_header(command)
+    if not want:
+        return got is None
+    return got == want
+
+
+def _find_scout_job(ip, kind, url, wordlist, *, status, host_header=None):
     from url_util import canonicalize_url
 
     url = canonicalize_url((url or "").strip())
@@ -999,6 +1027,13 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
 
     conn = connect()
     cur = conn.cursor()
+
+    def _accept(candidate):
+        if candidate is None:
+            return None
+        if not dirs_job_host_matches(candidate["command"], host_header):
+            return None
+        return candidate
 
     def _fetch(exact_url: str):
         return cur.execute(
@@ -1014,7 +1049,7 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
             (ip, kind, exact_url, wordlist, status),
         ).fetchone()
 
-    row = _fetch(url)
+    row = _accept(_fetch(url))
     if row is None:
         rows = cur.execute(
             """
@@ -1028,8 +1063,10 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
             (ip, kind, wordlist, status),
         ).fetchall()
         for candidate in rows:
-            if canonicalize_url(candidate["url"] or "") == url:
-                row = candidate
+            if canonicalize_url(candidate["url"] or "") != url:
+                continue
+            row = _accept(candidate)
+            if row is not None:
                 break
 
     if row is None:
@@ -1054,20 +1091,26 @@ def _find_scout_job(ip, kind, url, wordlist, *, status):
                     (kind, wordlist, status, *scope_ips),
                 ).fetchall()
                 for candidate in batches:
-                    if url_path_key(candidate["url"] or "") == want_path:
-                        row = candidate
+                    if url_path_key(candidate["url"] or "") != want_path:
+                        continue
+                    row = _accept(candidate)
+                    if row is not None:
                         break
 
     conn.close()
     return row
 
 
-def find_running_scout_job(ip, kind, url, wordlist):
-    return _find_scout_job(ip, kind, url, wordlist, status="running")
+def find_running_scout_job(ip, kind, url, wordlist, *, host_header=None):
+    return _find_scout_job(
+        ip, kind, url, wordlist, status="running", host_header=host_header
+    )
 
 
-def find_done_scout_job(ip, kind, url, wordlist):
-    return _find_scout_job(ip, kind, url, wordlist, status="done")
+def find_done_scout_job(ip, kind, url, wordlist, *, host_header=None):
+    return _find_scout_job(
+        ip, kind, url, wordlist, status="done", host_header=host_header
+    )
 
 
 def get_scout_job(job_id):

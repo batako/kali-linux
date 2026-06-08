@@ -182,6 +182,8 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -ds -p next [path]` | Only add next-tier jobs (skip already completed jobs) |
 | `scout -ds -p light\|standard\|wide\|deep` | Cumulative up to specified tier |
 | `scout -ds -w id -w id` | Parallel with explicit ids only |
+| `scout -d -H <hostname>` / `-ds -H <name>` | vhost dir bust — `http://$IP/` + gobuster `-H Host:<name>` (no `/etc/hosts` needed) |
+| `scout -d mafialive.thm` | dotted FQDN is treated like `-H` (not as `/mafialive.thm/` path) |
 | `scout -s` / `--status [ip]` | Show dirs job status **once** |
 | `scout -ws` / `--wait-dirs [sec]` | Auto-refresh dirs status. **Ends when running=0** (pair of `-s`) |
 | `scout -n` | Show command plan without execution |
@@ -267,6 +269,8 @@ scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
+scout -d -H mafialive.thm
+scout -ds -H mafialive.thm /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads

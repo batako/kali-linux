@@ -6,6 +6,20 @@ _scout-is-path() {
   [[ "$1" == /* || "$1" == http://* || "$1" == https://* ]]
 }
 
+_scout-is-vhost() {
+  [[ "$1" != /* && "$1" != http://* && "$1" != https://* && "$1" != :* && "$1" != .* ]] \
+    && [[ "$1" == *.* ]] \
+    && [[ "$1" =~ '^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$' ]]
+}
+
+_scout-set-vhost() {
+  if [[ -n "$host_header" ]]; then
+    echo "[-] use one vhost hostname (-H or positional FQDN)" >&2
+    return 1
+  fi
+  host_header="-H $1"
+}
+
 scout() {
   # legacy: scout status → -s; scout status --watch → -ws
   if [[ "${1:-}" == "status" ]]; then
@@ -19,7 +33,7 @@ scout() {
   fi
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
-  local wordlist="" threads="" ext=""
+  local wordlist="" threads="" ext="" host_header=""
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
@@ -64,13 +78,14 @@ scout() {
         echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
         echo ""
         echo "dirs job cache (-d / -ds):"
-        echo "  skip when same ip + url + wordlist is running or done"
+        echo "  skip when same ip + url + wordlist + Host is running or done"
         echo "  -x (extensions) is NOT part of the cache key — use --force to rerun with different -x"
         echo "  -n, --dry-run                  show planned commands"
         echo "  -q, --quiet                    no port tables after scan"
         echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker (-h: tier table below)"
         echo "  -t, --threads                  gobuster threads (-ds default: 15)"
         echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
+        echo "  -H, --host <name>              vhost Host header (-d/-ds only; IP URL + Host: name)"
         echo ""
         echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
         echo "  -p is NOT ports (ports report → -rp)."
@@ -102,6 +117,7 @@ scout() {
         echo "  s -ds -x php /backup          # ext fuzz, standard tier"
         echo "  s -ds -x bak -p next /api     # next ext tier"
         echo "  s -d /config -w dirbuster-small"
+        echo "  s -d -H mafialive.thm              # gobuster with Host: mafialive.thm"
         echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
         echo "  s -ds :443/hoge                # https://\$IP/hoge/"
         echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
@@ -195,7 +211,11 @@ scout() {
           extra_urls+=("$1")
           shift
         elif [[ -n "${1:-}" && "$1" != -* && ! "$1" =~ $(_recon-ip-re) ]]; then
-          extra_urls+=("$1")
+          if _scout-is-vhost "$1"; then
+            _scout-set-vhost "$1" || return $?
+          else
+            extra_urls+=("$1")
+          fi
           shift
         fi
         ;;
@@ -206,7 +226,11 @@ scout() {
           extra_urls+=("$1")
           shift
         elif [[ -n "${1:-}" && "$1" != -* && ! "$1" =~ $(_recon-ip-re) ]]; then
-          extra_urls+=("$1")
+          if _scout-is-vhost "$1"; then
+            _scout-set-vhost "$1" || return $?
+          else
+            extra_urls+=("$1")
+          fi
           shift
         fi
         ;;
@@ -271,6 +295,10 @@ scout() {
         ext+=" $1"
         shift
         ;;
+      -H|--host)
+        host_header="-H $2"
+        shift 2
+        ;;
       http://*|https://*)
         extra_urls+=("$1")
         shift
@@ -285,7 +313,11 @@ scout() {
         elif [[ -n "$dirs_only$dirs_multi" ]] && _scout-is-path "$1"; then
           extra_urls+=("$1")
         elif [[ -n "$dirs_only$dirs_multi" && "$1" != -* ]]; then
-          extra_urls+=("$1")
+          if _scout-is-vhost "$1"; then
+            _scout-set-vhost "$1" || return $?
+          else
+            extra_urls+=("$1")
+          fi
         else
           echo "[-] expected ip or use -d/-ds with path, got: $1" >&2
           return 1
@@ -327,6 +359,11 @@ scout() {
 
   if [[ -n "$dirs_preset" && -z "$dirs_multi" ]]; then
     echo "[-] -p/--preset requires scout -ds" >&2
+    return 1
+  fi
+
+  if [[ -n "$host_header" && -z "$dirs_only$dirs_multi" ]]; then
+    echo "[-] -H/--host requires scout -d or -ds" >&2
     return 1
   fi
 
@@ -376,6 +413,7 @@ scout() {
   [[ -n "$wait_iv" ]] && args+=("$wait_iv")
   [[ -n "$dirs_only" ]] && args+=("$dirs_only")
   [[ -n "$dirs_multi" ]] && args+=("$dirs_multi")
+  [[ -n "$host_header" ]] && args+=(${=host_header})
   [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
   [[ -n "$force" ]] && args+=("$force")
   [[ -n "$dry" ]] && args+=(-n)
@@ -420,6 +458,7 @@ _scout() {
     '-w[wordlist]:wordlist:_files' \
     '-t[threads]:threads:' \
     '-x[extensions]:ext:' \
+    '-H[vhost Host header with -d/-ds]:host:' '--host[vhost Host header with -d/-ds]:host:' \
     '*:ip:($IP)'
 }
 

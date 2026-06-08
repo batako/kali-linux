@@ -101,8 +101,14 @@ def resolve_scout_wordlist(
     return get_catalog().resolve(spec, category=selector)
 
 
-def _done_wordlist_paths(ip: str, url: str) -> set[str]:
+def _done_wordlist_paths(
+    ip: str,
+    url: str,
+    *,
+    host_header: Optional[str] = None,
+) -> set[str]:
     from case_scope import case_name_from_env
+    from db import dirs_job_host_matches
     from db import list_scout_jobs
     from db import list_scout_jobs_for_case
     from url_util import canonicalize_url
@@ -124,6 +130,8 @@ def _done_wordlist_paths(ip: str, url: str) -> set[str]:
                 row_url = canonicalize_url((row["url"] or "").strip())
                 if row_url != canonicalize_url((url or "").strip()):
                     continue
+            if not dirs_job_host_matches(row["command"], host_header):
+                continue
             wl = (row["wordlist"] or "").strip()
             if wl:
                 done.add(wl)
@@ -139,6 +147,7 @@ def resolve_dirs_multi_wordlist_ids(
     preset_is_next: bool = False,
     ip: Optional[str] = None,
     url: Optional[str] = None,
+    host_header: Optional[str] = None,
     warn: Optional[Callable[[str], None]] = None,
 ) -> tuple[list[str], str]:
     """Resolve catalog ids for scout -ds.
@@ -156,7 +165,7 @@ def resolve_dirs_multi_wordlist_ids(
     if preset_is_next or raw_preset == "next":
         if not ip or not url:
             raise ValueError("-p next requires a target URL (pass path or ip with web target)")
-        done = _done_wordlist_paths(ip, url)
+        done = _done_wordlist_paths(ip, url, host_header=host_header)
         tier, label, pending = catalog.next_tier_adds(
             extensions=ext,
             done_wordlist_paths=done,
