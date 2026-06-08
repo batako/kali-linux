@@ -10,6 +10,7 @@ import shlex
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -52,7 +53,12 @@ DEFAULT_WATCH_INTERVAL_SEC = 2.0
 SCOUT_STATUS_SLOTS = max(1, int(os.environ.get("SCOUT_STATUS_SLOTS", "4")))
 
 DEFAULT_GB_THREADS = int(os.environ.get("GB_THREADS", "40"))
+DEFAULT_GB_DIR_THREADS = int(os.environ.get("GB_DIR_THREADS", "10"))
 DEFAULT_DIRS_MULTI_THREADS = int(os.environ.get("GB_DIRS_THREADS", "15"))
+DEFAULT_GB_TIMEOUT_SEC = int(os.environ.get("GB_TIMEOUT", "30"))
+
+# Webmin and similar: nmap may say "http" but the service speaks HTTPS on this port.
+HTTPS_ONLY_PORTS = frozenset({10000})
 
 WEB_SERVICE_HINTS = (
     "http",
@@ -71,6 +77,11 @@ WEB_SERVICE_HINTS = (
 INTERESTING_HIT_STATUS = frozenset({200, 301, 302, 401})
 GOBUSTER_HIT_RE = re.compile(r"^\s*(\S+)\s+\(Status:\s*(\d+)\)")
 GOBUSTER_REDIRECT_RE = re.compile(r"\[-->\s*(https?://[^\]]+)\]")
+GOBUSTER_WILDCARD_HINT_RE = re.compile(
+    r"exclude the response length|wildcard option",
+    re.I,
+)
+GOBUSTER_WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)")
 
 # Hidden paths worth showing when found (not extension-fuzz noise).
 _HIDDEN_DIR_OK = frozenset({".git", ".svn", ".well-known", ".env"})
@@ -95,6 +106,7 @@ class DirsPlan:
     extensions: Optional[str]
     command: str
     log_path: str
+    exclude_length: Optional[int] = None
 
 
 def _normalize_service(service: str) -> str:
@@ -110,10 +122,34 @@ def is_web_service(service: str) -> bool:
     return any(hint in svc for hint in WEB_SERVICE_HINTS)
 
 
-def build_web_url(ip: str, port: int, service: str) -> str:
+def web_scheme_for_port(port: int, service: str = "") -> str:
+    if port in HTTPS_ONLY_PORTS or port == 443:
+        return "https"
+    if port == 80:
+        return "http"
     svc = _normalize_service(service)
-    use_https = "https" in svc or svc.startswith("ssl/")
-    scheme = "https" if use_https else "http"
+    if "https" in svc or svc.startswith("ssl/") or "miniserv" in svc or "webmin" in svc:
+        return "https"
+    return "http"
+
+
+def coerce_web_url(url: str) -> str:
+    """Upgrade http→https on ports that only accept TLS (e.g. Webmin :10000)."""
+    base = normalize_web_url(url)
+    parsed = urlparse(base)
+    if not parsed.scheme or not parsed.hostname:
+        return base
+    port = parsed.port
+    if port is None:
+        port = {"http": 80, "https": 443}.get(parsed.scheme.lower(), 80)
+    if parsed.scheme.lower() == "http" and port in HTTPS_ONLY_PORTS:
+        path = parsed.path or "/"
+        return canonicalize_url(f"https://{parsed.hostname}:{port}{path}")
+    return base
+
+
+def build_web_url(ip: str, port: int, service: str) -> str:
+    scheme = web_scheme_for_port(port, service)
     if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
         return canonicalize_url(f"{scheme}://{ip}/")
     return canonicalize_url(f"{scheme}://{ip}:{port}/")
@@ -168,20 +204,16 @@ def resolve_dirs_target(ip: str, path_or_url: str) -> str:
     """Turn /admin, :65524/hidden/, admin, or full URL into a gobuster -u target."""
     s = (path_or_url or "").strip()
     if s.startswith(("http://", "https://")):
-        return normalize_web_url(s)
+        return coerce_web_url(s)
 
     port_path = _parse_port_path_shorthand(s)
     if port_path is not None:
         port, path = port_path
-        if port == 443:
-            scheme = "https"
-        elif port == 80:
-            scheme = "http"
-        else:
-            scheme = "http"
+        scheme = web_scheme_for_port(port)
+        if port not in HTTPS_ONLY_PORTS and port not in (80, 443):
             for web_port, url in discover_web_targets(ip):
                 if web_port == port:
-                    scheme = urlparse(url).scheme or "http"
+                    scheme = urlparse(url).scheme or scheme
                     break
         return canonicalize_url(f"{scheme}://{ip}:{port}{path}")
 
@@ -313,11 +345,76 @@ def build_dirs_log_path(url: str, wordlist: str, *, dry_run: bool = False) -> st
     return str(Path(logs) / f"gobuster_{host}_{slug}_{ts}.log")
 
 
+# Gobuster treats these as hits; identical body on random paths → wildcard soft-404.
+_GOBUSTER_WILDCARD_STATUS = frozenset({200, 204, 301, 302, 307, 401, 403})
+
+
+def probe_wildcard_exclude_length(url: str, *, timeout_sec: Optional[int] = None) -> Optional[int]:
+    """Probe a random path; if the server soft-404s with a fixed body, return its length."""
+    if timeout_sec is None:
+        timeout_sec = DEFAULT_GB_TIMEOUT_SEC
+    base = coerce_web_url(url)
+    parsed = urlparse(base)
+    probe = urljoin(base if base.endswith("/") else f"{base}/", str(uuid.uuid4()))
+    curl_args = [
+        "curl",
+        "-sS",
+        "-m",
+        str(timeout_sec),
+        "-w",
+        "%{http_code}\n%{size_download}",
+        "-o",
+        "/dev/null",
+    ]
+    if parsed.scheme == "https":
+        curl_args.append("-k")
+    curl_args.append(probe)
+    try:
+        result = subprocess.run(
+            curl_args,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec + 5,
+            check=False,
+        )
+        # MiniServ/Webmin often ends TLS with EOF (curl exit 56) while still returning body.
+        lines = (result.stdout or "").strip().splitlines()
+        if len(lines) < 2:
+            return None
+        status_code = int(lines[0])
+        size = int(lines[1])
+        if status_code not in _GOBUSTER_WILDCARD_STATUS or size <= 0:
+            return None
+        return size
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+
+
+def parse_wildcard_exclude_length(log_path: str) -> Optional[int]:
+    """Read gobuster wildcard error from log → body length to exclude."""
+    path = Path(log_path)
+    if not path.is_file():
+        return None
+    text = path.read_text(errors="replace")
+    if not GOBUSTER_WILDCARD_HINT_RE.search(text):
+        return None
+    match = GOBUSTER_WILDCARD_LENGTH_RE.search(text)
+    return int(match.group(1)) if match else None
+
+
+def _threads_from_gobuster_command(command: str) -> int:
+    match = re.search(r"(?:^|\s)-t\s+(\d+)", command or "")
+    if match:
+        return int(match.group(1))
+    return DEFAULT_GB_DIR_THREADS
+
+
 def build_gobuster_dir_argv(
     url: str,
     wordlist: str,
     threads: int,
     extensions: Optional[str] = None,
+    exclude_length: Optional[int] = None,
 ) -> list[str]:
     args = [
         "gobuster",
@@ -328,8 +425,14 @@ def build_gobuster_dir_argv(
         wordlist,
         "-t",
         str(threads),
+        "--timeout",
+        f"{DEFAULT_GB_TIMEOUT_SEC}s",
         "-q",
     ]
+    if urlparse(url).scheme == "https":
+        args.append("-k")
+    if exclude_length is not None:
+        args.extend(["--exclude-length", str(exclude_length)])
     if extensions:
         args.extend(["--extensions", extensions])
     return args
@@ -343,19 +446,30 @@ def build_dirs_plan(
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     dry_run: bool = False,
+    exclude_length_override: Optional[int] = None,
 ) -> DirsPlan:
     from wordlists.scout import resolve_scout_wordlist
 
-    url = normalize_web_url(url)
+    url = coerce_web_url(normalize_web_url(url))
     try:
         wl = resolve_scout_wordlist(wordlist, extensions=extensions)
     except ValueError as exc:
         raise FileNotFoundError(str(exc)) from exc
-    th = threads if threads is not None else DEFAULT_GB_THREADS
+    th = threads if threads is not None else DEFAULT_GB_DIR_THREADS
     if not dry_run and not Path(wl).is_file():
         raise FileNotFoundError(f"wordlist not found: {wl}")
 
-    argv = build_gobuster_dir_argv(url, wl, th, extensions)
+    if exclude_length_override is not None:
+        exclude_length = exclude_length_override
+    else:
+        exclude_length = probe_wildcard_exclude_length(url)
+        if exclude_length is None:
+            print(
+                "    [!] wildcard probe failed — gobuster may stop;"
+                " retry will parse Length from log if needed",
+                file=sys.stderr,
+            )
+    argv = build_gobuster_dir_argv(url, wl, th, extensions, exclude_length=exclude_length)
     log_path = build_dirs_log_path(url, wl, dry_run=dry_run)
     command = " ".join(shlex.quote(a) for a in argv)
     return DirsPlan(
@@ -366,6 +480,7 @@ def build_dirs_plan(
         extensions=extensions,
         command=command,
         log_path=log_path,
+        exclude_length=exclude_length,
     )
 
 
@@ -537,6 +652,36 @@ def reconcile_scout_job(job_id: int) -> None:
     if failed and log_path and Path(log_path).is_file() and hits:
         failed = False
 
+    if (
+        failed
+        and log_path
+        and row["kind"] == "dirs"
+        and "--exclude-length" not in (row["command"] or "")
+        and not hits
+    ):
+        xl = parse_wildcard_exclude_length(log_path)
+        if xl is not None:
+            update_scout_job(
+                job_id,
+                status="failed",
+                exit_code=exit_code,
+                hits_summary="wildcard — retrying with exclude-length",
+                ended_at=datetime.now().isoformat(timespec="seconds"),
+            )
+            try:
+                plan = build_dirs_plan(
+                    row["url"] or "",
+                    wordlist=row["wordlist"],
+                    threads=_threads_from_gobuster_command(row["command"] or ""),
+                    exclude_length_override=xl,
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                print(f"    [-] wildcard retry failed: {exc}", file=sys.stderr)
+                return
+            print(f"    [i] wildcard retry — exclude-length {xl}")
+            _dispatch_dirs_job(row["ip"], plan, force=True)
+            return
+
     update_scout_job(
         job_id,
         status="failed" if failed else "done",
@@ -576,6 +721,8 @@ def _dispatch_dirs_job(
             return None
 
     print(f"    -> dirs {plan.url}")
+    if plan.exclude_length is not None:
+        print(f"    [i] wildcard soft-404 — exclude-length {plan.exclude_length}")
     print(f"    $ {plan.command}")
     print(f"    log: {plan.log_path}")
 
@@ -591,6 +738,7 @@ def _dispatch_dirs_job(
                 plan.wordlist,
                 plan.threads,
                 plan.extensions,
+                exclude_length=plan.exclude_length,
             ),
             stdout=logf,
             stderr=subprocess.STDOUT,
