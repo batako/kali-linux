@@ -68,6 +68,23 @@ _revshell-lhost() {
   return 1
 }
 
+# Attacker IPv4 only (stdout) — tun0, else eth0
+lhost() {
+  if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
+    echo "usage: lhost"
+    echo "  print attacker IPv4 (tun0 → eth0) for reverse shells, ping, MSF LHOST"
+    return 0
+  fi
+  if [[ $# -ne 0 ]]; then
+    echo "usage: lhost  (try: lhost -h)" >&2
+    return 1
+  fi
+  _revshell-lhost || {
+    echo "[-] LHOST not found (bring up tun0 VPN or eth0)" >&2
+    return 1
+  }
+}
+
 _webrsh-trigger() {
   local target="$1"
   local port="${2:-4444}"

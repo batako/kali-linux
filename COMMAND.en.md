@@ -124,7 +124,8 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 | `target-set <ip> --new` | Pivot - no load_from (do not inherit old IP scan/dirs) |
 | `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |
 | `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
-| `target-show` | Current IP |
+| `target-show` | Current target IP (RHOST) |
+| `lhost` | Print attacker IP only (LHOST: tun0 → eth0) |
 | `target-clear` | Clear IP |
 | `hosts <host> [aliases...]` | Append to `cases/<room>/hosts` using `$IP` / `target`, apply `/etc/hosts` |
 | `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |

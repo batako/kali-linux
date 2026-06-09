@@ -43,6 +43,25 @@ _hosts-remove-managed-block() {
   ' "$file"
 }
 
+_hosts-print-sudo-plan() {
+  local kind="$1" case_file="${2:-}"
+  echo "[*] hosts: updating /etc/hosts — sudo password may be required"
+  case "$kind" in
+    apply)
+      if [[ -f "$case_file" ]] && [[ -s "$case_file" ]]; then
+        echo "    action: apply recon block (${CASE:-case})"
+        echo "    source: $case_file"
+        _hosts-filter-case-file "$case_file" | sed 's/^/      /'
+      else
+        echo "    action: clear recon block (no entries in case hosts)"
+      fi
+      ;;
+    off)
+      echo "    action: remove recon block from /etc/hosts"
+      ;;
+  esac
+}
+
 _recon-hosts-apply() {
   local case_file etc tmp label
   case_file="$(_hosts-case-file)" || return 0
@@ -63,6 +82,7 @@ _recon-hosts-apply() {
     return 0
   fi
 
+  _hosts-print-sudo-plan apply "$case_file"
   if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
     rm -f "$tmp"
     echo "[-] failed to update $etc (sudo?)" >&2
@@ -87,6 +107,7 @@ _recon-hosts-off() {
     rm -f "$tmp"
     return 0
   fi
+  _hosts-print-sudo-plan off
   if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
     rm -f "$tmp"
     echo "[-] failed to update $etc" >&2

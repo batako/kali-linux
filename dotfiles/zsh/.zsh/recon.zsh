@@ -61,7 +61,7 @@ _case-on-enter() {
     echo "[+] ftp-shell: $CASE_HOME/ftp-shell"
   fi
   if (( $+functions[_recon-hosts-apply] )); then
-    _recon-hosts-apply 2>/dev/null
+    _recon-hosts-apply
   fi
 }
 

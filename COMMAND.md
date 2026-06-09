@@ -124,7 +124,8 @@ case-set startup
 | `target-set <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
 | `target-set <ip> --pick` | 継承元 IP を番号で選択（last_seen + open/dirs 件数） |
 | `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
-| `target-show` | 現在の IP |
+| `target-show` | 現在のターゲット IP（RHOST） |
+| `lhost` | 攻撃マシン側 IP のみ出力（LHOST: tun0 → eth0） |
 | `target-clear` | クリア |
 | `hosts <host> [aliases...]` | `cases/<room>/hosts` に追記（IP は `$IP` / `target`）して `/etc/hosts` に適用 |
 | `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
