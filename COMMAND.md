@@ -126,7 +126,8 @@ case-set startup
 | `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在の IP |
 | `target-clear` | クリア |
-| `hosts <ip> <host> [aliases...]` | `cases/<room>/hosts` に書き込み `/etc/hosts` に適用（`hosts -h`） |
+| `hosts <host> [aliases...]` | `cases/<room>/hosts` に追記（IP は `$IP` / `target`）して `/etc/hosts` に適用 |
+| `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
 | `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |

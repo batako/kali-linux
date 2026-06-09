@@ -96,14 +96,31 @@ _recon-hosts-off() {
   echo "[+] hosts: recon block removed from $etc"
 }
 
+_hosts-default-ip() {
+  if [[ -n "${IP:-}" && "$IP" =~ $(_recon-ip-re) ]]; then
+    echo "$IP"
+    return 0
+  fi
+  if (( $+functions[target-load] )); then
+    target-load 2>/dev/null
+    if [[ -n "${IP:-}" && "$IP" =~ $(_recon-ip-re) ]]; then
+      echo "$IP"
+      return 0
+    fi
+  fi
+  return 1
+}
+
 _hosts-usage() {
-  echo "usage: hosts [-h] [<ip> <hostname> [aliases...]]"
-  echo "       hosts -a|--add <ip> <hostname> [aliases...]"
+  echo "usage: hosts [-h] [<hostname> [aliases...]]"
+  echo "       hosts [<ip>] <hostname> [aliases...]"
+  echo "       hosts -r|--replace [<ip>] <hostname> [aliases...]"
   echo "       hosts --apply | --off | -e|--edit"
   echo
   echo "  (no args)              show case file + /etc/hosts recon block"
-  echo "  <ip> <host> [names]    write cases/<room>/hosts (replace) and apply"
-  echo "  -a, --add              append a line, then apply"
+  echo "  <host> [names]         append to cases/<room>/hosts (IP = \$IP / target)"
+  echo "  <ip> <host> [names]    append with explicit IP"
+  echo "  -r, --replace          replace case hosts file with one line, then apply"
   echo "  --apply                apply cases/<room>/hosts to /etc/hosts"
   echo "  --off                  remove recon block from /etc/hosts only"
   echo "  -e, --edit             edit cases/<room>/hosts, then apply"
@@ -111,8 +128,9 @@ _hosts-usage() {
   echo "  case-set switches rooms → hosts auto-applies when cases/<room>/hosts exists"
   echo
   echo "examples:"
+  echo "  hosts smag.thm                    # uses \$IP"
   echo "  hosts 10.10.238.190 mafialive.thm"
-  echo "  hosts -a 10.10.238.190 www.mafialive.thm"
+  echo "  hosts mafialive.thm www.mafialive.thm"
   echo "  hosts --off"
 }
 
@@ -139,32 +157,76 @@ _hosts-show() {
   fi
 }
 
-_hosts-write-line() {
-  local append="$1"
-  shift
+_hosts-resolve-register-args() {
   local ip host
   local -a rest
-  [[ $# -ge 2 ]] || {
-    _hosts-usage >&2
+  [[ $# -ge 1 ]] || return 1
+  if [[ "$1" =~ $(_recon-ip-re) ]]; then
+    [[ $# -ge 2 ]] || return 1
+    ip="$1"
+    host="$2"
+    shift 2
+    rest=("$@")
+  else
+    ip="$(_hosts-default-ip)" || return 2
+    host="$1"
+    shift
+    rest=("$@")
+  fi
+  REPLY=("$ip" "$host" "${rest[@]}")
+  return 0
+}
+
+_hosts-register-line() {
+  local mode="$1"
+  shift
+  local ip host line
+  local -a rest
+  local f
+
+  _hosts-resolve-register-args "$@"
+  local rc=$?
+  if (( rc != 0 )); then
+    if (( rc == 2 )); then
+      echo "[-] no target IP — target-set <ip> or case-set <room> first" >&2
+    else
+      _hosts-usage >&2
+    fi
     return 1
-  }
-  ip="$1"
-  host="$2"
-  shift 2
-  rest=("$@")
+  fi
+  ip="$REPLY[1]"
+  host="$REPLY[2]"
+  if (( ${#REPLY[@]} > 2 )); then
+    rest=("${(@)REPLY[3,-1]}")
+  else
+    rest=()
+  fi
   [[ "$ip" =~ $(_recon-ip-re) ]] || {
     echo "[-] invalid ip: $ip" >&2
     return 1
   }
-  local f
+
   f="$(_hosts-case-file)" || {
     echo "[-] case not set — case-set <room> first" >&2
     return 1
   }
-  if [[ "$append" == 1 ]]; then
-    print -r -- "$ip $host ${rest[*]}" >>"$f"
+
+  if (( ${#rest[@]} )); then
+    line="$ip $host ${rest[*]}"
   else
-    print -r -- "$ip $host ${rest[*]}" >"$f"
+    line="$ip $host"
+  fi
+
+  if [[ "$mode" == replace ]]; then
+    print -r -- "$line" >"$f"
+  else
+    touch "$f"
+    if grep -qFx "$line" "$f" 2>/dev/null; then
+      echo "[=] hosts: already registered — $line"
+      _recon-hosts-apply
+      return 0
+    fi
+    print -r -- "$line" >>"$f"
   fi
   _recon-hosts-apply
 }
@@ -182,7 +244,7 @@ _hosts-edit() {
 }
 
 hosts() {
-  local action="" append=0
+  local action="" mode="append"
 
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
     _hosts-usage
@@ -193,7 +255,12 @@ hosts() {
     case "$1" in
       -a|--add)
         action=write
-        append=1
+        mode=append
+        shift
+        ;;
+      -r|--replace)
+        action=write
+        mode=replace
         shift
         ;;
       --apply)
@@ -234,13 +301,13 @@ hosts() {
     show)
       [[ $# -eq 0 ]] || {
         echo "[-] unexpected arguments: $*" >&2
-        echo "    use: hosts <ip> <hostname>  or  hosts -h" >&2
+        echo "    use: hosts <hostname>  or  hosts -h" >&2
         return 1
       }
       _hosts-show
       ;;
     write)
-      _hosts-write-line "$append" "$@"
+      _hosts-register-line "$mode" "$@"
       ;;
     apply)
       [[ $# -eq 0 ]] || {

@@ -126,7 +126,8 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 | `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
 | `target-show` | Current IP |
 | `target-clear` | Clear IP |
-| `hosts <ip> <host> [aliases...]` | Write `cases/<room>/hosts` and apply `/etc/hosts` (`hosts -h`) |
+| `hosts <host> [aliases...]` | Append to `cases/<room>/hosts` using `$IP` / `target`, apply `/etc/hosts` |
+| `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
 | `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (auto on `case-set`) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
 | `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
