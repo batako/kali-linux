@@ -7,7 +7,7 @@ _ftp-creds-save-anon() {
   [[ -z "$ip" || -z "${RECON_APP:-}" ]] && return 0
 
   local creds_status
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$FTP_ANON_USER" "$FTP_ANON_PASS" 2>&1)" || return 0
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$FTP_ANON_USER" "$FTP_ANON_PASS" --comment "FTP anonymous" 2>&1)" || return 0
 
   case "$creds_status" in
     unchanged) echo "[=] creds: ${FTP_ANON_USER}@${ip}" >&2 ;;

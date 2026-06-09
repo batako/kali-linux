@@ -27,7 +27,11 @@ class CredsHydraImportTest(unittest.TestCase):
         self.assertEqual(rows[0]["username"], "barry")
         self.assertEqual(rows[0]["password"], "s3cret")
         mock_upsert.assert_called_once_with(
-            ip="10.0.0.1", username="barry", password="s3cret", execution_id=None
+            ip="10.0.0.1",
+            username="barry",
+            password="s3cret",
+            execution_id=None,
+            comment="HTTP Basic (hydra)",
         )
 
     @patch("creds.creds_upsert", return_value="saved")

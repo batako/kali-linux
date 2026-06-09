@@ -25,7 +25,7 @@ HYDRA_HTTP_BASIC_FOUND = re.compile(
 )
 
 
-def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None):
+def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None, comment: str = ""):
     if not text:
         return []
 
@@ -47,12 +47,14 @@ def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None)
             username=username,
             password=password,
             execution_id=execution_id,
+            comment=comment,
         )
         results.append(
             {
                 "ip": target_ip,
                 "username": username,
                 "password": password,
+                "comment": comment,
                 "status": status,
             }
         )
@@ -62,27 +64,37 @@ def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None)
 
 def import_hydra_ssh(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for ssh valid pairs."""
-    return _import_hydra_matches(text, HYDRA_SSH_FOUND, ip=ip, execution_id=execution_id)
+    return _import_hydra_matches(
+        text, HYDRA_SSH_FOUND, ip=ip, execution_id=execution_id, comment="SSH (hydra)"
+    )
 
 
 def import_hydra_ftp(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for ftp valid pairs."""
-    return _import_hydra_matches(text, HYDRA_FTP_FOUND, ip=ip, execution_id=execution_id)
+    return _import_hydra_matches(
+        text, HYDRA_FTP_FOUND, ip=ip, execution_id=execution_id, comment="FTP (hydra)"
+    )
 
 
 def import_hydra_http(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for http(s)-post/get-form valid pairs."""
-    return _import_hydra_matches(text, HYDRA_HTTP_FORM_FOUND, ip=ip, execution_id=execution_id)
+    return _import_hydra_matches(
+        text, HYDRA_HTTP_FORM_FOUND, ip=ip, execution_id=execution_id, comment="HTTP form (hydra)"
+    )
 
 
 def import_hydra_http_basic(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for http(s)-get (Basic Auth) valid pairs."""
-    return _import_hydra_matches(text, HYDRA_HTTP_BASIC_FOUND, ip=ip, execution_id=execution_id)
+    return _import_hydra_matches(
+        text, HYDRA_HTTP_BASIC_FOUND, ip=ip, execution_id=execution_id, comment="HTTP Basic (hydra)"
+    )
 
 
 def import_hydra_pop3(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for pop3 valid pairs."""
-    return _import_hydra_matches(text, HYDRA_POP3_FOUND, ip=ip, execution_id=execution_id)
+    return _import_hydra_matches(
+        text, HYDRA_POP3_FOUND, ip=ip, execution_id=execution_id, comment="POP3 (hydra)"
+    )
 
 
 def import_hydra(text: str, ip: str = None, execution_id=None):
@@ -142,3 +154,5 @@ def emit_import_results(results, stream=None):
         print(_status_line(r), file=stream)
         print(f"    login:    {r['username']}", file=stream)
         print(f"    password: {r['password']}", file=stream)
+        if r.get("comment"):
+            print(f"    comment:  {r['comment']}", file=stream)

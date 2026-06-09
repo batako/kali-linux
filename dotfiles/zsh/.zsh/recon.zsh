@@ -380,20 +380,39 @@ artifact-add() {
 
 _creds-add() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: creds-add [ip] <username> [<password>]"
+    echo "usage: creds-add [-c comment] [ip] <username> [<password>]"
     echo "  alias: ca"
     echo "  password omitted → prompt (paste ok)"
+    echo "  -c comment   usage hint shown in creds-list (e.g. SSH, HTTP Basic)"
     echo "examples:"
     echo "  creds-add vigilante              # prompt for password"
     echo "  creds-add vigilante -            # password from stdin / pipe"
     echo "  creds-add vigilante '!#th3h00d'  # inline (quote when pass has # or !)"
+    echo "  creds-add -c 'HTTP Basic' barry secret"
     return 0
   fi
 
   local ip=""
   local user=""
   local pass=""
+  local comment=""
   local from_args=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -c|--comment)
+        comment="$2"
+        shift 2
+        ;;
+      -h|--help)
+        _creds-add -h
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
   # usage: creds-add [ip] <username> [<password>]
   #        password omitted → prompt (paste ok; no shell quoting needed)
@@ -439,7 +458,11 @@ _creds-add() {
     return 1
   fi
 
-  python3 "$RECON_APP" creds-add "$ip" "$user" "$pass"
+  if [[ -n "$comment" ]]; then
+    python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "$comment"
+  else
+    python3 "$RECON_APP" creds-add "$ip" "$user" "$pass"
+  fi
 }
 
 # noglob は関数内では遅い（呼び出し前に zsh が ? / ??? 等を展開する）→ alias で付与
@@ -453,6 +476,7 @@ creds-list() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
     echo "usage: creds-list [ip]"
     echo "  alias: cl"
+    echo "  columns: user<TAB>pass<TAB>comment  (case scope: ip<TAB>user<TAB>pass<TAB>comment)"
     echo "  or: case-set <room> first (load_from + current IP)"
     return 0
   fi

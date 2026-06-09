@@ -350,8 +350,8 @@ hint-rm 3         # id=3 を削除
 
 | コマンド | 説明 |
 |----------|------|
-| `creds-add [ip] <user> <pass>` | 手動登録（alias: `ca`。`???` 等は `noglob` 付き。更新後は `exec zsh`） |
-| `creds-list [ip]` | 一覧。**`case-set` 済みなら lineage + 現在 IP**（IP 列付き）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
+| `creds-add [-c comment] [ip] <user> <pass>` | 手動登録（alias: `ca`。`-c` で用途メモ。`???` 等は `noglob` 付き） |
+| `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`case-set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |

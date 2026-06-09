@@ -350,8 +350,8 @@ hint-rm 3         # delete id=3
 
 | Command | Description |
 |----------|------|
-| `creds-add [ip] <user> <pass>` | Manual add (alias: `ca`. for `???` etc, use `noglob`. run `exec zsh` after update) |
-| `creds-list [ip]` | List creds. **If `case-set` is active: load_from + current IP** (with IP column). `creds-list --all-case` lists all IPs in room (alias: `cl`) |
+| `creds-add [-c comment] [ip] <user> <pass>` | Manual add (alias: `ca`. `-c` sets usage hint) |
+| `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `case-set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
 | `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |

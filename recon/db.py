@@ -1507,6 +1507,22 @@ def _get_password_artifact(ip: str, username: str):
     return row
 
 
+def _get_creds_comment_artifact(ip: str, username: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT id, value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'creds_comment' AND key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, username),
+    ).fetchone()
+    conn.close()
+    return row
+
+
 def _username_artifact_exists(ip: str, username: str) -> bool:
     conn = connect()
     row = conn.execute(
@@ -1522,9 +1538,16 @@ def _username_artifact_exists(ip: str, username: str) -> bool:
     return row is not None
 
 
-def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> str:
+def creds_upsert(
+    ip: str,
+    username: str,
+    password: str,
+    execution_id=None,
+    comment: str | None = None,
+) -> str:
     """
-    Insert or update ssh credentials for (ip, username).
+    Insert or update credentials for (ip, username).
+    comment: when set, stored as usage hint (e.g. SSH, HTTP Basic); None leaves comment unchanged.
     Returns: saved | updated | unchanged
     """
     if not ip or not username or not password:
@@ -1534,22 +1557,28 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
     _touch_case_ip(ip)
 
     existing = _get_password_artifact(ip, username)
-    if existing and (existing["value"] or "") == password:
+    existing_comment_row = _get_creds_comment_artifact(ip, username)
+    existing_comment = (existing_comment_row["value"] or "") if existing_comment_row else ""
+
+    password_same = existing and (existing["value"] or "") == password
+    comment_same = comment is None or comment == existing_comment
+    if password_same and comment_same:
         return "unchanged"
 
     conn = connect()
     cur = conn.cursor()
 
     if existing:
-        cur.execute(
-            """
-            UPDATE artifacts
-            SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
-                created_at = datetime('now')
-            WHERE id = ?
-            """,
-            (password, execution_id, case_name, int(existing["id"])),
-        )
+        if not password_same:
+            cur.execute(
+                """
+                UPDATE artifacts
+                SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                    created_at = datetime('now')
+                WHERE id = ?
+                """,
+                (password, execution_id, case_name, int(existing["id"])),
+            )
         status = "updated"
     else:
         cur.execute(
@@ -1561,6 +1590,29 @@ def creds_upsert(ip: str, username: str, password: str, execution_id=None) -> st
             (ip, username, password, execution_id, case_name),
         )
         status = "saved"
+
+    if comment is not None and not comment_same:
+        if existing_comment_row:
+            cur.execute(
+                """
+                UPDATE artifacts
+                SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                    created_at = datetime('now')
+                WHERE id = ?
+                """,
+                (comment, execution_id, case_name, int(existing_comment_row["id"])),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT INTO artifacts (
+                    ip, kind, key, value, execution_id, created_at, case_name
+                ) VALUES (?, 'creds_comment', ?, ?, ?, datetime('now'), ?)
+                """,
+                (ip, username, comment, execution_id, case_name),
+            )
+        if password_same:
+            status = "updated"
 
     has_user = cur.execute(
         """
@@ -1602,7 +1654,7 @@ def creds_delete(ip: str, username: str = None) -> int:
             """
             DELETE FROM artifacts
             WHERE ip = ? AND (
-                (kind IN ('password', 'username') AND (key = ? OR value = ?))
+                (kind IN ('password', 'username', 'creds_comment') AND (key = ? OR value = ?))
                 OR (kind = 'ssh_last_user' AND value = ?)
             )
             """,
@@ -1612,7 +1664,7 @@ def creds_delete(ip: str, username: str = None) -> int:
         cur.execute(
             """
             DELETE FROM artifacts
-            WHERE ip = ? AND kind IN ('password', 'username', 'ssh_last_user')
+            WHERE ip = ? AND kind IN ('password', 'username', 'creds_comment', 'ssh_last_user')
             """,
             (ip,),
         )
@@ -1624,28 +1676,45 @@ def creds_delete(ip: str, username: str = None) -> int:
 
 
 # Stored for creds/ssh; hidden from artifact-list (use creds-list / cl)
-_ARTIFACT_CRED_KINDS = ("username", "password", "ssh_last_user")
+_ARTIFACT_CRED_KINDS = ("username", "password", "creds_comment", "ssh_last_user")
+
+
+def _creds_row_dict(row) -> dict:
+    return {
+        "username": row["username"],
+        "password": row["password"],
+        "comment": row["comment"] or "",
+    }
 
 
 def list_ssh_creds(ip: str):
-    """Return [{username, password}, ...] one row per username (latest password)."""
+    """Return [{username, password, comment}, ...] one row per username (latest password)."""
     conn = connect()
     rows = conn.execute(
         """
-        SELECT key AS username, value AS password
-        FROM artifacts
-        WHERE id IN (
+        SELECT
+            p.key AS username,
+            p.value AS password,
+            (
+                SELECT value
+                FROM artifacts
+                WHERE ip = p.ip AND kind = 'creds_comment' AND key = p.key
+                ORDER BY id DESC
+                LIMIT 1
+            ) AS comment
+        FROM artifacts p
+        WHERE p.id IN (
             SELECT MAX(id)
             FROM artifacts
             WHERE ip = ? AND kind = 'password' AND key != ''
             GROUP BY key
         )
-        ORDER BY key
+        ORDER BY p.key
         """,
         (ip,),
     ).fetchall()
     conn.close()
-    return [{"username": r["username"], "password": r["password"]} for r in rows]
+    return [_creds_row_dict(r) for r in rows]
 
 
 def _case_scope_sql(case_name: str, *, ips: list[str]) -> tuple[str, list]:
@@ -1659,7 +1728,7 @@ def _case_scope_sql(case_name: str, *, ips: list[str]) -> tuple[str, list]:
 
 
 def list_ssh_creds_for_case(case_name: str, *, all_case: bool = False):
-    """Return [{ip, username, password}, ...] for recon scope (or whole case)."""
+    """Return [{ip, username, password, comment}, ...] for recon scope (or whole case)."""
     if all_case:
         from case_scope import list_case_ips
 
@@ -1670,7 +1739,17 @@ def list_ssh_creds_for_case(case_name: str, *, all_case: bool = False):
     conn = connect()
     rows = conn.execute(
         f"""
-        SELECT a.ip AS ip, a.key AS username, a.value AS password
+        SELECT
+            a.ip AS ip,
+            a.key AS username,
+            a.value AS password,
+            (
+                SELECT value
+                FROM artifacts
+                WHERE ip = a.ip AND kind = 'creds_comment' AND key = a.key
+                ORDER BY id DESC
+                LIMIT 1
+            ) AS comment
         FROM artifacts a
         INNER JOIN (
             SELECT MAX(id) AS id
@@ -1685,7 +1764,12 @@ def list_ssh_creds_for_case(case_name: str, *, all_case: bool = False):
     ).fetchall()
     conn.close()
     return [
-        {"ip": r["ip"], "username": r["username"], "password": r["password"]}
+        {
+            "ip": r["ip"],
+            "username": r["username"],
+            "password": r["password"],
+            "comment": r["comment"] or "",
+        }
         for r in rows
     ]
 

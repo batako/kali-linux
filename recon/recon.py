@@ -1290,15 +1290,27 @@ def main():
         print("ok")
 
     elif cmd == "creds-add":
-        if len(sys.argv) < 5:
-            print("usage: recon.py creds-add <ip> <username> <password>")
+        args = sys.argv[2:]
+        if len(args) < 3:
+            print("usage: recon.py creds-add <ip> <username> <password> [--comment text]")
             sys.exit(1)
 
-        ip = sys.argv[2]
-        username = sys.argv[3]
-        password = sys.argv[4]
+        ip = args[0]
+        username = args[1]
+        password = args[2]
+        comment = None
+        rest = args[3:]
+        i = 0
+        while i < len(rest):
+            if rest[i] in ("--comment", "-c") and i + 1 < len(rest):
+                comment = rest[i + 1]
+                i += 2
+            else:
+                i += 1
 
-        status = creds_upsert(ip=ip, username=username, password=password)
+        status = creds_upsert(
+            ip=ip, username=username, password=password, comment=comment
+        )
         print(status)
 
     elif cmd == "creds-rm":
@@ -1336,7 +1348,7 @@ def main():
                     print(f"(no ssh creds for {ip})")
                 else:
                     for r in rows:
-                        print(f"{r['username']}\t{r['password']}")
+                        print(f"{r['username']}\t{r['password']}\t{r.get('comment', '')}")
         elif case:
             rows = list_ssh_creds_for_case(case, all_case=all_case)
             if as_json:
@@ -1346,7 +1358,9 @@ def main():
                     print(f"(no ssh creds for case {case})")
                 else:
                     for r in rows:
-                        print(f"{r['ip']}\t{r['username']}\t{r['password']}")
+                        print(
+                            f"{r['ip']}\t{r['username']}\t{r['password']}\t{r.get('comment', '')}"
+                        )
         else:
             print("usage: recon.py creds-list [--json] [ip]")
             print("hint: case-set <room>  or  pass ip")

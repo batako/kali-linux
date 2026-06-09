@@ -75,7 +75,7 @@ _sshkey_import_creds() {
     return 1
   fi
 
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "SSH key passphrase" 2>&1)" || return 1
 
   python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
 
@@ -388,7 +388,7 @@ _hash_crack_apply_creds() {
     return 0
   fi
 
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "hash-crack" 2>&1)" || return 1
   echo ""
   echo "----- recon -----"
   case "$creds_status" in
@@ -639,7 +639,7 @@ _gpg_crack_import_creds() {
     return 1
   fi
 
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" 2>&1)" || return 1
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "gpg credential" 2>&1)" || return 1
 
   echo ""
   echo "----- recon -----"
