@@ -27,9 +27,9 @@ _enc_read() {
 
   if (( ${#positional[@]} )); then
     if [[ "$squash" == 1 ]]; then
-      printf '%s' "${positional[*]}" | _enc_squash
+      printf '%s' "${(j: :)positional}" | _enc_squash
     else
-      printf '%s' "${positional[*]}"
+      printf '%s' "${(j: :)positional}"
     fi
     return 0
   fi
@@ -196,6 +196,37 @@ sys.stdout.buffer.write(b)
 ' "$data"
 }
 
+_enc_ascii_dec_p() {
+  local data="$1"
+  [[ "$data" =~ '^[0-9]+$' ]] && return 1
+  DATA="$data" python3 -c 'import os,re,sys; s=os.environ["DATA"].strip(); parts=[p for p in re.split(r"[, \t]+",s) if p]; sys.exit(0 if len(parts)>=2 and all(p.isdigit() and 0<=int(p)<=255 for p in parts) else 1)'
+}
+
+_enc_ascii_dec_try_decode() {
+  local data="$1"
+  DATA="$data" python3 -c '
+import os, re, sys
+
+s = os.environ["DATA"].strip()
+parts = [p for p in re.split(r"[, \t]+", s) if p]
+if len(parts) < 2:
+    sys.exit(1)
+try:
+    nums = [int(p) for p in parts]
+except ValueError:
+    sys.exit(1)
+if not all(0 <= n <= 255 for n in nums):
+    sys.exit(1)
+try:
+    t = bytes(nums).decode("utf-8")
+except UnicodeDecodeError:
+    sys.exit(1)
+if not t or not all(c.isprintable() or c in "\n\r\t" for c in t):
+    sys.exit(1)
+print(t, end="")
+'
+}
+
 _b10_try_decode() {
   local data="$1" out
   [[ "$data" =~ '^[0-9]+$' ]] || return 1
@@ -229,18 +260,383 @@ print(int.from_bytes(raw.encode("utf-8"), "big"))
 ' "$raw"
 }
 
+_enc_hash_fmt_kind() {
+  local hash_val="$1"
+  case "$hash_val" in
+    \$2a\$*|\$2b\$*|\$2y\$*) print -r -- bcrypt ;;
+    \$apr1\$*|\$1\$*) print -r -- md5crypt ;;
+    \$6\$*) print -r -- sha512crypt ;;
+    \$5\$*) print -r -- sha256crypt ;;
+    \$6a\$*|\$argon2*) print -r -- argon2 ;;
+    \{SSHA\}*|\{SHA\}*) print -r -- sha1 ;;
+    *)
+      local k="$(_enc_hash_kind "$hash_val")"
+      case "$k" in
+        hash32) print -r -- md5 ;;
+        hash64) print -r -- sha256 ;;
+        sha1) print -r -- sha1 ;;
+        *) [[ -n "$k" ]] && print -r -- "$k" ;;
+      esac
+      ;;
+  esac
+}
+
+_enc_hash_log_kind() {
+  local kind="$1"
+  case "$kind" in
+    hash32) print -r -- md5 ;;
+    hash64) print -r -- sha256 ;;
+    *) print -r -- "$kind" ;;
+  esac
+}
+
 _enc_hash_kind() {
   local data="${1//[$' \t\r\n']/}"
   python3 -c '
 import re, sys
 h = sys.argv[1]
-if re.fullmatch(r"[0-9a-fA-F]{32}", h):
-    print("md5")
+if re.fullmatch(r"[01]+", h):
+    pass
+elif re.fullmatch(r"[0-9a-fA-F]{32}", h):
+    print("hash32")
 elif re.fullmatch(r"[0-9a-fA-F]{40}", h):
     print("sha1")
 elif re.fullmatch(r"[0-9a-fA-F]{64}", h):
     print("hash64")
 ' "$data"
+}
+
+_enc_hash_valid_hex() {
+  local data="${1//[$' \t\r\n']/}" kind="$2"
+  python3 -c '
+import re, sys
+h, kind = sys.argv[1], sys.argv[2]
+lens = {"md4": 32, "md5": 32, "sha1": 40, "sha256": 64}
+n = lens.get(kind)
+if n and re.fullmatch(rf"[0-9a-fA-F]{{{n}}}", h):
+    sys.exit(0)
+sys.exit(1)
+' "$data" "$kind"
+}
+
+_enc_md4_hex() {
+  local raw="$1" out hex opt
+  for opt in "" "-provider legacy"; do
+    out="$(printf '%s' "$raw" | openssl dgst -md4 ${=opt} 2>/dev/null)" || continue
+    hex="${out##*= }"
+    hex="${hex//[[:space:]]/}"
+    [[ -n "$hex" ]] && {
+      printf '%s' "$hex"
+      return 0
+    }
+  done
+  echo "enc: md4 not available (openssl -provider legacy?)" >&2
+  return 1
+}
+
+_enc_try_label() {
+  case "${1:l}" in
+    md4) print -r -- MD4 ;;
+    md5) print -r -- MD5 ;;
+    sha1) print -r -- SHA-1 ;;
+    sha256) print -r -- SHA-256 ;;
+    bcrypt) print -r -- bcrypt ;;
+    md5crypt) print -r -- MD5-crypt ;;
+    sha512crypt) print -r -- SHA-512-crypt ;;
+    sha256crypt) print -r -- SHA-256-crypt ;;
+    argon2) print -r -- Argon2 ;;
+    *) print -r -- "$1" ;;
+  esac
+}
+
+# UI/log: flatten whitespace so one table row stays one physical line
+_enc_ui_disp_val() {
+  local val="${1//$'\r'/}"
+  val="${val//$'\n'/ }"
+  val="${val//$'\t'/ }"
+  while [[ "$val" == *'  '* ]]; do
+    val="${val//  / }"
+  done
+  val="${val# }"
+  val="${val% }"
+  print -rn -- "$val"
+}
+
+typeset -gA _ENC_UI_STATE
+typeset -ga _ENC_UI_KEYS
+typeset -g _ENC_UI_LINES=0
+typeset -g _ENC_UI_STATUS_LINES=0
+typeset -g _ENC_UI_STATUS_TEXT=""
+typeset -g _ENC_UI_INIT=0
+
+_enc_ui_active() {
+  (( _ENC_UI_INIT ))
+}
+
+_enc_ui_format_row() {
+  local key="$1" state="${_ENC_UI_STATE[$key]:-pending}" label val
+  label="$(_enc_try_label "$key")"
+  case "$state" in
+    pending) printf '%-14s -\n' "$label" >&2 ;;
+    trying) printf '%-14s ...\n' "$label" >&2 ;;
+    ng) printf '%-14s NG\n' "$label" >&2 ;;
+    ok:*)
+      val="${state#ok:}"
+      if _enc_flag_like_p "$val" 2>/dev/null; then
+        label=">>${label}"
+      fi
+      printf '%-14s OK %s\n' "$label" "$(_enc_ui_disp_val "$val")" >&2
+      ;;
+  esac
+}
+
+_enc_ui_clear_block() {
+  local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES ))
+  if (( total > 0 )); then
+    printf '\e[%dA\e[J' "$total" >&2
+  fi
+}
+
+_enc_ui_paint() {
+  _enc_ui_clear_block
+  local n=0 key
+  for key in "${_ENC_UI_KEYS[@]}"; do
+    _enc_ui_format_row "$key"
+    (( n++ ))
+  done >&2
+  _ENC_UI_LINES=$n
+  if [[ -n "$_ENC_UI_STATUS_TEXT" ]]; then
+    printf '\n> %s\n' "$_ENC_UI_STATUS_TEXT" >&2
+    _ENC_UI_STATUS_LINES=2
+  else
+    _ENC_UI_STATUS_LINES=0
+  fi
+}
+
+_enc_wl_short() {
+  local wl="$1"
+  [[ -n "$wl" ]] && print -r -- "${wl:t}" || print -r -- wordlist
+}
+
+_enc_ui_status() {
+  _ENC_UI_STATUS_TEXT="$*"
+  _enc_ui_paint
+}
+
+_enc_ui_status_inline() {
+  _ENC_UI_STATUS_TEXT="$*"
+  _enc_ui_clear_block
+  local n=0 key
+  for key in "${_ENC_UI_KEYS[@]}"; do
+    _enc_ui_format_row "$key"
+    (( n++ ))
+  done >&2
+  _ENC_UI_LINES=$n
+  printf '\n> %s' "$_ENC_UI_STATUS_TEXT" >&2
+  _ENC_UI_STATUS_LINES=2
+}
+
+_enc_ui_status_clear() {
+  _ENC_UI_STATUS_TEXT=""
+}
+
+_enc_ui_after_prompt() {
+  _ENC_UI_STATUS_TEXT=""
+  local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES + 1 )) n=0 key
+  if (( total > 0 )); then
+    printf '\e[%dA\e[J' "$total" >&2
+  fi
+  _ENC_UI_STATUS_LINES=0
+  for key in "${_ENC_UI_KEYS[@]}"; do
+    _enc_ui_format_row "$key"
+    (( n++ ))
+  done >&2
+  _ENC_UI_LINES=$n
+}
+
+_enc_ui_status_john() {
+  local tier="$1" wl="$2"
+  local wl_t="$(_enc_wl_short "$wl")"
+  if [[ "$tier" == heavy ]]; then
+    _enc_ui_status "john --rules $wl_t"
+  else
+    _enc_ui_status "john $wl_t"
+  fi
+}
+
+_enc_ui_finish() {
+  _ENC_UI_STATUS_TEXT=""
+  _ENC_UI_STATUS_LINES=0
+}
+
+_enc_ui_init() {
+  _ENC_UI_KEYS=("$@")
+  _ENC_UI_STATE=()
+  local k
+  for k in "$@"; do
+    _ENC_UI_STATE[$k]=pending
+  done
+  _ENC_UI_LINES=0
+  _ENC_UI_STATUS_LINES=0
+  _ENC_UI_STATUS_TEXT=""
+}
+
+_enc_ui_trying() {
+  local key="$1"
+  _ENC_UI_STATUS_TEXT=""
+  _ENC_UI_STATE[$key]=trying
+  _enc_ui_paint
+}
+
+_enc_ui_plan() {
+  local data="$1" offline="$2" no_crack="$3"
+  local -a keys=() kind fmt
+
+  if _enc_bin_p "$data"; then
+    _enc_ui_init bin
+    return 0
+  fi
+
+  kind="$(_enc_hash_kind "$data")"
+  if [[ -n "$kind" ]]; then
+    case "$kind" in
+      hash32) keys=(md5 md4) ;;
+      sha1) keys=(sha1) ;;
+      hash64) keys=(sha256) ;;
+    esac
+    _enc_ui_init "${keys[@]}"
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9]+$' ]]; then
+    _enc_ui_init b10
+    return 0
+  fi
+
+  if _enc_ascii_dec_p "$data"; then
+    _enc_ui_init ascii
+    return 0
+  fi
+
+  if _enc_morse_p "$data"; then
+    _enc_ui_init morse
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]+$' ]] && (( ${#data} % 2 == 0 )); then
+    keys=(hex)
+  fi
+  keys+=(b10 b64 b32 b58 b62 rot)
+
+  if [[ "$data" == *'$'* && "$no_crack" -eq 0 ]]; then
+    fmt="$(_enc_hash_fmt_kind "$data")"
+    [[ -n "$fmt" ]] && keys+=("$fmt")
+  fi
+
+  _enc_ui_init "${keys[@]}"
+}
+
+_enc_ui_setup() {
+  _ENC_UI_INIT=0
+  [[ -t 2 ]] || return 1
+  _ENC_UI_INIT=1
+  return 0
+}
+
+_enc_ui_teardown() {
+  if _enc_ui_active; then
+    _enc_ui_paint
+    _enc_ui_finish
+    _ENC_UI_INIT=0
+  fi
+}
+
+# stderr: table row update (TTY) or "kind OK/NG" line (non-TTY)
+_enc_try_log() {
+  local key="$1" val="${2:-}"
+  if _enc_ui_active; then
+    local new_state
+    if [[ -n "$val" && "$val" != skip && "$val" != skip* ]]; then
+      new_state="ok:$val"
+      [[ "${_ENC_UI_STATE[$key]:-}" == "$new_state" ]] && return 0
+      _ENC_UI_STATE[$key]="$new_state"
+    else
+      [[ "${_ENC_UI_STATE[$key]:-}" == ng ]] && return 0
+      _ENC_UI_STATE[$key]=ng
+    fi
+    _ENC_UI_STATUS_TEXT=""
+    return 0
+  fi
+  local label="$(_enc_try_label "$key")"
+  if [[ -n "$val" && "$val" != skip && "$val" != skip* ]]; then
+    if _enc_flag_like_p "$val" 2>/dev/null; then
+      label=">>${label}"
+    fi
+    printf '%-14s OK %s\n' "$label" "$(_enc_ui_disp_val "$val")" >&2
+  else
+    printf '%-14s NG\n' "$label" >&2
+  fi
+}
+
+_enc_john_show_pass() {
+  local fmt="$1" hash_file="$2" pot_file="$3" show pass
+  show="$(john --format="$fmt" --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  if whence _john_pass_from_show >/dev/null 2>&1; then
+    pass="$(_john_pass_from_show "$show")"
+  else
+    pass="${show#*:}"
+  fi
+  [[ -n "$pass" ]] || return 1
+  printf '%s' "$pass"
+}
+
+_enc_john_raw_crack() {
+  local hash_val="$1" wordlist="$2" fmt="$3" tier="${4:-full}" kind_label="${5:-md5}"
+  local out_dir hash_file pot_file pass session rules
+  local -a rule_passes=()
+
+  if [[ -z "$wordlist" || ! -f "$wordlist" ]] || ! command -v john >/dev/null 2>&1; then
+    _enc_try_log "$kind_label"
+    return 1
+  fi
+
+  _enc_ui_trying "$kind_label"
+  _enc_ui_status_john "$tier" "$wordlist"
+
+  case "$tier" in
+    quick) rule_passes=("" ) ;;
+    heavy) rule_passes=("Single") ;;
+    full|*) rule_passes=("" "Single") ;;
+  esac
+
+  out_dir="${TMPDIR:-/tmp}/enc-john-$$"
+  mkdir -p "$out_dir"
+  hash_file="$out_dir/hash.txt"
+  pot_file="$out_dir/john.pot"
+
+  print -r -- "$hash_val" >"$hash_file"
+
+  for rules in "${rule_passes[@]}"; do
+    session="enc-$$-${rules:-plain}"
+    rm -f "$pot_file"
+    if [[ -n "$rules" ]]; then
+      john --session="$session" --format="$fmt" "$hash_file" --wordlist="$wordlist" \
+        --rules="$rules" --pot="$pot_file" >/dev/null 2>&1 || true
+    else
+      john --session="$session" --format="$fmt" "$hash_file" --wordlist="$wordlist" \
+        --pot="$pot_file" >/dev/null 2>&1 || true
+    fi
+    if pass="$(_enc_john_show_pass "$fmt" "$hash_file" "$pot_file")"; then
+      _enc_try_log "$kind_label" "$pass"
+      rm -rf "$out_dir"
+      printf '%s' "$pass"
+      return 0
+    fi
+  done
+
+  _enc_try_log "$kind_label"
+  rm -rf "$out_dir"
+  return 1
 }
 
 _enc_hash_rainbow_lookup() {
@@ -286,14 +682,38 @@ PY
 }
 
 _enc_hash_crack_pass() {
-  local hash_val="$1" wordlist="${2:-${RECON_PASSLIST:-}}"
-  local show pass
+  local hash_val="$1" wordlist="${2:-${RECON_PASSLIST:-}}" kind="${3:-}" tier="${4:-full}"
+  local show pass log_kind="${kind:-$(_enc_hash_fmt_kind "$hash_val")}"
 
-  [[ -n "$wordlist" && -f "$wordlist" ]] || return 1
-  whence hash-crack >/dev/null 2>&1 || return 1
+  if [[ -z "$wordlist" || ! -f "$wordlist" ]]; then
+    _enc_try_log "${log_kind:-md5}"
+    return 1
+  fi
 
-  echo "[*] hash-crack (${wordlist:t}) ..." >&2
-  show="$(hash-crack "$hash_val" "$wordlist" 2>&1)" || true
+  case "$kind" in
+    md4)
+      _enc_john_raw_crack "$hash_val" "$wordlist" Raw-MD4 "$tier" md4
+      return $?
+      ;;
+    sha1)
+      _enc_john_raw_crack "$hash_val" "$wordlist" Raw-SHA1 "$tier" sha1
+      return $?
+      ;;
+    sha256)
+      _enc_john_raw_crack "$hash_val" "$wordlist" Raw-SHA256 "$tier" sha256
+      return $?
+      ;;
+  esac
+
+  [[ "$tier" == heavy ]] || return 1
+
+  whence hash-crack >/dev/null 2>&1 || {
+    _enc_try_log "${log_kind:-md5}"
+    return 1
+  }
+  _enc_ui_trying "${log_kind:-md5}"
+  _enc_ui_status "hash-crack $(_enc_wl_short "$wordlist")"
+  show="$(hash-crack "$hash_val" "$wordlist" 2>/dev/null)" || true
   pass="$(
     SHOW="$show" python3 <<'PY'
 import os, re, sys
@@ -322,36 +742,180 @@ for line in text.splitlines():
         sys.exit(0)
 sys.exit(1)
 PY
-  )" || return 1
-  [[ -n "$pass" ]] || return 1
+  )" || {
+    _enc_try_log "${log_kind:-md5}"
+    return 1
+  }
+  [[ -n "$pass" ]] || {
+    _enc_try_log "${log_kind:-md5}"
+    return 1
+  }
+  _enc_try_log "${log_kind:-md5}" "$pass"
   printf '%s' "$pass"
+}
+
+_enc_hash_crack_tier() {
+  local hash_val="$1" wordlist="$2" kind="$3" tier="$4"
+  local pass wl="${wordlist:-$RECON_PASSLIST}"
+
+  case "$kind" in
+    md4)
+      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md4 "$tier")" && {
+        _ENC_HASH_REVERSE_KIND=md4
+        _ENC_HASH_REVERSE_OUT="$pass"
+        return 0
+      }
+      ;;
+    sha1)
+      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha1 "$tier")" && {
+        _ENC_HASH_REVERSE_KIND=sha1
+        _ENC_HASH_REVERSE_OUT="$pass"
+        return 0
+      }
+      if [[ "$tier" == heavy ]]; then
+        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha1 heavy)" && {
+          _ENC_HASH_REVERSE_KIND=sha1
+          _ENC_HASH_REVERSE_OUT="$pass"
+          return 0
+        }
+      fi
+      ;;
+    hash64)
+      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha256 "$tier")" && {
+        _ENC_HASH_REVERSE_KIND=sha256
+        _ENC_HASH_REVERSE_OUT="$pass"
+        return 0
+      }
+      if [[ "$tier" == heavy ]]; then
+        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha256 heavy)" && {
+          _ENC_HASH_REVERSE_KIND=sha256
+          _ENC_HASH_REVERSE_OUT="$pass"
+          return 0
+        }
+      fi
+      ;;
+    md5)
+      if [[ "$tier" == heavy ]]; then
+        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md5 heavy)" && {
+          _ENC_HASH_REVERSE_KIND=md5
+          _ENC_HASH_REVERSE_OUT="$pass"
+          return 0
+        }
+      fi
+      ;;
+    hash32)
+      if [[ "$tier" == heavy ]]; then
+        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md4 heavy)" && {
+          _ENC_HASH_REVERSE_KIND=md4
+          _ENC_HASH_REVERSE_OUT="$pass"
+          return 0
+        }
+        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md5 heavy)" && {
+          _ENC_HASH_REVERSE_KIND=md5
+          _ENC_HASH_REVERSE_OUT="$pass"
+          return 0
+        }
+      fi
+      ;;
+  esac
+  return 1
+}
+
+_enc_heavy_steps_label() {
+  local hash_val="$1" kind="${2:-}" fmt
+  if [[ -z "$kind" ]]; then
+    if [[ "$hash_val" == *'$'* ]]; then
+      _enc_try_label "$(_enc_hash_fmt_kind "$hash_val")"
+      return 0
+    fi
+    kind="$(_enc_hash_kind "$hash_val")"
+  fi
+  case "$kind" in
+    hash32) print -r -- 'MD4, MD5' ;;
+    md4) print -r -- MD4 ;;
+    md5) print -r -- MD5 ;;
+    sha1) print -r -- SHA-1 ;;
+    hash64|sha256) print -r -- SHA-256 ;;
+    *)
+      fmt="$(_enc_hash_fmt_kind "$hash_val")"
+      [[ -n "$fmt" ]] && _enc_try_label "$fmt"
+      ;;
+  esac
+}
+
+_enc_confirm_heavy_hash() {
+  local hash_val="$1" wordlist="$2"
+  local wl_t="${wordlist:-${RECON_PASSLIST:-}}" steps
+  wl_t="${wl_t:t}"
+
+  if [[ ! -t 0 || ! -t 2 ]]; then
+    return 1
+  fi
+
+  steps="$(_enc_heavy_steps_label "$hash_val")"
+  if _enc_ui_active; then
+    _enc_ui_status_inline "heavy crack? $steps ($wl_t ~20s) [y/N] "
+    read -r "ans" </dev/tty
+    print '' >&2
+    _enc_ui_after_prompt
+  else
+    printf '? %s (%s ~20s) [y/N] ' "$steps" "$wl_t" >&2
+    read -r "ans? " </dev/tty
+    printf '\e[1A\e[2K' >&2
+  fi
+  [[ "$ans" == [yY] || "$ans" == [yY][eE][sS] ]]
 }
 
 _enc_hash_reverse() {
   local hash_val="${1//[$' \t\r\n']/}" wordlist="$2" offline="${3:-0}" no_crack="${4:-0}"
-  local pass kind wl
+  local forced_kind="${5:-}" phase="${6:-full}"
+  local pass kind
 
-  kind="$(_enc_hash_kind "$hash_val")"
+  typeset -g _ENC_HASH_REVERSE_KIND=""
+  typeset -g _ENC_HASH_REVERSE_OUT=""
 
-  pass="$(_enc_hash_rainbow_lookup "$hash_val")" && {
-    printf '%s' "$pass"
-    return 0
-  }
+  if [[ -n "$forced_kind" ]]; then
+    kind="$forced_kind"
+  else
+    kind="$(_enc_hash_kind "$hash_val")"
+  fi
+  [[ -n "$kind" ]] || return 1
 
-  if [[ "$offline" -eq 0 && "$kind" == md5 ]]; then
-    echo "[*] online md5 lookup..." >&2
-    pass="$(_enc_hash_online_lookup "$hash_val" md5)" && {
-      printf '%s' "$pass"
+  if [[ "$phase" == full || "$phase" == quick ]]; then
+    local md5_found=""
+    if [[ "$kind" == md5 || "$kind" == hash32 ]]; then
+      _enc_ui_trying md5
+      _enc_ui_status "rainbow table"
+      pass="$(_enc_hash_rainbow_lookup "$hash_val")"
+      if [[ -z "$pass" && "$offline" -eq 0 && ( "$kind" == md5 || -z "$forced_kind" ) ]]; then
+        _enc_ui_status "online lookup"
+        pass="$(_enc_hash_online_lookup "$hash_val" md5)"
+      fi
+      if [[ -n "$pass" ]]; then
+        _enc_try_log md5 "$pass"
+        _ENC_HASH_REVERSE_KIND=md5
+        _ENC_HASH_REVERSE_OUT="$pass"
+        [[ "$kind" != hash32 ]] && return 0
+        md5_found="$pass"
+      else
+        _enc_try_log md5
+      fi
+    fi
+
+    if [[ "$no_crack" -eq 0 ]]; then
+      if [[ "$kind" == hash32 ]]; then
+        _enc_hash_crack_tier "$hash_val" "$wordlist" hash32 quick && return 0
+        [[ -n "$md5_found" ]] && return 0
+      else
+        _enc_hash_crack_tier "$hash_val" "$wordlist" "$kind" quick && return 0
+      fi
+    elif [[ -n "$md5_found" ]]; then
       return 0
-    }
+    fi
   fi
 
-  if [[ "$no_crack" -eq 0 ]]; then
-    wl="${wordlist:-$RECON_PASSLIST}"
-    pass="$(_enc_hash_crack_pass "$hash_val" "$wl")" && {
-      printf '%s' "$pass"
-      return 0
-    }
+  if [[ "$phase" == full || "$phase" == heavy ]] && [[ "$no_crack" -eq 0 ]]; then
+    _enc_hash_crack_tier "$hash_val" "$wordlist" "$kind" heavy && return 0
   fi
 
   return 1
@@ -360,6 +924,9 @@ _enc_hash_reverse() {
 _enc_hash_encode() {
   local kind="$1" raw="$2"
   case "$kind" in
+    md4)
+      _enc_md4_hex "$raw"
+      ;;
     md5)
       printf '%s' "$raw" | md5sum | awk '{print $1}'
       ;;
@@ -438,16 +1005,47 @@ print(t, end="")
 PY
 }
 
-_bin_try_decode() {
+_enc_bin_bits() {
   local data="$1"
   DATA="$data" python3 <<'PY'
+import os, re, sys
+
+s = os.environ["DATA"].strip()
+if not s:
+    sys.exit(1)
+
+if re.fullmatch(r"[01]+", s):
+    bits = s
+elif re.fullmatch(r"[01 \r\n]+", s):
+    groups = [g for g in re.split(r"\s+", s) if g]
+    if not groups or not all(re.fullmatch(r"[01]+", g) and len(g) % 8 == 0 for g in groups):
+        sys.exit(1)
+    bits = "".join(groups)
+else:
+    sys.exit(1)
+
+if not bits or len(bits) % 8:
+    sys.exit(1)
+print(bits, end="")
+PY
+}
+
+_enc_bin_p() {
+  local data="$1"
+  _enc_bin_bits "$data" >/dev/null 2>&1
+}
+
+_bin_try_decode() {
+  local data="$1" bits
+  bits="$(_enc_bin_bits "$data")" || return 1
+  DATA="$bits" python3 <<'PY'
 import os, sys
 
-s = os.environ["DATA"]
-if not s or not all(c in "01" for c in s) or len(s) % 8:
+bits = os.environ["DATA"]
+if not bits or len(bits) % 8:
     sys.exit(1)
 try:
-    b = int(s, 2).to_bytes(len(s) // 8, "big")
+    b = int(bits, 2).to_bytes(len(bits) // 8, "big")
     t = b.decode("utf-8")
 except (ValueError, UnicodeDecodeError):
     sys.exit(1)
@@ -489,6 +1087,199 @@ else:
 PY
 }
 
+_enc_morse_p() {
+  local data="$1"
+  [[ "$data" == *[.-]* ]] || return 1
+  DATA="$data" python3 -c 'import os,re,sys; s=os.environ["DATA"]; sys.exit(0 if s and re.fullmatch(r"[./ \r\n-]+",s) and re.search(r"[.-]",s) else 1)'
+}
+
+_enc_morse_try_decode() {
+  local data="$1"
+  DATA="$data" python3 <<'PY'
+import os, re, sys
+
+s = os.environ["DATA"].strip()
+if not s or not re.fullmatch(r"[./ \r\n-]+", s) or not re.search(r"[.-]", s):
+    sys.exit(1)
+
+morse = {
+    ".-": "A", "-...": "B", "-.-.": "C", "-..": "D", ".": "E", "..-.": "F",
+    "--.": "G", "....": "H", "..": "I", ".---": "J", "-.-": "K", ".-..": "L",
+    "--": "M", "-.": "N", "---": "O", ".--.": "P", "--.-": "Q", ".-.": "R",
+    "...": "S", "-": "T", "..-": "U", "...-": "V", ".--": "W", "-..-": "X",
+    "-.--": "Y", "--..": "Z",
+    "-----": "0", ".----": "1", "..---": "2", "...--": "3", "....-": "4",
+    ".....": "5", "-....": "6", "--...": "7", "---..": "8", "----.": "9",
+    ".-.-.-": ".", "--..--": ",", "..--..": "?", ".----.": "'", "-.-.--": "!",
+    "-..-.": "/", "-.--.": "(", "-.--.-": ")", ".-...": "&", "---...": ":",
+    "-.-.-.": ";", "-...-": "=", ".-.-.": "+", "-....-": "-", "..--.-": "_",
+    ".-..-.": '"', "...-..-": "$", ".--.-.": "@", "...---...": "SOS",
+}
+
+_WORD_FILES = (
+    "/usr/share/seclists/Miscellaneous/lang-english.txt",
+    "/usr/share/dict/words",
+    "/usr/share/dict/american-english",
+    "/usr/share/dict/british-english",
+)
+_word_dict = None
+
+
+def _word_dict_load():
+    global _word_dict
+    if _word_dict is not None:
+        return _word_dict
+    words = set()
+    for path in _WORD_FILES:
+        try:
+            with open(path) as f:
+                for line in f:
+                    w = line.strip().lower()
+                    if len(w) >= 3 and w.isalpha():
+                        words.add(w)
+        except OSError:
+            continue
+        if words:
+            break
+    _word_dict = words
+    return words
+
+
+def _segment_alpha(text):
+    words = _word_dict_load()
+    if not words:
+        return text
+    lower = text.lower()
+    n = len(text)
+    dp = [None] * (n + 1)
+    dp[0] = []
+    for i in range(1, n + 1):
+        for j in range(max(0, i - 24), i):
+            w = lower[j:i]
+            if len(w) < 3 or dp[j] is None or w not in words:
+                continue
+            cand = dp[j] + [text[j:i]]
+            if dp[i] is None or len(cand) < len(dp[i]):
+                dp[i] = cand
+    if dp[n] and len(dp[n]) > 1:
+        return " ".join(dp[n])
+    return text
+
+
+MORSE_CODES = sorted(morse.keys(), key=len, reverse=True)
+BINARY = {"-----", ".----"}
+
+
+def tokenize_binary_dp(seg):
+    memo = {}
+
+    def go(i):
+        if i == len(seg):
+            return []
+        if i in memo:
+            return memo[i]
+        for code in (".----", "-----"):
+            if seg.startswith(code, i):
+                rest = go(i + 5)
+                if rest is not None:
+                    memo[i] = [code] + rest
+                    return memo[i]
+        memo[i] = None
+        return None
+
+    return go(0)
+
+
+def split_binary_segment(seg):
+    if seg in BINARY:
+        return [seg]
+    if not re.fullmatch(r"[.-]+", seg):
+        return None
+    if len(seg) % 5 == 0:
+        parts = [seg[i : i + 5] for i in range(0, len(seg), 5)]
+        if all(p in BINARY for p in parts):
+            return parts
+    toks = tokenize_binary_dp(seg)
+    if toks is not None:
+        return toks
+    if re.fullmatch(r"-{6,}", seg) and len(seg) % 5 == 0:
+        return ["-----"] * (len(seg) // 5)
+    return None
+
+
+def tokenize_greedy(seg):
+    tokens = []
+    i = 0
+    while i < len(seg):
+        matched = False
+        for code in MORSE_CODES:
+            if seg.startswith(code, i):
+                tokens.append(code)
+                i += len(code)
+                matched = True
+                break
+        if not matched:
+            return None
+    return tokens
+
+
+def expand_tokens(chunk):
+    tokens = []
+    for seg in re.split(r" +", chunk.strip()):
+        if not seg:
+            continue
+        if seg in morse:
+            tokens.append(seg)
+        elif re.fullmatch(r"[.-]+", seg):
+            toks = split_binary_segment(seg)
+            if toks is None:
+                toks = tokenize_greedy(seg)
+            if toks is None:
+                return None
+            tokens.extend(toks)
+        else:
+            return None
+    return tokens
+
+
+explicit_sep = bool(re.search(r"(?:/|[\r\n]+| {3,})", s))
+chunks = [w.strip() for w in re.split(r"(?:/|[\r\n]+| {3,})", s) if w.strip()]
+if not chunks:
+    sys.exit(1)
+
+all_tokens = []
+for chunk in chunks:
+    toks = expand_tokens(chunk)
+    if not toks:
+        sys.exit(1)
+    all_tokens.extend(toks)
+
+if all(t in BINARY for t in all_tokens):
+    bits = "".join(morse[t] for t in all_tokens)
+    groups = [bits[i : i + 8] for i in range(0, len(bits) - len(bits) % 8, 8)]
+    if not groups:
+        sys.exit(1)
+    print(" ".join(groups), end="")
+    sys.exit(0)
+
+out_words = []
+for chunk in chunks:
+    toks = expand_tokens(chunk)
+    letters = []
+    for tok in toks:
+        ch = morse.get(tok)
+        if not ch:
+            sys.exit(1)
+        letters.append(ch)
+    text = "".join(letters)
+    if not explicit_sep and len(text) >= 8 and text.isalpha():
+        text = _segment_alpha(text)
+    out_words.append(text)
+
+print(" ".join(out_words), end="")
+PY
+}
+
 _enc_rot_flag_hits() {
   local data="$1"
   DATA="$data" python3 <<'PY'
@@ -514,7 +1305,17 @@ PY
 }
 
 _enc_smart_decode() {
-  local data="$1" offline="${2:-0}" wordlist="$3" no_crack="${4:-0}"
+  local rc=0
+  if _enc_ui_setup; then
+    _enc_ui_plan "$1" "${2:-0}" "$3" "${4:-0}"
+  fi
+  _enc_smart_decode_core "$@" || rc=$?
+  _enc_ui_teardown
+  return $rc
+}
+
+_enc_smart_decode_core() {
+  local data="$1" offline="${2:-0}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}"
   local out kind found=0 tail
   typeset -A seen
 
@@ -526,7 +1327,7 @@ _enc_smart_decode() {
   fi
 
   _enc_hit() {
-    local tag="$1" val="$2"
+    local tag="$1" val="$2" log_try="${3:-1}"
     [[ -n "$val" && -z "${seen[$val]:-}" ]] || return 1
     case "$tag" in
       b64|b32|b58|b62|b10|hex|bin)
@@ -534,84 +1335,165 @@ _enc_smart_decode() {
         ;;
     esac
     seen[$val]=1
-    _enc_print_hit "$tag" "$val"
+    (( log_try )) && _enc_try_log "$tag" "$val"
+    if [[ ! -t 1 ]]; then
+      print -r -- "$val"
+    fi
     found=1
   }
+
+  if _enc_bin_p "$data"; then
+    if out="$(_bin_try_decode "$data")"; then
+      _enc_hit bin "$out"
+    else
+      _enc_try_log bin
+    fi
+    (( found )) && return 0
+    echo "enc: no match" >&2
+    return 1
+  fi
 
   kind="$(_enc_hash_kind "$data")"
   if [[ -n "$kind" ]]; then
     if out="$(_enc_hash_pot_lookup "$data")"; then
-      _enc_hit "${kind}(pot)" "$out"
+      _enc_hit "$(_enc_hash_log_kind "$kind")" "$out"
+      return 0
     fi
-    if out="$(_enc_hash_reverse "$data" "$wordlist" "$offline" "$no_crack")"; then
-      _enc_hit "$kind" "$out"
+    if _enc_hash_reverse "$data" "$wordlist" "$offline" "$no_crack" "" quick; then
+      _enc_hit "${_ENC_HASH_REVERSE_KIND:-$(_enc_hash_log_kind "$kind")}" "$_ENC_HASH_REVERSE_OUT" 0
+    fi
+    if (( ! found )) && [[ "$no_crack" -eq 0 ]]; then
+      if (( assume_yes )) || _enc_confirm_heavy_hash "$data" "$wordlist"; then
+        if _enc_hash_reverse "$data" "$wordlist" "$offline" 0 "" heavy; then
+          _enc_hit "${_ENC_HASH_REVERSE_KIND:-$(_enc_hash_log_kind "$kind")}" "$_ENC_HASH_REVERSE_OUT" 0
+        fi
+      fi
     fi
     (( found )) && return 0
-    echo "enc: $kind hash unresolved (try: enc -d -w other-wordlist)" >&2
-    return 1
-  fi
-
-  if [[ "$data" =~ '^[01]+$' ]]; then
-    if out="$(_bin_try_decode "$data")"; then
-      _enc_hit bin "$out"
-    fi
-    (( found )) && return 0
-    echo "enc: no decode matched (bin)" >&2
+    echo "enc: no match" >&2
     return 1
   fi
 
   if [[ "$data" =~ '^[0-9]+$' ]]; then
     if out="$(_b10_try_decode "$data")"; then
       _enc_hit b10 "$out"
+    else
+      _enc_try_log b10
     fi
     (( found )) && return 0
-    echo "enc: no decode matched" >&2
+    echo "enc: no match" >&2
+    return 1
+  fi
+
+  if _enc_ascii_dec_p "$data"; then
+    if out="$(_enc_ascii_dec_try_decode "$data")"; then
+      _enc_hit ascii "$out"
+    else
+      _enc_try_log ascii
+    fi
+    (( found )) && return 0
+    echo "enc: no match" >&2
+    return 1
+  fi
+
+  if _enc_morse_p "$data"; then
+    if out="$(_enc_morse_try_decode "$data")"; then
+      _enc_hit morse "$out"
+    else
+      _enc_try_log morse
+    fi
+    (( found )) && return 0
+    echo "enc: no match" >&2
     return 1
   fi
 
   if [[ "$data" =~ '^[0-9a-fA-F]+$' ]] && (( ${#data} % 2 == 0 )); then
     if out="$(_hex_try_decode "$data")"; then
       _enc_hit hex "$out"
+    else
+      _enc_try_log hex
     fi
   fi
 
   if out="$(_b10_try_decode "$data")"; then
     _enc_hit b10 "$out"
+  else
+    _enc_try_log b10
   fi
   if out="$(_b64_try_decode "$data")"; then
     _enc_hit b64 "$out"
+  else
+    _enc_try_log b64
   fi
   if out="$(_b32_try_decode "$data")"; then
     _enc_hit b32 "$out"
+  else
+    _enc_try_log b32
   fi
   if out="$(_b58_try_decode "$data")"; then
     _enc_hit b58 "$out"
+  else
+    _enc_try_log b58
   fi
   if out="$(_b62_try_decode "$data")"; then
     _enc_hit b62 "$out"
+  else
+    _enc_try_log b62
   fi
 
+  local rot_hits=0
   while IFS= read -r out; do
     [[ -n "$out" ]] || continue
     local tag="${out%% *}" rest="${out#* }"
     _enc_hit "$tag" "$rest"
+    rot_hits=1
   done < <(_enc_rot_flag_hits "$data")
+  (( rot_hits )) || _enc_try_log rot
 
   (( found )) && return 0
 
   if [[ "$no_crack" -eq 0 && "$data" == *'$'* ]]; then
-    if out="$(_enc_hash_crack_pass "$data" "${wordlist:-$RECON_PASSLIST}")"; then
-      _enc_hit crack "$out"
-      return 0
+    if (( assume_yes )) || _enc_confirm_heavy_hash "$data" "${wordlist:-$RECON_PASSLIST}"; then
+      if out="$(_enc_hash_crack_pass "$data" "${wordlist:-$RECON_PASSLIST}" "" heavy)"; then
+        _enc_hit "${_enc_hash_fmt_kind "$data")}" "$out" 0
+        return 0
+      fi
+    else
+      _enc_try_log "$(_enc_hash_fmt_kind "$data")"
     fi
   fi
 
-  echo "enc: no hits (try: rot -a ${(q)data})" >&2
+  echo "enc: no match" >&2
   return 1
 }
 
 _enc_try_all_decode() {
   _enc_smart_decode "$@"
+}
+
+_enc_hash_decode() {
+  local data="$1" offline="$2" wordlist="$3" no_crack="$4" assume_yes="$5" type="$6"
+  if [[ -z "$type" ]]; then
+    _enc_smart_decode "$data" "$offline" "$wordlist" "$no_crack" "$assume_yes"
+    return $?
+  fi
+  local rc=0
+  if _enc_ui_setup; then
+    _enc_ui_init "$type"
+  fi
+  _enc_hash_valid_hex "$data" "$type" || {
+    _enc_ui_teardown
+    echo "enc: input is not a valid $type hex hash" >&2
+    return 1
+  }
+  if _enc_hash_reverse "$data" "$wordlist" "$offline" "$no_crack" "$type" full; then
+    print -r -- "$_ENC_HASH_REVERSE_OUT"
+  else
+    echo "enc: $type hash unresolved (try: enc -d -y -w other-wordlist)" >&2
+    rc=1
+  fi
+  _enc_ui_teardown
+  return $rc
 }
 
 _enc_try_all_encode() {
@@ -659,27 +1541,30 @@ _enc_try_all_encode() {
 #        enc -t b58 -e <string>
 #        enc -t b64 -d -f <file>
 enc() {
-  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0
+  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0 assume_yes=0
   local -a positional=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
         echo "usage: enc -d|-e [input]          smart decode / encode"
-        echo "       enc -t b64|b32|b58|b62|b10|bin|md5|sha1|sha256 -d|-e [input]"
+        echo "       enc -t b64|b32|b58|b62|b10|bin|md4|md5|sha1|sha256 -d|-e [input]"
         echo "       enc -d -f <file>  |  ... | enc -d"
         echo ""
-        echo "enc -d (no -t): auto-try hash / b64 / b32 / b58 / b62 / b10 / hex / bin / rot"
+        echo "enc -d (no -t): quick decode first; heavy hash steps ask [y/N]"
+        echo "  quick: rainbow / online md5 / john wordlist (no rules)"
+        echo "  heavy: john --rules=Single + hash-crack (~20s on rockyou)"
         echo "  >> prefix = flag-like (THM{ HTB{ flag{ ...)"
         echo ""
         echo "options:"
         echo "  -d        decode"
         echo "  -e        encode"
-        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md5 sha1 sha256)"
+        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md4 md5 sha1 sha256)"
         echo "  -f FILE   read input from file"
         echo "  -w FILE   wordlist for hash-crack (default: \$RECON_PASSLIST)"
+        echo "  -y, --yes run heavy hash steps without prompt"
         echo "  --offline skip online md5 lookup"
-        echo "  --no-crack skip hash-crack fallback"
+        echo "  --no-crack skip john / hash-crack entirely"
         echo ""
         echo "examples:"
         echo "  enc -d QXJlYTUx"
@@ -709,6 +1594,10 @@ enc() {
         ;;
       --no-crack)
         no_crack=1
+        shift
+        ;;
+      -y|--yes)
+        assume_yes=1
         shift
         ;;
       --)
@@ -747,25 +1636,30 @@ enc() {
       b62|base62) type=b62 ;;
       b10|base10|decimal) type=b10 ;;
       bin|binary) type=bin ;;
-      md5|sha1|sha256) ;;
+      md4|md5|sha1|sha256) ;;
       *)
-        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, md5, sha1, or sha256)" >&2
+        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, md4, md5, sha1, or sha256)" >&2
         return 1
         ;;
     esac
   fi
 
   if [[ "$mode" == de ]]; then
+    if [[ -z "$type" ]]; then
+      data="$(_enc_read 0 "$file" "${positional[@]}")" || {
+        echo "enc: no input (arg, -f, or stdin)" >&2
+        return 1
+      }
+      [[ -n "$data" ]] || { echo "enc: empty input" >&2; return 1; }
+      _enc_smart_decode "$data" "$offline" "$wordlist" "$no_crack" "$assume_yes"
+      return $?
+    fi
+
     data="$(_enc_read 1 "$file" "${positional[@]}")" || {
       echo "enc: no input (arg, -f, or stdin)" >&2
       return 1
     }
     [[ -n "$data" ]] || { echo "enc: empty input" >&2; return 1; }
-
-    if [[ -z "$type" ]]; then
-      _enc_smart_decode "$data" "$offline" "$wordlist" "$no_crack"
-      return $?
-    fi
 
     case "$type" in
       b64) _b64_decode_bytes "$data" && print ;;
@@ -774,18 +1668,8 @@ enc() {
       b62) _b62_decode_bytes "$data" && print ;;
       b10) _b10_decode_bytes "$data" && print ;;
       bin) _bin_decode_bytes "$data" && print ;;
-      md5|sha1|sha256)
-        local kind="$(_enc_hash_kind "$data")"
-        [[ "$kind" == "$type" ]] || {
-          echo "enc: input is not a valid $type hex hash" >&2
-          return 1
-        }
-        if out="$(_enc_hash_reverse "$data" "$wordlist" "$offline" "$no_crack")"; then
-          print -r -- "$out"
-        else
-          echo "enc: $type hash unresolved (try: enc -d -w other-wordlist)" >&2
-          return 1
-        fi
+      md4|md5|sha1|sha256)
+        _enc_hash_decode "$data" "$offline" "$wordlist" "$no_crack" 1 "$type"
         ;;
     esac
     return $?
@@ -832,31 +1716,140 @@ enc() {
     bin)
       _bin_encode_bytes "$raw"
       ;;
-    md5|sha1|sha256)
+    md4|md5|sha1|sha256)
       _enc_hash_encode "$type" "$raw"
       ;;
   esac
 }
 
-# Caesar / ROT: print all shifts.
-# usage: rot -a <string>
-#        rot -a -f <file>
+_rot_parse_range() {
+  local spec="$1" max="$2"
+  local start end
+  if [[ -z "$spec" ]]; then
+    print -r -- 0 "$max"
+    return 0
+  fi
+  if [[ "$spec" == *-* ]]; then
+    start="${spec%%-*}"
+    end="${spec#*-}"
+  else
+    start="$spec"
+    end="$spec"
+  fi
+  if [[ ! "$start" =~ '^[0-9]+$' || ! "$end" =~ '^[0-9]+$' ]]; then
+    echo "rot: -n needs 0-${max}, N, or START-END" >&2
+    return 1
+  fi
+  if (( start < 0 || end > max || start > end )); then
+    echo "rot: shift range must be within 0-${max}" >&2
+    return 1
+  fi
+  print -r -- "$start" "$end"
+}
+
+_rot_caesar_shift() {
+  local data="$1" start="$2" end="$3"
+  START="$start" END="$end" DATA="$data" python3 <<'PY'
+import os
+
+s = os.environ["DATA"]
+start = int(os.environ["START"])
+end = int(os.environ["END"])
+single = start == end
+for n in range(start, end + 1):
+    out = []
+    for c in s:
+        if "a" <= c <= "z":
+            out.append(chr((ord(c) - 97 + n) % 26 + 97))
+        elif "A" <= c <= "Z":
+            out.append(chr((ord(c) - 65 + n) % 26 + 65))
+        else:
+            out.append(c)
+    text = "".join(out)
+    if single:
+        print(text)
+    else:
+        print("{:2d} {}".format(n, text))
+PY
+}
+
+_rot_printable_shift_all() {
+  local data="$1" start="$2" end="$3"
+  START="$start" END="$end" DATA="$data" python3 <<'PY'
+import os
+
+s = os.environ["DATA"]
+start = int(os.environ["START"])
+end = int(os.environ["END"])
+single = start == end
+for n in range(start, end + 1):
+    out = []
+    for c in s:
+        o = ord(c)
+        if 33 <= o <= 126:
+            out.append(chr(33 + ((o - 33 + n) % 94)))
+        else:
+            out.append(c)
+    text = "".join(out)
+    if single:
+        print(text)
+    else:
+        print("{:2d} {}".format(n, text))
+PY
+}
+
+_rot_cipher_mode() {
+  local spec="$1"
+  local start end
+  if [[ -z "$spec" ]]; then
+    print -r -- caesar
+    return 0
+  fi
+  if [[ "$spec" == *-* ]]; then
+    start="${spec%%-*}"
+    end="${spec#*-}"
+  else
+    start="$spec"
+    end="$spec"
+  fi
+  if [[ ! "$start" =~ '^[0-9]+$' || ! "$end" =~ '^[0-9]+$' ]]; then
+    echo "rot: -n needs N or START-END" >&2
+    return 1
+  fi
+  if (( start > 25 || end > 25 )); then
+    print -r -- printable
+  else
+    print -r -- caesar
+  fi
+}
+
+# rot -a: Caesar 0-25 (A-Za-z). -n >25 switches to printable ASCII (ROT47 etc.)
 rot() {
-  local mode="" file="" data=""
-  local -a positional=()
+  local mode="" file="" data="" rot_range="" cipher=caesar
+  local rot_start=0 rot_end=25 rot_max=25
+  local -a positional=() range
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: rot -a <string>"
-        echo "       rot -a -f <file>"
-        echo "       ... | rot -a"
-        echo "  Caesar cipher: print all 26 shifts (find THM{ / flag prefix)"
+        echo "usage: rot -a <string>              # Caesar: shifts 0-25"
+        echo "       rot -a -n 13 <string>          # Caesar: ROT13"
+        echo "       rot -a -n 47 <string>          # ROT47 (printable !..~, shift 47)"
+        echo "       rot -a -n 0-93 <string>        # printable: all shifts"
+        echo "       rot -a -f <file>  |  ... | rot -a"
         echo ""
-        echo "alias: rotall"
+        echo "  -n 0-25     Caesar (A-Za-z only)"
+        echo "  -n 26-93    printable ASCII !..~ (ROT47 = -n 47)"
+        echo "  default -a  Caesar 0-25"
+        echo ""
+        echo "alias: rotall (= rot -a)"
         return 0
         ;;
       -a) mode=all; shift ;;
+      -n)
+        rot_range="$2"
+        shift 2
+        ;;
       -f)
         file="$2"
         shift 2
@@ -883,26 +1876,30 @@ rot() {
     return 1
   }
 
-  data="$(_enc_read 1 "$file" "${positional[@]}")" || {
+  cipher="$(_rot_cipher_mode "$rot_range")" || return 1
+  if [[ "$cipher" == printable ]]; then
+    rot_max=93
+    rot_start=0
+    rot_end=93
+  fi
+
+  if [[ -n "$rot_range" ]]; then
+    range=($(_rot_parse_range "$rot_range" "$rot_max")) || return 1
+    rot_start="${range[1]}"
+    rot_end="${range[2]}"
+  fi
+
+  data="$(_enc_read 0 "$file" "${positional[@]}")" || {
     echo "rot: no input (arg, -f, or stdin)" >&2
     return 1
   }
   [[ -n "$data" ]] || { echo "rot: empty input" >&2; return 1; }
 
-  python3 -c '
-import sys
-s = sys.argv[1]
-for n in range(26):
-    out = []
-    for c in s:
-        if "a" <= c <= "z":
-            out.append(chr((ord(c) - 97 + n) % 26 + 97))
-        elif "A" <= c <= "Z":
-            out.append(chr((ord(c) - 65 + n) % 26 + 65))
-        else:
-            out.append(c)
-    print("{:2d} {}".format(n, "".join(out)))
-' "$data"
+  if [[ "$cipher" == printable ]]; then
+    _rot_printable_shift_all "$data" "$rot_start" "$rot_end"
+  else
+    _rot_caesar_shift "$data" "$rot_start" "$rot_end"
+  fi
 }
 
 # Vigenere cipher: decrypt / encrypt / brute-force / key recovery.
@@ -1125,7 +2122,7 @@ if period < len(recovered):
 dec() {
   [[ "${1:-}" == -h || "${1:-}" == --help ]] && { enc -h; return; }
   if (( $# )); then
-    enc -d -- "$@"
+    enc -d "$@"
   else
     enc -d
   fi
