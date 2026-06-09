@@ -15,8 +15,12 @@ HYDRA_POP3_FOUND = re.compile(
     r"\[\d+\]\[pop3\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
-HYDRA_HTTP_FOUND = re.compile(
+HYDRA_HTTP_FORM_FOUND = re.compile(
     r"\[\d+\]\[(?:https?-(?:post|get)-form)\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
+HYDRA_HTTP_BASIC_FOUND = re.compile(
+    r"\[\d+\]\[https?-get\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
 
@@ -67,8 +71,13 @@ def import_hydra_ftp(text: str, ip: str = None, execution_id=None):
 
 
 def import_hydra_http(text: str, ip: str = None, execution_id=None):
-    """Parse hydra output for http(s)-form valid pairs."""
-    return _import_hydra_matches(text, HYDRA_HTTP_FOUND, ip=ip, execution_id=execution_id)
+    """Parse hydra output for http(s)-post/get-form valid pairs."""
+    return _import_hydra_matches(text, HYDRA_HTTP_FORM_FOUND, ip=ip, execution_id=execution_id)
+
+
+def import_hydra_http_basic(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for http(s)-get (Basic Auth) valid pairs."""
+    return _import_hydra_matches(text, HYDRA_HTTP_BASIC_FOUND, ip=ip, execution_id=execution_id)
 
 
 def import_hydra_pop3(text: str, ip: str = None, execution_id=None):
@@ -77,10 +86,16 @@ def import_hydra_pop3(text: str, ip: str = None, execution_id=None):
 
 
 def import_hydra(text: str, ip: str = None, execution_id=None):
-    """Parse hydra output for ssh, ftp, and http-form valid pairs."""
+    """Parse hydra output for ssh, ftp, http-form, and http-get (Basic) valid pairs."""
     combined = []
     seen = set()
-    for importer in (import_hydra_ssh, import_hydra_ftp, import_hydra_http, import_hydra_pop3):
+    for importer in (
+        import_hydra_ssh,
+        import_hydra_ftp,
+        import_hydra_http,
+        import_hydra_http_basic,
+        import_hydra_pop3,
+    ):
         for row in importer(text, ip=ip, execution_id=execution_id):
             key = (row["ip"], row["username"], row["password"])
             if key not in seen:

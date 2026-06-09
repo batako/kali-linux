@@ -356,6 +356,7 @@ hint-rm 3         # id=3 を削除
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
 | `hydraweb ...` | http-post-form 用（`hydraweb -h` 参照） |
+| `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
 
 `ssh` の自動ログインは **anonymous を除外**（FTP 用の anonymous は `ftpa` で保存）。
 
@@ -709,6 +710,7 @@ fixmagic -h
 ftp -h
 ftpa -h
 hydraweb   # 引数不足時に usage 表示
+hydrabasic -h
 ```
 
 ## 索引（ユーザー向けコマンド一覧）
@@ -719,7 +721,7 @@ hydraweb   # 引数不足時に usage 表示
 `target-set`（`ts`）`target-show` `target-clear` ·
 `scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·
-`creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` ·
+`creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
 `steg-extract`（`stegx`）· `recon-init` `net-scan` `net-view` `host-summary` ·

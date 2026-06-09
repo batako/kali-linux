@@ -356,6 +356,7 @@ hint-rm 3         # delete id=3
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |
 | `hydraweb ...` | for http-post-form (see `hydraweb -h`) |
+| `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
 Automatic login for `ssh` excludes **anonymous** (FTP anonymous saved by `ftpa`).
 
@@ -709,6 +710,7 @@ fixmagic -h
 ftp -h
 ftpa -h
 hydraweb   # shows usage when args are missing
+hydrabasic -h
 ```
 
 ## Index (user-facing commands)
@@ -719,7 +721,7 @@ Full names only. Alias is shown in parentheses.
 `target-set` (`ts`) `target-show` `target-clear` ·
 `scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` `host-reset` `host-view` ·
-`creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` ·
+`creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) · `recon-init` `net-scan` `net-view` `host-summary` ·
