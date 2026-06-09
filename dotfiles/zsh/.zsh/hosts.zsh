@@ -35,10 +35,11 @@ _hosts-filter-case-file() {
 _hosts-remove-managed-block() {
   local file="$1"
   [[ -f "$file" ]] || { echo "$file"; return 0; }
+  # Prefix match: BEGIN may include case label; END may be missing (legacy stacks).
   awk -v begin="$RECON_HOSTS_BEGIN" -v end="$RECON_HOSTS_END" '
-    $0 == begin { skip=1; next }
-    $0 == end { skip=0; next }
-  skip==0 { print }
+    $0 ~ "^" begin { skip=1; next }
+    $0 ~ "^" end { skip=0; next }
+    skip==0 { print }
   ' "$file"
 }
 
@@ -47,7 +48,6 @@ _recon-hosts-apply() {
   case_file="$(_hosts-case-file)" || return 0
   etc="/etc/hosts"
   tmp="$(mktemp "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
-  trap 'rm -f "$tmp"' RETURN
 
   _hosts-remove-managed-block "$etc" >"$tmp"
 
@@ -58,10 +58,17 @@ _recon-hosts-apply() {
     print -r -- "$RECON_HOSTS_END" >>"$tmp"
   fi
 
+  if cmp -s "$tmp" "$etc" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+
   if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
+    rm -f "$tmp"
     echo "[-] failed to update $etc (sudo?)" >&2
     return 1
   fi
+  rm -f "$tmp"
 
   if [[ -f "$case_file" ]] && [[ -s "$case_file" ]]; then
     echo "[+] hosts: applied $case_file"
@@ -75,12 +82,17 @@ _recon-hosts-off() {
   local etc tmp
   etc="/etc/hosts"
   tmp="$(mktemp "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
-  trap 'rm -f "$tmp"' RETURN
   _hosts-remove-managed-block "$etc" >"$tmp"
-  sudo cp "$tmp" "$etc" 2>/dev/null || {
+  if cmp -s "$tmp" "$etc" 2>/dev/null; then
+    rm -f "$tmp"
+    return 0
+  fi
+  if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
+    rm -f "$tmp"
     echo "[-] failed to update $etc" >&2
     return 1
-  }
+  fi
+  rm -f "$tmp"
   echo "[+] hosts: recon block removed from $etc"
 }
 

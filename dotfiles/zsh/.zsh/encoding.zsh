@@ -469,6 +469,17 @@ _enc_ui_finish() {
   _ENC_UI_STATUS_LINES=0
 }
 
+_enc_ui_finalize_states() {
+  local key state
+  for key in "${_ENC_UI_KEYS[@]}"; do
+    state="${_ENC_UI_STATE[$key]:-pending}"
+    case "$state" in
+      trying|pending) _ENC_UI_STATE[$key]=ng ;;
+    esac
+  done
+  _ENC_UI_STATUS_TEXT=""
+}
+
 _enc_ui_init() {
   _ENC_UI_KEYS=("$@")
   _ENC_UI_STATE=()
@@ -545,7 +556,17 @@ _enc_ui_setup() {
 
 _enc_ui_teardown() {
   if _enc_ui_active; then
-    _enc_ui_paint
+    local key state need_paint=0
+    for key in "${_ENC_UI_KEYS[@]}"; do
+      state="${_ENC_UI_STATE[$key]:-pending}"
+      case "$state" in
+        trying|pending) need_paint=1 ;;
+      esac
+    done
+    _enc_ui_finalize_states
+    if (( need_paint )); then
+      _enc_ui_paint
+    fi
     _enc_ui_finish
     _ENC_UI_INIT=0
   fi
@@ -562,9 +583,11 @@ _enc_try_log() {
       _ENC_UI_STATE[$key]="$new_state"
     else
       [[ "${_ENC_UI_STATE[$key]:-}" == ng ]] && return 0
+      [[ "${_ENC_UI_STATE[$key]:-}" == ok:* ]] && return 0
       _ENC_UI_STATE[$key]=ng
     fi
     _ENC_UI_STATUS_TEXT=""
+    _enc_ui_paint
     return 0
   fi
   local label="$(_enc_try_label "$key")"
@@ -595,6 +618,8 @@ _enc_john_raw_crack() {
   local out_dir hash_file pot_file pass session rules
   local -a rule_passes=()
 
+  typeset -g _ENC_HASH_CRACK_OUT=""
+
   if [[ -z "$wordlist" || ! -f "$wordlist" ]] || ! command -v john >/dev/null 2>&1; then
     _enc_try_log "$kind_label"
     return 1
@@ -617,7 +642,7 @@ _enc_john_raw_crack() {
   print -r -- "$hash_val" >"$hash_file"
 
   for rules in "${rule_passes[@]}"; do
-    session="enc-$$-${rules:-plain}"
+    session="enc-$$-${EPOCHSECONDS}-${RANDOM}-${kind_label}-${rules:-plain}"
     rm -f "$pot_file"
     if [[ -n "$rules" ]]; then
       john --session="$session" --format="$fmt" "$hash_file" --wordlist="$wordlist" \
@@ -627,9 +652,9 @@ _enc_john_raw_crack() {
         --pot="$pot_file" >/dev/null 2>&1 || true
     fi
     if pass="$(_enc_john_show_pass "$fmt" "$hash_file" "$pot_file")"; then
+      typeset -g _ENC_HASH_CRACK_OUT="$pass"
       _enc_try_log "$kind_label" "$pass"
       rm -rf "$out_dir"
-      printf '%s' "$pass"
       return 0
     fi
   done
@@ -684,6 +709,8 @@ PY
 _enc_hash_crack_pass() {
   local hash_val="$1" wordlist="${2:-${RECON_PASSLIST:-}}" kind="${3:-}" tier="${4:-full}"
   local show pass log_kind="${kind:-$(_enc_hash_fmt_kind "$hash_val")}"
+
+  typeset -g _ENC_HASH_CRACK_OUT=""
 
   if [[ -z "$wordlist" || ! -f "$wordlist" ]]; then
     _enc_try_log "${log_kind:-md5}"
@@ -751,7 +778,8 @@ PY
     return 1
   }
   _enc_try_log "${log_kind:-md5}" "$pass"
-  printf '%s' "$pass"
+  typeset -g _ENC_HASH_CRACK_OUT="$pass"
+  return 0
 }
 
 _enc_hash_crack_tier() {
@@ -760,61 +788,69 @@ _enc_hash_crack_tier() {
 
   case "$kind" in
     md4)
-      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md4 "$tier")" && {
+      if _enc_hash_crack_pass "$hash_val" "$wl" md4 "$tier"; then
+        pass="$_ENC_HASH_CRACK_OUT"
         _ENC_HASH_REVERSE_KIND=md4
         _ENC_HASH_REVERSE_OUT="$pass"
         return 0
-      }
+      fi
       ;;
     sha1)
-      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha1 "$tier")" && {
+      if _enc_hash_crack_pass "$hash_val" "$wl" sha1 "$tier"; then
+        pass="$_ENC_HASH_CRACK_OUT"
         _ENC_HASH_REVERSE_KIND=sha1
         _ENC_HASH_REVERSE_OUT="$pass"
         return 0
-      }
+      fi
       if [[ "$tier" == heavy ]]; then
-        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha1 heavy)" && {
+        if _enc_hash_crack_pass "$hash_val" "$wl" sha1 heavy; then
+          pass="$_ENC_HASH_CRACK_OUT"
           _ENC_HASH_REVERSE_KIND=sha1
           _ENC_HASH_REVERSE_OUT="$pass"
           return 0
-        }
+        fi
       fi
       ;;
     hash64)
-      pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha256 "$tier")" && {
+      if _enc_hash_crack_pass "$hash_val" "$wl" sha256 "$tier"; then
+        pass="$_ENC_HASH_CRACK_OUT"
         _ENC_HASH_REVERSE_KIND=sha256
         _ENC_HASH_REVERSE_OUT="$pass"
         return 0
-      }
+      fi
       if [[ "$tier" == heavy ]]; then
-        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" sha256 heavy)" && {
+        if _enc_hash_crack_pass "$hash_val" "$wl" sha256 heavy; then
+          pass="$_ENC_HASH_CRACK_OUT"
           _ENC_HASH_REVERSE_KIND=sha256
           _ENC_HASH_REVERSE_OUT="$pass"
           return 0
-        }
+        fi
       fi
       ;;
     md5)
       if [[ "$tier" == heavy ]]; then
-        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md5 heavy)" && {
+        if _enc_hash_crack_pass "$hash_val" "$wl" md5 heavy; then
+          pass="$_ENC_HASH_CRACK_OUT"
           _ENC_HASH_REVERSE_KIND=md5
           _ENC_HASH_REVERSE_OUT="$pass"
           return 0
-        }
+        fi
       fi
       ;;
     hash32)
       if [[ "$tier" == heavy ]]; then
-        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md4 heavy)" && {
+        if _enc_hash_crack_pass "$hash_val" "$wl" md4 heavy; then
+          pass="$_ENC_HASH_CRACK_OUT"
           _ENC_HASH_REVERSE_KIND=md4
           _ENC_HASH_REVERSE_OUT="$pass"
           return 0
-        }
-        pass="$(_enc_hash_crack_pass "$hash_val" "$wl" md5 heavy)" && {
+        fi
+        if _enc_hash_crack_pass "$hash_val" "$wl" md5 heavy; then
+          pass="$_ENC_HASH_CRACK_OUT"
           _ENC_HASH_REVERSE_KIND=md5
           _ENC_HASH_REVERSE_OUT="$pass"
           return 0
-        }
+        fi
       fi
       ;;
   esac
@@ -1336,9 +1372,17 @@ _enc_smart_decode_core() {
     esac
     seen[$val]=1
     (( log_try )) && _enc_try_log "$tag" "$val"
-    if [[ ! -t 1 ]]; then
-      print -r -- "$val"
-    fi
+    case "$tag" in
+      md4|md5|sha1|sha256|bcrypt|md5crypt|sha512crypt|sha256crypt|argon2)
+        # TTY + UI table already shows the password; stdout is for pipes only
+        if [[ ! -t 1 ]] || ! _enc_ui_active; then
+          print -r -- "$val"
+        fi
+        ;;
+      *)
+        [[ ! -t 1 ]] && print -r -- "$val"
+        ;;
+    esac
     found=1
   }
 
@@ -1454,8 +1498,8 @@ _enc_smart_decode_core() {
 
   if [[ "$no_crack" -eq 0 && "$data" == *'$'* ]]; then
     if (( assume_yes )) || _enc_confirm_heavy_hash "$data" "${wordlist:-$RECON_PASSLIST}"; then
-      if out="$(_enc_hash_crack_pass "$data" "${wordlist:-$RECON_PASSLIST}" "" heavy)"; then
-        _enc_hit "${_enc_hash_fmt_kind "$data")}" "$out" 0
+      if _enc_hash_crack_pass "$data" "${wordlist:-$RECON_PASSLIST}" "" heavy; then
+        _enc_hit "${_enc_hash_fmt_kind "$data")}" "$_ENC_HASH_CRACK_OUT" 0
         return 0
       fi
     else
