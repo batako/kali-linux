@@ -173,6 +173,8 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -rt` / `--report-paths [ip]` | **PATHS** tree only (DB, merged dirs hits) |
 | `scout -se` / `--search-exploits [ip]` | Run and cache searchsploit |
 | `scout -r -se [ip]` | Search first, then full report |
+| `scout -fp` / `--full-ports [ip]` | **TCP 1-65535** (`-sC -sV`) only. **Auto `-se`** after scan (after `searchsploit -u`, run `-se` manually) |
+| `scout -fp -j N` | Same with N parallel nmap workers |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir only. `-d /admin` -> `http://$IP/admin/`. **Auto-watch to completion** |
 | `scout -d -x <ext> [path]` | Extension fuzz (`-x` only uses catalog **dirs-ext** default: `common`) |
 | `scout -d -w <id>` | Catalog id (e.g. `dirbuster-small`) or absolute path |

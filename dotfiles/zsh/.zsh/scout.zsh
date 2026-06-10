@@ -69,7 +69,7 @@ scout() {
         echo "  exploit-rejects [ip]                    list rejected  (alias: erl)"
         echo ""
         echo "ports (scan only — like -d for gobuster):"
-        echo "  -fp, --full-ports              TCP 1-65535 only (no probes/dirs/exploits)"
+        echo "  -fp, --full-ports              TCP 1-65535 then searchsploit (-se)"
         echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
         echo ""
         echo "other:"
@@ -125,7 +125,7 @@ scout() {
         echo "  s -rt                         # dirs PATHS tree only"
         echo "  s -rtf                        # PATHS sitemap + download (200/301 + crawl)"
         echo "  s -rtf -n                     # planned URLs only"
-        echo "  s -fp                         # full port scan only (65535)"
+        echo "  s -fp                         # full port scan (65535) + exploit search"
         echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
         return 0
         ;;
@@ -451,7 +451,7 @@ _scout() {
     '-p[preset light|standard|wide|deep|next with -ds]:preset:(light standard wide deep next)' \
     '--preset[preset with -ds]:preset:(light standard wide deep next)' \
     '--force[rescan ports / re-dispatch dirs]' \
-    '-fp[full TCP 1-65535 scan only]' '--full-ports[full TCP 1-65535 scan only]' \
+    '-fp[full TCP 1-65535 scan + exploit search]' '--full-ports[full TCP 1-65535 scan + exploit search]' \
     '-j[parallel full scan workers with -fp]:jobs:' '--jobs[parallel full scan workers with -fp]:jobs:' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \

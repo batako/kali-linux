@@ -1654,7 +1654,7 @@ def run_scout(
 
         if skip_scan:
             return 0
-        return run_scan(
+        scan_rc = run_scan(
             ip,
             profile=PROFILE_FULL,
             force=force_scan,
@@ -1662,6 +1662,12 @@ def run_scout(
             quiet_ports=quiet_ports,
             jobs=scan_jobs,
         )
+        if scan_rc != 0:
+            return scan_rc
+
+        from scout_exploit import run_exploit_phase
+
+        return run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
 
     if dirs_only or dirs_multi:
         if not dirs_urls and not discover_web_targets(ip):

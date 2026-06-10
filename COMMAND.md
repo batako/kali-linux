@@ -173,6 +173,8 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
 | `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
 | `scout -r -se [ip]` | search してからフルレポート |
+| `scout -fp` / `--full-ports [ip]` | **TCP 1–65535**（`-sC -sV`）のみ。完了後 **自動で `-se`**（`searchsploit -u` 後は手動で `-se`） |
+| `scout -fp -j N` | 上記を N 並列 nmap で実行 |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
 | `scout -d -x <ext> [path]` | 拡張子 fuzz（`-x` のみなら catalog **dirs-ext** の default: `common`） |
 | `scout -d -w <id>` | カタログ id（例: `dirbuster-small`）または絶対 path |
