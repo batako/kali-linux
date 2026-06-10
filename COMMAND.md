@@ -460,6 +460,7 @@ ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
 | `steg-extract <image> [wordlist]` | info → 空 PW → stegcracker → 展開（alias: `stegx`） |
 | `imgrpt [-o path] [-B] <image>` | 画像メタデータ収集 → Markdown レポート（exiftool / GPS / fixmagic / steghide / binwalk / strings） |
 | `imgmap [-q] <image>` | GPS があれば Google マップ URL を出力、なければ「位置情報なし」 |
+| `imgsearch [-q] [-O] [-u url] <image>` | 画像を一時アップロード → Google Lens 逆画像検索 URL（`-O` でブラウザ起動） |
 
 `steg-extract` 出力: `cases/<room>/exports/<name>.steg.out`（ルーム未設定時は画像横）
 
@@ -746,6 +747,7 @@ ssh -h
 listen -h
 steg-extract -h
 imgrpt -h
+imgsearch -h
 repolog -h
 gb-dirs -h
 sshkey-crack -h
@@ -774,7 +776,7 @@ hydrabasic -h
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
-`steg-extract`（`stegx`）`imgrpt` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
+`steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` ·

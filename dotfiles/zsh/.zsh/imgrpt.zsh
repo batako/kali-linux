@@ -1,6 +1,7 @@
 # ========================
 # imgrpt — image metadata / forensics report
 # imgmap — Google Maps URL from image GPS
+# imgsearch — Google Lens reverse image search (local file)
 # ========================
 
 # stdout: "LAT LON" (decimal). exit 0 = found, 1 = no GPS, 2 = error
@@ -87,6 +88,138 @@ imgmap() {
       return 2
       ;;
   esac
+}
+
+# stdout: temporary public URL for image file
+_img-upload-public() {
+  local file="$1" body url
+
+  if ! command -v curl >/dev/null 2>&1; then
+    echo "[-] imgsearch: curl required" >&2
+    return 1
+  fi
+
+  body="$(curl -fsS -F "file=@${file}" https://0x0.st 2>/dev/null)" || body=""
+  url="${body%%$'\n'*}"
+  url="${url//[[:space:]]/}"
+  if [[ "$url" =~ '^https?://' ]]; then
+    print -r -- "$url"
+    return 0
+  fi
+
+  body="$(curl -fsS -F "reqtype=fileupload" -F "fileToUpload=@${file}" \
+    https://catbox.moe/user/api.php 2>/dev/null)" || {
+    echo "[-] imgsearch: upload failed (0x0.st / catbox.moe)" >&2
+    return 1
+  }
+  url="${body%%$'\n'*}"
+  url="${url//[[:space:]]/}"
+  if [[ "$url" =~ '^https?://' ]]; then
+    print -r -- "$url"
+    return 0
+  fi
+
+  echo "[-] imgsearch: unexpected upload response" >&2
+  return 1
+}
+
+_img-google-lens-url() {
+  python3 - "$1" <<'PY'
+import sys
+import urllib.parse
+
+print(
+    "https://lens.google.com/uploadbyurl?url="
+    + urllib.parse.quote(sys.argv[1], safe="")
+)
+PY
+}
+
+_imgsearch-open-url() {
+  local url="$1"
+  if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "$url" >/dev/null 2>&1 &
+    return 0
+  fi
+  if command -v firefox >/dev/null 2>&1; then
+    firefox "$url" >/dev/null 2>&1 &
+    return 0
+  fi
+  echo "[-] imgsearch: no browser (xdg-open / firefox); copy URL above" >&2
+  return 1
+}
+
+# Upload local image (or use -u URL) → Google Lens reverse image search URL
+imgsearch() {
+  local file="" image_url="" quiet=false do_open=false
+  local upload_url lens_url
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        cat <<'EOF'
+usage: imgsearch [-q] [-O] [-u image-url] <image>
+
+  Reverse image search via Google Lens.
+  Local files are uploaded to a temporary public host (0x0.st → catbox fallback),
+  then opened as Lens search-by-URL.
+
+options:
+  -q         print Lens URL only
+  -O, --open open in browser (xdg-open / firefox)
+  -u URL     skip upload; use existing public image URL
+
+examples:
+  imgsearch photo.jpg
+  imgsearch -O EsiNRuRU0AEH32u.jpg
+  imgsearch -q photo.jpg | xargs open    # macOS host
+  imgsearch -u 'https://example.com/a.jpg'
+EOF
+        return 0
+        ;;
+      -q|--quiet)
+        quiet=true
+        shift
+        ;;
+      -O|--open)
+        do_open=true
+        shift
+        ;;
+      -u|--url)
+        image_url="$2"
+        shift 2
+        ;;
+      *)
+        file="$1"
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$image_url" ]]; then
+    [[ -n "$file" && -f "$file" ]] || {
+      echo "usage: imgsearch [-q] [-O] [-u image-url] <image>" >&2
+      [[ -n "$file" ]] && echo "[-] not a file: $file" >&2
+      return 2
+    }
+    file="$(realpath "$file" 2>/dev/null || echo "$file")"
+    $quiet || echo "[*] imgsearch: uploading (temporary public URL)…" >&2
+    image_url="$(_img-upload-public "$file")" || return 1
+    $quiet || echo "[+] upload: ${image_url}" >&2
+  elif [[ -z "$file" ]]; then
+    :
+  else
+    echo "[-] imgsearch: use either <image> or -u URL, not both" >&2
+    return 1
+  fi
+
+  lens_url="$(_img-google-lens-url "$image_url")" || return 1
+  $quiet || echo "[+] lens: ${lens_url}" >&2
+  print -r -- "$lens_url"
+
+  if [[ "$do_open" == true ]]; then
+    _imgsearch-open-url "$lens_url"
+  fi
 }
 
 _imgrpt-out-path() {

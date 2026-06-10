@@ -460,6 +460,7 @@ Details: `ftp-revshell -h`
 | `steg-extract <image> [wordlist]` | info -> empty PW -> stegcracker -> extract (alias: `stegx`) |
 | `imgrpt [-o path] [-B] <image>` | Collect image metadata -> Markdown report (exiftool / GPS / fixmagic / steghide / binwalk / strings) |
 | `imgmap [-q] <image>` | Print Google Maps URL from GPS, or report no location |
+| `imgsearch [-q] [-O] [-u url] <image>` | Temp upload -> Google Lens reverse image search URL (`-O` opens browser) |
 
 `steg-extract` output: `cases/<room>/exports/<name>.steg.out` (if room unset, next to image)
 
@@ -731,6 +732,7 @@ ssh -h
 listen -h
 steg-extract -h
 imgrpt -h
+imgsearch -h
 repolog -h
 gb-dirs -h
 sshkey-crack -h
@@ -759,7 +761,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
-`steg-extract` (`stegx`) `imgrpt` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
+`steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·
