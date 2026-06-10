@@ -45,9 +45,6 @@ def _extract_artifacts(ip: str, execution_id: int, text: str):
     if not text:
         return
 
-    for m in re.finditer(r"https?://\S+", text, flags=re.IGNORECASE):
-        add_artifact(ip, "url", "", m.group(0).rstrip(")>,.;\"'"), execution_id)
-
     for m in re.finditer(r"flag\{[^}]+\}", text, flags=re.IGNORECASE):
         add_artifact(ip, "flag_candidate", "", m.group(0), execution_id)
 
