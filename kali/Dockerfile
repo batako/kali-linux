@@ -69,6 +69,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     gobuster \
     kali-tools-web \
     seclists \
+    sherlock \
     \
     sudo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
