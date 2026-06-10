@@ -1,5 +1,8 @@
 tmp/*
 
+# p10k prompt (personal — run p10k configure in container)
+dotfiles/zsh/.p10k.zsh
+
 # OpenVPN (contains credentials; place .ovpn locally)
 config/openvpn/*.ovpn
 
