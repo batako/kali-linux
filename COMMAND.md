@@ -471,6 +471,48 @@ ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
 
 ---
 
+## repolog（Git 履歴の徹底洗い出し）
+
+| コマンド | 説明 |
+|----------|------|
+| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | mirror clone → 全 ref のコミットを時系列で列挙（**case-set 必須**） |
+| `repolog -f <url-list>` | 複数リポを一括（`github_repos.txt` など 1 行 1 URL） |
+| `repolog -u <user>` / `@user` / `repolog <user>` | GitHub API でユーザのリポ一覧取得 → 一括 scan（`--user` と同じ） |
+| `repolog -M [-S] [-R] -f <url-list>` | 全リポからユニークな名前+メール一覧（`-S` 個人メール疑いのみ、`-R` でリポ名付き） |
+
+`git clone --mirror` + `git log --all --date-order`。**デフォルトブランチだけの `gh api` より漏れが少ない**（全ブランチ・タグ）。
+
+`--user` は `type=owner` かつ **fork 除外**。`GITHUB_TOKEN` / `GH_TOKEN` で API レート緩和可。
+
+mirror は常に `cases/<room>/exports/repolog/<host>_<owner>_<repo>.git` に保持。再実行時は **fetch のみ**（無駄な再 clone なし）。`-F` で強制再 clone。
+
+| オプション | 説明 |
+|------------|------|
+| `-u` / `--user` | GitHub ユーザ名（またはプロフィール URL） |
+| `@user` / `user` | 位置引数でも可（`owner/repo` とは区別: `/` なし） |
+| `--forks` | `-u` と併用: fork を含める |
+| `-l` | `-u` と併用: リポ一覧保存のみ（既定: `github_repos.txt`） |
+| `-F` | mirror を削除して最初から clone し直す |
+| `-U` | コミット URL のみ stdout（1 行 1 URL） |
+| `-M` | 名前+メールのみ stdout（`name<TAB>email`、author + committer、重複除去） |
+| `-S` | `-M` と併用: noreply 以外（`check`）のみ |
+| `-R` | `-M` と併用: `owner/repo<TAB>name<TAB>email` 形式 |
+| `-o` | レポート path（複数リポ時はディレクトリ）／`-M` 時はメール一覧ファイル |
+| `-q` | 出力 path のみ |
+
+出力: `cases/<room>/exports/<repo>_repolog_<ts>.md`（refs 一覧・コミット表・ユニークメール）
+
+```bash
+cs sakura
+repolog -u sakurasnowangelaiko             # 一覧取得 → mirror → レポート
+repolog @sakurasnowangelaiko -l            # 一覧だけ（github_repos.txt）
+repolog sakurasnowangelaiko -M -S          # 同上（省略形）
+repolog -u someuser --forks                # fork 含む
+repolog -M -f github_repos.txt             # 保存済み一覧で再実行
+```
+
+---
+
 ## Recon CLI（DB・スキャン・タスク）
 
 | コマンド | 説明 |
@@ -704,6 +746,7 @@ ssh -h
 listen -h
 steg-extract -h
 imgrpt -h
+repolog -h
 gb-dirs -h
 sshkey-crack -h
 gpg-crack -h
@@ -731,7 +774,7 @@ hydrabasic -h
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
-`steg-extract`（`stegx`）`imgrpt` · `recon-init` `net-scan` `net-view` `host-summary` ·
+`steg-extract`（`stegx`）`imgrpt` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` ·

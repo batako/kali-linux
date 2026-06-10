@@ -471,6 +471,33 @@ Manual commands -> [CHEATSHEET.en.md](CHEATSHEET.en.md)
 
 ---
 
+## repolog (exhaustive Git history)
+
+| Command | Description |
+|---------|-------------|
+| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | Mirror clone -> all refs (**case-set required**) |
+| `repolog -f <url-list>` | Batch repos (one URL per line, e.g. `MEMO.md`) |
+| `repolog -M [-S] [-R] -f <url-list>` | Unique name+email pairs across repos (`-S` suspect only, `-R` repo prefix) |
+| `repolog -u <user>` / `@user` | GitHub API repo list -> batch scan (same as `--user`) |
+
+Uses `git clone --mirror` + `git log --all --date-order`. Mirrors always under `cases/<room>/exports/repolog/`; re-run uses **fetch only**. `-F` forces re-clone.
+
+`--user`: `type=owner`, forks excluded by default. Optional `GITHUB_TOKEN` / `GH_TOKEN`.
+
+| Option | Description |
+|--------|-------------|
+| `-F` | Remove mirror and clone from scratch |
+| `-U` | Commit URLs only on stdout |
+| `-M` | Unique name+email on stdout (`name<TAB>email`) |
+| `-S` | With `-M`: non-noreply (suspect) only |
+| `-R` | With `-M`: `owner/repo<TAB>name<TAB>email` |
+| `-o` | Report path (directory when multiple repos) / email list file with `-M` |
+| `-q` | Print output path(s) only |
+
+Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
+
+---
+
 ## Recon CLI (DB / scan / tasks)
 
 | Command | Description |
@@ -704,6 +731,7 @@ ssh -h
 listen -h
 steg-extract -h
 imgrpt -h
+repolog -h
 gb-dirs -h
 sshkey-crack -h
 gpg-crack -h
@@ -731,7 +759,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
-`steg-extract` (`stegx`) `imgrpt` · `recon-init` `net-scan` `net-view` `host-summary` ·
+`steg-extract` (`stegx`) `imgrpt` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·
