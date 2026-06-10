@@ -190,58 +190,6 @@ net-view() {
   python3 "$RECON_APP" net-view
 }
 
-host-view() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "usage: host-view <ip>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" host-view "$ip"
-}
-
-host-summary() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "usage: host-summary <ip>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" host-summary "$ip" --json
-}
-
-task-view() {
-  python3 "$RECON_APP" task-view
-}
-
-task-done() {
-  if [[ $# -lt 1 ]]; then
-    echo "usage: task-done <id>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" task-done "$1"
-}
-
-task-run() {
-  if [[ $# -lt 1 ]]; then
-    echo "usage: task-run <id>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" task-run "$1"
-}
-
-host-run-next() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "usage: host-run-next <ip>"
-    return 1
-  fi
-
-  python3 "$RECON_APP" host-run-next "$ip"
-}
-
 exec-run() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
     echo "usage: exec-run [-s] [ip] <command...>"

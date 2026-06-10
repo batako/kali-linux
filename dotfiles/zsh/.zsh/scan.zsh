@@ -23,7 +23,7 @@ scan() {
         echo "  -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)"
         echo ""
         echo "prep: case-set <room>  &&  target-set <ip>"
-        echo "more: host-view [ip]  (tasks, history, artifacts)"
+        echo "more: scout -r  (recon summary)  |  case-reset  (wipe room)"
         return 0
         ;;
       -f|--full)
@@ -119,16 +119,6 @@ _scan() {
     '-q[no port tables]' \
     '-j[parallel workers (--full)]::jobs:' \
     '*:ip:($IP)'
-}
-
-host-reset() {
-  local ip="${1:-${IP:-}}"
-  if [[ -z "$ip" ]]; then
-    echo "[-] usage: host-reset [ip]  (or target-set <ip> first)" >&2
-    return 1
-  fi
-  (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null
-  python3 "$RECON_APP" host-reset "$ip"
 }
 
 compdef _scan scan

@@ -394,7 +394,7 @@ def reset_case_db_data(case_name: str) -> dict[str, int]:
             f"case_name = ? OR ip IN ({placeholders})",
             (case_name, *ips),
         )
-        for table in ("ports", "port_scan_coverage", "scan_ranges", "tasks", "hosts"):
+        for table in ("ports", "port_scan_coverage", "scan_ranges", "hosts"):
             counts[table] = _delete(table, f"ip IN ({placeholders})", tuple(ips))
     else:
         counts["executions"] = _delete("executions", "case_name = ?", (case_name,))

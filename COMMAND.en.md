@@ -137,22 +137,20 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 | `scan --force` | Re-scan (basic=top 1000, full=`-p-`) |
 | `scan -r` / `scan --report` | Print DB OPEN + CLOSED only (same shape as post-`scan`, no nmap) |
 | `scan -n` / `-q` | dry-run / hide port table |
-| `host-reset [ip]` | Remove ports / coverage / scan_ranges for that IP (for retesting) |
-| `host-view [ip]` | Full ports, tasks, history, artifacts |
 
 ```bash
 case-set startup && target-set 10.49.140.156
 scout             # first recon action (scan -> probes -> dirs BG -> auto watch until dirs done)
 scout -r          # recon summary (ports + probes + PATHS, no re-run)
+scout --force     # rescan / re-dispatch dirs (overwrite DB, no wipe)
 scout -s            # dirs status (one-shot)
 scout -ws           # auto-refresh status only until done (pair of -s)
 exec-list && exec-view <id>     # output of synchronous probes
 scan              # ports only (classic top 1000)
 scan -f           # auto through all 65535
 scan -f -j 4      # 4-way parallel (2-4 recommended on THM, can stop with Ctrl+C)
-host-reset        # delete scan results only, then retry
 scan -r           # print only port table again (lightweight)
-host-view         # only when you need tasks/history
+case-reset -y     # wipe whole room (all IPs + lineage)
 ```
 
 coverage is **per port number** (`scan`-covered ports are skipped even in `scan -f`). Port recon is only via **`scan` / `scan -f` / `scan -r`**.
@@ -501,7 +499,7 @@ Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
 
 ---
 
-## Recon CLI (DB / scan / tasks)
+## Recon CLI (DB / scan)
 
 | Command | Description |
 |----------|------|
@@ -509,12 +507,6 @@ Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
 | `net-scan <cidr>` | Network scan -> DB |
 | `net-view` | List registered hosts |
 | `scout [ip]` | Recon orchestrator. `scout -r` / `scout -d` / `scout -s` / `scout -ws` |
-| `host-view [ip]` | Host details |
-| `host-summary [ip]` | JSON summary |
-| `task-view` | Task list |
-| `task-done <id>` | Mark task done |
-| `task-run <id>` | Run task |
-| `host-run-next [ip]` | Run next pending task |
 
 ## Execution history / artifacts
 
@@ -759,12 +751,11 @@ Full names only. Alias is shown in parentheses.
 `case-set` (`cs`) `case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set` (`ts`) `target-show` `target-clear` ·
 `scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
-`scan` `host-reset` `host-view` ·
+`scan` ·
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
-`steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
-`task-view` `task-done` `task-run` `host-run-next` ·
+`steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·
 `exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·

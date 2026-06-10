@@ -137,22 +137,20 @@ case-set startup
 | `scan --force` | 再スキャン（basic=top 1000、full=`-p-`） |
 | `scan -r` / `scan --report` | DB の OPEN + CLOSED（`scan` 終了時と同型・nmap なし） |
 | `scan -n` / `-q` | dry-run / ポート表なし |
-| `host-reset [ip]` | 当該 IP の ports / coverage / scan_ranges を削除（再テスト用） |
-| `host-view [ip]` | ポート全件・tasks・履歴・artifacts |
 
 ```bash
 case-set startup && target-set 10.49.140.156
 scout             # 偵察初手（scan → プローブ → dirs BG → dirs 完了まで自動 watch）
 scout -r          # 偵察サマリ（ポート + プローブ + PATHS、再実行なし）
+scout --force     # スキャン・dirs を再実行（DB は消さず上書き）
 scout -s            # dirs 状態（1 回）
 scout -ws           # dirs 完了まで自動更新のみ（-s の対）
 exec-list && exec-view <id>     # 同期プローブの出力
 scan              # ポートだけ（定番 1000）
 scan -f           # 65535 完了まで自動
 scan -f -j 4      # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
-host-reset        # スキャン結果だけ消してやり直す
 scan -r           # ポート表だけ再表示（軽い）
-host-view         # タスクや履歴が欲しいときだけ
+case-reset -y     # ルーム全消去（複数 IP・lineage 含む）
 ```
 
 coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキップ）。ポート偵察は **`scan` / `scan -f` / `scan -r`** のみ。
@@ -516,7 +514,7 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 
 ---
 
-## Recon CLI（DB・スキャン・タスク）
+## Recon CLI（DB・スキャン）
 
 | コマンド | 説明 |
 |----------|------|
@@ -524,12 +522,6 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 | `net-scan <cidr>` | ネットワークスキャン → DB |
 | `net-view` | 登録ホスト一覧 |
 | `scout [ip]` | 偵察司令塔。`scout -r` / `scout -d` / `scout -s` / `scout -ws` |
-| `host-view [ip]` | ホスト詳細 |
-| `host-summary [ip]` | JSON サマリ |
-| `task-view` | タスク一覧 |
-| `task-done <id>` | タスク完了 |
-| `task-run <id>` | タスク実行 |
-| `host-run-next [ip]` | 次の pending タスクを実行 |
 
 ## 実行履歴・成果物
 
@@ -774,12 +766,11 @@ hydrabasic -h
 `case-set`（`cs`）`case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
 `target-set`（`ts`）`target-show` `target-clear` ·
 `scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
-`scan` `host-reset` `host-view` ·
+`scan` ·
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
-`steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` `host-summary` ·
-`task-view` `task-done` `task-run` `host-run-next` ·
+`steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` ·
 `exploit-reject`（`erj`）`exploit-rejects`（`erl`）`exploit-unreject`（`eru`）·

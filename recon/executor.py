@@ -12,12 +12,9 @@ from creds import RECON_CREDS_BANNER
 from creds import import_hydra
 from creds import emit_import_results
 from db import add_execution
-from db import claim_task
 from db import find_done_execution
 from url_util import canonicalize_probe_command
 from db import finish_execution
-from db import get_task_by_id
-from db import set_task_status
 
 
 DEFAULT_TIMEOUT_SEC = 300
@@ -249,63 +246,4 @@ def run_command_or_cache(
         task_type=task_type,
     )
     return exec_id, False
-
-
-def _task_to_command(ip: str, task_type: str) -> str:
-    task_type = (task_type or "").strip().lower()
-
-    if task_type == "ftp-anon":
-        return f"curl -sS --connect-timeout 5 ftp://{ip}/"
-
-    if task_type == "dir-brute":
-        # keep it simple and common on Kali
-        # fallback wordlist path; gobuster is standard but may not exist in minimal images
-        return f"gobuster dir -q -u http://{ip}/ -w /usr/share/wordlists/dirb/common.txt"
-
-    if task_type == "ssh-audit":
-        return f"nmap -p22 --script ssh2-enum-algos {ip}"
-
-    if task_type == "nfs-enum":
-        return f"showmount -e {ip}"
-
-    raise ValueError(f"no executor for task_type={task_type}")
-
-
-def run_task(task_id: int, timeout_sec: int = DEFAULT_TIMEOUT_SEC):
-    task = get_task_by_id(task_id)
-    if not task:
-        raise ValueError(f"task not found: {task_id}")
-
-    if not claim_task(task_id):
-        raise RuntimeError(f"task not claimable (not pending): {task_id}")
-
-    ip = task["ip"]
-    task_type = task["task_type"]
-
-    command = _task_to_command(ip, task_type)
-
-    exec_id = add_execution(task_id, ip, task_type, command, cwd="/", status="running")
-
-    try:
-        args = shlex.split(command)
-        proc = subprocess.run(args, capture_output=True, text=True, timeout=timeout_sec, check=False)
-
-        stdout = proc.stdout or ""
-        stderr = proc.stderr or ""
-
-        status = "done" if proc.returncode == 0 else "failed"
-        finish_execution(exec_id, status=status, exit_code=proc.returncode, stdout=stdout[-20000:], stderr=stderr[-20000:])
-
-        _extract_artifacts(ip, exec_id, stdout)
-        _extract_artifacts(ip, exec_id, stderr)
-
-        set_task_status(task_id, status)
-        return exec_id
-
-    except subprocess.TimeoutExpired as e:
-        stdout = (e.stdout or "") if isinstance(e.stdout, str) else ""
-        stderr = (e.stderr or "") if isinstance(e.stderr, str) else ""
-        finish_execution(exec_id, status="timeout", exit_code=None, stdout=stdout[-20000:], stderr=stderr[-20000:])
-        set_task_status(task_id, "failed")
-        return exec_id
 

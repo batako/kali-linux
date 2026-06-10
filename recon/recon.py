@@ -4,12 +4,7 @@ from pathlib import Path
 
 from db import init_db
 from db import show_hosts
-from db import show_host
 from db import show_scan_report
-from db import reset_host_scan_data
-from db import show_tasks
-from db import complete_task
-from db import print_host_summary_json
 from db import add_artifact
 from db import creds_delete
 from db import creds_upsert
@@ -73,7 +68,6 @@ from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_DIRS_MULTI_THREADS
 from wordlists.scout import resolve_scout_wordlist
 from wordlists.scout import resolve_dirs_multi_wordlists
-from executor import run_task
 from executor import run_command
 from executor import run_command_or_cache
 from form_parse import format_exec_form_shell
@@ -661,65 +655,6 @@ def main():
         )
         sys.exit(0 if rc == 0 else 1)
 
-    elif cmd == "host-reset":
-        ip = sys.argv[2] if len(sys.argv) >= 3 else os.environ.get("IP")
-        if not ip:
-            print("usage: recon.py host-reset <ip>")
-            sys.exit(1)
-        counts = reset_host_scan_data(ip)
-        print(f"[+] host-reset {ip}")
-        for table, n in counts.items():
-            print(f"    {table}: {n} row(s) deleted")
-        print("[i] re-test: scout  /  scan  /  scan -f")
-
-    elif cmd == "host-view":
-        if len(sys.argv) < 3:
-            print("usage: recon.py host-view <ip>")
-            sys.exit(1)
-
-        show_host(sys.argv[2])
-
-    elif cmd == "host-summary":
-        if len(sys.argv) < 3:
-            print("usage: recon.py host-summary <ip> [--json]")
-            sys.exit(1)
-
-        ip = sys.argv[2]
-        # currently only JSON is supported (explicit flag for future extension)
-        if len(sys.argv) >= 4 and sys.argv[3] != "--json":
-            print("usage: recon.py host-summary <ip> [--json]")
-            sys.exit(1)
-
-        print_host_summary_json(ip)
-
-    elif cmd == "task-view":
-        show_tasks()
-
-    elif cmd == "task-done":
-        if len(sys.argv) < 3:
-            print("usage: recon.py task-done <id>")
-            sys.exit(1)
-
-        complete_task(sys.argv[2])
-
-    elif cmd == "task-run":
-        if len(sys.argv) < 3:
-            print("usage: recon.py task-run <id>")
-            sys.exit(1)
-
-        from db import get_task_by_id
-        task = get_task_by_id(int(sys.argv[2]))
-        if not task:
-            print("task not found")
-            sys.exit(1)
-
-        if int(task["requires_human_ok"] or 0) == 1:
-            print("blocked: requires human approval (set requires_human_ok=0 to allow)")
-            sys.exit(2)
-
-        exec_id = run_task(int(sys.argv[2]))
-        print(f"executed: exec_id={exec_id}")
-
     elif cmd == "exec-run":
         # run arbitrary command and store outputs for a host (THM helper)
         # usage: exec-run [-s] <ip> <command...>
@@ -1276,7 +1211,7 @@ def main():
             sys.exit(1)
 
     elif cmd == "artifact-add":
-        # manually register a finding so it shows up in host-summary / host-view
+        # manually register a finding (artifact-list / al)
         if len(sys.argv) < 5:
             print("usage: recon.py artifact-add <ip> <kind> <value> [key]")
             sys.exit(1)
@@ -1455,28 +1390,6 @@ def main():
 
     elif cmd == "wordlist":
         sys.exit(run_wordlist_cli(sys.argv[2:]))
-
-    elif cmd == "host-run-next":
-        # run next pending task for host (highest priority first)
-        if len(sys.argv) < 3:
-            print("usage: recon.py host-run-next <ip>")
-            sys.exit(1)
-
-        from db import claim_next_task_for_host, get_task_by_id, set_task_status
-        task_id = claim_next_task_for_host(sys.argv[2])
-        if not task_id:
-            print("no pending tasks")
-            sys.exit(0)
-
-        task = get_task_by_id(int(task_id))
-        if int(task["requires_human_ok"] or 0) == 1:
-            # release back to pending for manual run
-            set_task_status(int(task_id), "pending")
-            print("blocked: next task requires human approval")
-            sys.exit(2)
-
-        exec_id = run_task(int(task_id))
-        print(f"executed: task_id={task_id} exec_id={exec_id}")
 
     else:
         print(f"unknown command: {cmd}")

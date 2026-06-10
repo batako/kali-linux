@@ -237,7 +237,6 @@ def ingest_nmap_ports_xml(
     xml_data,
     ip: str,
     scan_profile: str,
-    record_tasks: bool = False,
     ports_planned=None,
 ):
     root = ET.fromstring(xml_data)
@@ -268,11 +267,6 @@ def ingest_nmap_ports_xml(
 
             mark_port_scanned(ip, portid, proto, state, scan_profile)
             upsert_port(ip, portid, proto, state, service, version)
-
-            if record_tasks:
-                from scanner import generate_tasks
-
-                generate_tasks(ip, portid, service)
 
     # nmap XML often omits closed ports; still mark the chunk as covered
     if ports_planned:
@@ -415,7 +409,6 @@ def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
                 xml_out,
                 ip,
                 profile,
-                record_tasks=False,
                 ports_planned=ports_run,
             )
             _record_chunk_range(ip, profile, ports_run)

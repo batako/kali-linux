@@ -1,5 +1,4 @@
 import fcntl
-import json
 import os
 import re
 import sqlite3
@@ -131,22 +130,7 @@ def ensure_schema(conn):
     )
     """)
 
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        ip TEXT,
-        task_type TEXT,
-        description TEXT,
-        status TEXT,
-        priority INTEGER DEFAULT 0,
-        requires_human_ok INTEGER DEFAULT 1,
-        created_at TEXT,
-        updated_at TEXT,
-        UNIQUE(ip, task_type)
-    )
-    """)
-
-    # executions: command runs tied to tasks
+    # executions: command runs (task_id legacy column, unused)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS executions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,9 +196,8 @@ def ensure_schema(conn):
     """)
 
     # Backward-compatible migrations for older DBs
-    _migrate_tasks_table(cur)
+    _migrate_drop_tasks_table(cur)
     _migrate_case_scope_columns(cur)
-    _backfill_task_defaults(cur)
 
     conn.commit()
 
@@ -223,14 +206,8 @@ def _table_columns(cur, table_name: str):
     return {r[1] for r in rows}  # name is column 2
 
 
-def _migrate_tasks_table(cur):
-    cols = _table_columns(cur, "tasks")
-
-    if "priority" not in cols:
-        cur.execute("ALTER TABLE tasks ADD COLUMN priority INTEGER DEFAULT 0")
-
-    if "requires_human_ok" not in cols:
-        cur.execute("ALTER TABLE tasks ADD COLUMN requires_human_ok INTEGER DEFAULT 1")
+def _migrate_drop_tasks_table(cur):
+    cur.execute("DROP TABLE IF EXISTS tasks")
 
 
 def _migrate_case_scope_columns(cur):
@@ -265,194 +242,6 @@ def _touch_case_ip(ip: str) -> None:
 
     if looks_like_ipv4(ip or ""):
         register_case_ip_from_env(ip)
-
-
-def _backfill_task_defaults(cur):
-    """
-    Best-effort backfill of priority / requires_human_ok for tasks
-    created before these columns existed.
-    """
-    defaults = {
-        "dir-brute": (90, 1),
-        "ftp-anon": (80, 0),
-        "ssh-audit": (60, 0),
-        "nfs-enum": (40, 0),
-    }
-
-    for task_type, (prio, human_ok) in defaults.items():
-        cur.execute(
-            """
-            UPDATE tasks
-            SET priority = CASE WHEN priority IS NULL OR priority = 0 THEN ? ELSE priority END,
-                requires_human_ok = CASE
-                    WHEN requires_human_ok IS NULL THEN ?
-                    WHEN ? = 0 AND requires_human_ok = 1 THEN 0
-                    ELSE requires_human_ok
-                END
-            WHERE task_type = ?
-            """,
-            (prio, human_ok, human_ok, task_type),
-        )
-
-# =========================
-# task
-# =========================
-
-def get_task_by_id(task_id):
-    conn = connect()
-    cur = conn.cursor()
-
-    row = cur.execute("""
-    SELECT id, ip, task_type, description, status, priority, requires_human_ok
-    FROM tasks
-    WHERE id = ?
-    """, (task_id,)).fetchone()
-
-    conn.close()
-    return row
-
-
-def add_task(ip, task_type, description, priority=0, requires_human_ok=1):
-    conn = connect()
-    cur = conn.cursor()
-
-    cur.execute("""
-    INSERT OR IGNORE INTO tasks (
-        ip, task_type, description, status, priority, requires_human_ok, created_at, updated_at
-    ) VALUES (
-        ?, ?, ?, 'pending', ?, ?, datetime('now'), datetime('now')
-    )
-    """, (ip, task_type, description, int(priority), int(requires_human_ok)))
-
-    conn.commit()
-    conn.close()
-
-
-def complete_task(task_id):
-    conn = connect()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        UPDATE tasks
-        SET status = 'done',
-            updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (task_id,),
-    )
-
-    conn.commit()
-    conn.close()
-
-def set_task_status(task_id, status):
-    conn = connect()
-    cur = conn.cursor()
-
-    cur.execute(
-        """
-        UPDATE tasks
-        SET status = ?,
-            updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (status, task_id),
-    )
-
-    conn.commit()
-    conn.close()
-
-def claim_task(task_id):
-    """
-    Atomically mark a pending task as running.
-    Returns True if claimed, False otherwise.
-    """
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("BEGIN IMMEDIATE")
-    cur.execute(
-        """
-        UPDATE tasks
-        SET status = 'running',
-            updated_at = datetime('now')
-        WHERE id = ?
-          AND status = 'pending'
-        """,
-        (task_id,),
-    )
-    claimed = cur.rowcount == 1
-    conn.commit()
-    conn.close()
-    return claimed
-
-
-def claim_next_task_for_host(ip):
-    """
-    Atomically pick and claim the highest priority pending task for a host.
-    Returns task_id or None.
-    """
-    conn = connect()
-    cur = conn.cursor()
-    cur.execute("BEGIN IMMEDIATE")
-    row = cur.execute(
-        """
-        SELECT id
-        FROM tasks
-        WHERE ip = ?
-          AND status = 'pending'
-        ORDER BY priority DESC, id
-        LIMIT 1
-        """,
-        (ip,),
-    ).fetchone()
-
-    if not row:
-        conn.commit()
-        conn.close()
-        return None
-
-    task_id = int(row["id"])
-    cur.execute(
-        """
-        UPDATE tasks
-        SET status = 'running',
-            updated_at = datetime('now')
-        WHERE id = ?
-          AND status = 'pending'
-        """,
-        (task_id,),
-    )
-
-    if cur.rowcount != 1:
-        conn.commit()
-        conn.close()
-        return None
-
-    conn.commit()
-    conn.close()
-    return task_id
-
-def get_tasks(ip=None):
-    conn = connect()
-    cur = conn.cursor()
-
-    if ip:
-        rows = cur.execute("""
-        SELECT id, ip, task_type, description, status, priority, requires_human_ok
-        FROM tasks
-        WHERE ip = ?
-        ORDER BY priority DESC, id
-        """, (ip,))
-    else:
-        rows = cur.execute("""
-        SELECT id, ip, task_type, description, status, priority, requires_human_ok
-        FROM tasks
-        ORDER BY priority DESC, id
-        """)
-
-    result = rows.fetchall()
-    conn.close()
-    return result
 
 
 # =========================
@@ -601,7 +390,7 @@ def _print_port_section(label, rows, show_coverage=False, ip=None, group=False):
 
 
 def print_ports(ip, open_only=True, show_coverage=False, split_open_closed=False, compact=False):
-    """Compact port table for scan output and host-view."""
+    """Compact port table for scan / scout report output."""
     if not compact:
         print("")
     if split_open_closed:
@@ -620,192 +409,6 @@ def print_ports(ip, open_only=True, show_coverage=False, split_open_closed=False
         label = "PORTS"
 
     _print_port_section(label, rows, show_coverage=show_coverage, ip=ip if show_coverage else None)
-
-
-def show_host(ip):
-    conn = connect()
-    cur = conn.cursor()
-
-    # -------------------------
-    # tasks
-    # -------------------------
-    tasks = cur.execute("""
-    SELECT id, task_type, status, description, priority, requires_human_ok
-    FROM tasks
-    WHERE ip = ?
-    ORDER BY priority DESC, id
-    """, (ip,)).fetchall()
-
-    # -------------------------
-    # scan ranges
-    # -------------------------
-    reconcile_scan_ranges(ip)
-
-    scans = cur.execute("""
-    SELECT scan_type, range_start, range_end
-    FROM scan_ranges
-    WHERE ip = ?
-    ORDER BY range_start
-    """, (ip,)).fetchall()
-
-    # -------------------------
-    # recent executions
-    # -------------------------
-    executions = cur.execute("""
-    SELECT id, task_id, task_type, status, exit_code, started_at, ended_at
-    FROM executions
-    WHERE ip = ?
-    ORDER BY id DESC
-    LIMIT 10
-    """, (ip,)).fetchall()
-
-    # -------------------------
-    # artifacts
-    # -------------------------
-    artifacts = cur.execute("""
-    SELECT kind, key, value, created_at
-    FROM artifacts
-    WHERE ip = ?
-    ORDER BY id DESC
-    LIMIT 50
-    """, (ip,)).fetchall()
-
-    ports = cur.execute("""
-    SELECT port, proto, state, service, version
-    FROM ports
-    WHERE ip = ?
-    ORDER BY port
-    """, (ip,)).fetchall()
-
-    print("")
-    print(f"HOST: {ip}")
-    print("")
-
-    print_ports(ip, open_only=False, show_coverage=True)
-
-    # =========================
-    # SCAN PROGRESS
-    # =========================
-    print("SCAN HISTORY")
-
-    if scans:
-        for s in scans:
-            print(f"{s[0]}\t{s[1]}-{s[2]}")
-    else:
-        print("no scan data")
-
-    try:
-        from port_sets import nmap_top1000_tcp
-        from port_sets import FULL_TCP_START
-        from port_sets import FULL_TCP_END
-
-        basic_cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
-        full_cov = count_tcp_coverage_in_ports(ip, range(FULL_TCP_START, FULL_TCP_END + 1))
-        print(f"basic coverage: {basic_cov}/1000 (top ports)")
-        print(f"full coverage: {full_cov}/65535 (tcp)")
-        if full_cov > 0 and full_cov < 65535:
-            print("full status: in progress — run scan -f until complete")
-        elif full_cov >= 65535:
-            print("full status: complete")
-    except FileNotFoundError:
-        pass
-
-    print("")
-
-    # =========================
-    # TASKS
-    # =========================
-    print("TASKS")
-
-    if not tasks:
-        print("no tasks")
-    else:
-        for t in tasks:
-            status_mark = "[x]" if t["status"] in ("done",) else "[ ]"
-            needs_ok = " (human-ok)" if int(t["requires_human_ok"] or 0) == 1 else ""
-            print(f"{status_mark} id={t['id']} p={t['priority']} {t['task_type']}{needs_ok} - {t['description']}")
-
-    print("")
-
-    # =========================
-    # EXECUTIONS
-    # =========================
-    print("RECENT EXECUTIONS")
-
-    if not executions:
-        print("no executions")
-    else:
-        for e in executions:
-            ended = e["ended_at"] or "-"
-            code = e["exit_code"] if e["exit_code"] is not None else "-"
-            print(f"- exec_id={e['id']} task_id={e['task_id']} {e['task_type']} status={e['status']} exit={code} ended={ended}")
-
-    print("")
-
-    # =========================
-    # ARTIFACTS
-    # =========================
-    print("ARTIFACTS")
-
-    if not artifacts:
-        print("no artifacts")
-    else:
-        for a in artifacts:
-            key = f"{a['kind']}:{a['key']}" if a["key"] else a["kind"]
-            print(f"- {key} = {a['value']}")
-
-    print("")
-
-    # =========================
-    # ATTACK HINTS
-    # =========================
-    print("ATTACK HINTS")
-
-    services = {(p[3] or "").lower() for p in ports if p[3]}
-
-    if "ftp" in services:
-        print("- ftp anonymous check")
-    if "http" in services:
-        print("- web directory brute force")
-    if "rpcbind" in services:
-        print("- possible NFS enumeration")
-    if "ssh" in services:
-        print("- check weak credentials / keys")
-
-    print("")
-
-    # =========================
-    # NEXT ACTION
-    # =========================
-    pending = [t for t in tasks if t["status"] not in ("done", "skipped")]
-
-    if pending:
-        print("NEXT ACTION")
-        t = pending[0]
-        print(f"- id={t['id']} {t['task_type']}: {t['description']} (p={t['priority']})")
-
-    conn.close()
-
-
-# =========================
-# scan tracking
-# =========================
-
-def reset_host_scan_data(ip):
-    """Remove ports, coverage, scan history, and scout jobs for one host."""
-    conn = connect()
-    cur = conn.cursor()
-    counts = {}
-    for table in ("port_scan_coverage", "ports", "scan_ranges", "scout_jobs"):
-        n = cur.execute(
-            f"SELECT COUNT(*) AS c FROM {table} WHERE ip = ?",
-            (ip,),
-        ).fetchone()["c"]
-        cur.execute(f"DELETE FROM {table} WHERE ip = ?", (ip,))
-        counts[table] = int(n)
-    conn.commit()
-    conn.close()
-    return counts
 
 
 # =========================
@@ -1307,20 +910,6 @@ def show_scan_report(ip):
 
 
 # =========================
-# tasks view
-# =========================
-
-def show_tasks():
-    rows = get_tasks()
-
-    print("")
-    print("ID\tIP\tTYPE\tPRIORITY\tSTATUS\tHUMAN_OK\tDESCRIPTION")
-
-    for r in rows:
-        print(f"{r['id']}\t{r['ip']}\t{r['task_type']}\t{r['priority']}\t{r['status']}\t{r['requires_human_ok']}\t{r['description']}")
-
-
-# =========================
 # execution & artifacts
 # =========================
 
@@ -1809,92 +1398,6 @@ def set_ssh_last_user(ip: str, username: str, execution_id=None):
     )
     conn.commit()
     conn.close()
-
-
-def get_host_summary(ip: str, executions_limit: int = 10, artifacts_limit: int = 50):
-    conn = connect()
-    cur = conn.cursor()
-
-    host = cur.execute(
-        """
-        SELECT ip, hostname, mac, status, first_seen, last_seen
-        FROM hosts
-        WHERE ip = ?
-        """,
-        (ip,),
-    ).fetchone()
-
-    ports = cur.execute(
-        """
-        SELECT port, proto, state, service, version, first_seen, last_seen
-        FROM ports
-        WHERE ip = ?
-        ORDER BY port
-        """,
-        (ip,),
-    ).fetchall()
-
-    tasks = cur.execute(
-        """
-        SELECT id, task_type, description, status, priority, requires_human_ok, created_at, updated_at
-        FROM tasks
-        WHERE ip = ?
-        ORDER BY priority DESC, id
-        """,
-        (ip,),
-    ).fetchall()
-
-    scans = cur.execute(
-        """
-        SELECT scan_type, range_start, range_end, scanned_at
-        FROM scan_ranges
-        WHERE ip = ?
-        ORDER BY scanned_at DESC
-        """,
-        (ip,),
-    ).fetchall()
-
-    executions = cur.execute(
-        """
-        SELECT id, task_id, task_type, command, cwd, status, exit_code, started_at, ended_at
-        FROM executions
-        WHERE ip = ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (ip, int(executions_limit)),
-    ).fetchall()
-
-    artifacts = cur.execute(
-        """
-        SELECT id, kind, key, value, execution_id, created_at
-        FROM artifacts
-        WHERE ip = ?
-        ORDER BY id DESC
-        LIMIT ?
-        """,
-        (ip, int(artifacts_limit)),
-    ).fetchall()
-
-    conn.close()
-
-    def row_to_dict(r):
-        return dict(r) if r is not None else None
-
-    return {
-        "ip": ip,
-        "host": row_to_dict(host),
-        "ports": [dict(r) for r in ports],
-        "tasks": [dict(r) for r in tasks],
-        "scan_ranges": [dict(r) for r in scans],
-        "executions_recent": [dict(r) for r in executions],
-        "artifacts_recent": [dict(r) for r in artifacts],
-    }
-
-
-def print_host_summary_json(ip: str, executions_limit: int = 10, artifacts_limit: int = 50):
-    summary = get_host_summary(ip, executions_limit=executions_limit, artifacts_limit=artifacts_limit)
-    print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
 def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50, all_case: bool = False):
