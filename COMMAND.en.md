@@ -458,8 +458,12 @@ Details: `ftp-revshell -h`
 | Command | Description |
 |----------|------|
 | `steg-extract <image> [wordlist]` | info -> empty PW -> stegcracker -> extract (alias: `stegx`) |
+| `imgrpt [-o path] [-B] <image>` | Collect image metadata -> Markdown report (exiftool / GPS / fixmagic / steghide / binwalk / strings) |
+| `imgmap [-q] <image>` | Print Google Maps URL from GPS, or report no location |
 
-Output: `cases/<room>/exports/<name>.steg.out` (if room unset, output next to the image)
+`steg-extract` output: `cases/<room>/exports/<name>.steg.out` (if room unset, next to image)
+
+`imgrpt` output: `cases/<room>/exports/<name>_imgrpt_<ts>.md` (`-B` skips binwalk)
 
 Logs: `cases/<room>/logs/steg_*`
 
@@ -699,6 +703,7 @@ ftp-revshell -h
 ssh -h
 listen -h
 steg-extract -h
+imgrpt -h
 gb-dirs -h
 sshkey-crack -h
 gpg-crack -h
@@ -726,7 +731,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
-`steg-extract` (`stegx`) · `recon-init` `net-scan` `net-view` `host-summary` ·
+`steg-extract` (`stegx`) `imgrpt` · `recon-init` `net-scan` `net-view` `host-summary` ·
 `task-view` `task-done` `task-run` `host-run-next` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·

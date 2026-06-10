@@ -339,6 +339,17 @@ sudo tar cf /dev/null /dev/null --checkpoint=1 --checkpoint-action=exec=/bin/sh
 sudo /bin/nano -s /bin/sh /dev/null
 ```
 
+## 画像レポート（OSINT / stego 前）
+
+```bash
+cs ohsint
+imgrpt WindowsXP_1551719014755.jpg    # → cases/.../exports/*_imgrpt_*.md
+imgrpt -B photo.jpg                   # binwalk 省略（速い）
+imgmap WindowsXP_1551719014755.jpg    # GPS → Google マップ URL
+```
+
+exiftool（GPS・カメラ・コメント）、fixmagic、steghide、binwalk、strings を Markdown にまとめる。
+
 ## steghide（手動）
 
 ```bash
