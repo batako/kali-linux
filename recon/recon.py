@@ -1483,8 +1483,6 @@ def main():
             print(f"removed {n} hash row(s) for {ip}")
 
     elif cmd == "hash-crack-store":
-        from pathlib import Path
-
         from hash_batch import apply_batch_results
         from hash_batch import prepare_batch
         from hash_batch import run_john_batch
