@@ -47,6 +47,24 @@ MSFR_COMMENT = {
     "ftp": "FTP (msfr)",
 }
 
+# creds-list comments that qualify for msfr user pick (per family)
+MSFR_FAMILY_CRED_TAGS = {
+    "postgres": ("PostgreSQL (msfr)", "hash-crack postgres"),
+    "ssh": ("SSH (msfr)",),
+    "ftp": ("FTP (msfr)",),
+}
+
+# postgres msfr picker: exclude creds clearly tagged for other services
+MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS = (
+    "ssh",
+    "hydra",
+    "ftp",
+    "borg",
+    "http",
+    "pop3",
+    "tomcat",
+)
+
 
 def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None, comment: str = ""):
     if not text:

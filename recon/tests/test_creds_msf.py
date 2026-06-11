@@ -15,6 +15,7 @@ if str(RECON) not in sys.path:
 from creds import import_msf_login
 from msf_run import list_msfr_creds
 from msf_run import pick_msfr_user
+from msf_run import resolve_msfr_user
 
 
 class CredsMsfImportTest(unittest.TestCase):
@@ -51,15 +52,53 @@ class CredsMsfImportTest(unittest.TestCase):
         self.assertEqual(rows[0]["username"], "root")
         self.assertEqual(rows[0]["password"], "toor")
 
+    @patch("db.list_hash_entries", return_value=[])
     @patch("db.list_ssh_creds")
-    def test_list_msfr_creds_filters_comment(self, mock_list) -> None:
+    def test_list_msfr_creds_includes_manual(self, mock_list, _mock_hash) -> None:
         mock_list.return_value = [
             {"username": "postgres", "password": "p", "comment": "PostgreSQL (msfr)"},
-            {"username": "dark", "password": "x", "comment": ""},
+            {"username": "alison", "password": "x", "comment": ""},
+        ]
+        rows = list_msfr_creds("10.0.0.1", "postgres")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["username"], "postgres")
+        self.assertEqual(rows[1]["username"], "alison")
+
+    @patch("db.list_hash_entries", return_value=[])
+    @patch("db.list_ssh_creds")
+    def test_list_msfr_creds_excludes_ssh_comment(self, mock_list, _mock_hash) -> None:
+        mock_list.return_value = [
+            {"username": "postgres", "password": "p", "comment": "PostgreSQL (msfr)"},
+            {"username": "dark", "password": "x", "comment": "SSH"},
         ]
         rows = list_msfr_creds("10.0.0.1", "postgres")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["username"], "postgres")
+
+    @patch("db.list_hash_entries", return_value=[])
+    @patch("db.list_ssh_creds")
+    def test_list_msfr_creds_includes_hash_crack(self, mock_list, _mock_hash) -> None:
+        mock_list.return_value = [
+            {"username": "postgres", "password": "p", "comment": "PostgreSQL (msfr)"},
+            {
+                "username": "darkstart",
+                "password": "qwerty",
+                "comment": "hash-crack postgres",
+            },
+        ]
+        rows = list_msfr_creds("10.0.0.1", "postgres")
+        self.assertEqual(len(rows), 2)
+        self.assertEqual({r["username"] for r in rows}, {"postgres", "darkstart"})
+
+    @patch("db.list_ssh_creds")
+    def test_resolve_msfr_user_explicit(self, mock_list) -> None:
+        mock_list.return_value = [
+            {"username": "darkstart", "password": "qwerty", "comment": "hash-crack postgres"},
+        ]
+        self.assertEqual(
+            resolve_msfr_user("10.0.0.1", "postgres", user="darkstart"),
+            "darkstart",
+        )
 
     @patch("db.get_msfr_last_user", return_value=None)
     @patch("db.list_ssh_creds")

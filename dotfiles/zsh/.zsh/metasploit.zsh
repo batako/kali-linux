@@ -74,6 +74,8 @@ env: MSFR_PORT, DB_PORT, SSH_PORT, FTP_PORT, HTTP_PORT, SMB_PORT
 examples:
   msfr pg-login
   msfr pg-sql -n
+  msfr pg-sql darkstart          # cl のユーザを指定（-u でも可）
+  msfr pg-readfile -u poster -f /etc/passwd
   msfr ssh-login -u root
   msfr tomcat-mgr -u bob -w bubbles -p 1234
   msfr -m exploit/multi/http/tomcat_mgr_upload -u bob -w bubbles -o TARGETURI=/manager --stay
@@ -238,10 +240,12 @@ _msfr-resolve-pass() {
 }
 
 _msfr-pick-user() {
-  local ip="$1" family="$2" default_user="${3:-}" dry="${4:-}"
+  local ip="$1" family="$2" default_user="${3:-}" dry="${4:-}" explicit="${5:-}"
   local -a args=(msfr-pick-user)
   [[ -n "$dry" ]] && args+=(--dry-run)
-  args+=("$ip" "$family" "$default_user")
+  [[ -n "$explicit" ]] && args+=(--user "$explicit")
+  args+=("$ip" "$family")
+  [[ -n "$default_user" ]] && args+=("$default_user")
   python3 "$RECON_APP" "${args[@]}"
 }
 
@@ -306,10 +310,14 @@ msfr() {
         return 1
         ;;
       *)
-        [[ -z "$preset" ]] && preset="$1" || {
+        if [[ -z "$preset" ]]; then
+          preset="$1"
+        elif [[ -z "$user" ]]; then
+          user="$1"
+        else
           echo "[-] msfr: unexpected argument: $1" >&2
           return 1
-        }
+        fi
         shift
         ;;
     esac
@@ -365,15 +373,15 @@ msfr() {
 
   if (( apply_creds )); then
     local creds_family="$(_msfr-creds-family "$preset" "$module")"
-    if [[ -z "$user" && -n "$creds_family" && "$creds_family" != generic ]]; then
+    if [[ -n "$creds_family" && "$creds_family" != generic ]]; then
       if [[ "$creds_family" == http ]]; then
-        user="${default_user:-}"
+        user="${user:-$default_user}"
         [[ -n "$user" ]] || user="$(_recon-pick-user "$rhost" 1 2>/dev/null)" || {
           echo "[-] msfr: need -u USER or creds in cl" >&2
           return 1
         }
       else
-        user="$(_msfr-pick-user "$rhost" "$creds_family" "$default_user" "$dry_run")" || return 1
+        user="$(_msfr-pick-user "$rhost" "$creds_family" "$default_user" "$dry_run" "$user")" || return 1
       fi
     else
       user="${user:-$default_user}"

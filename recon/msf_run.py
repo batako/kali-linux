@@ -139,26 +139,104 @@ def preset_family(preset: str) -> str:
     return PRESET_FAMILY.get((preset or "").lower(), module_family(preset))
 
 
+def _postgres_cred_excluded(comment: str) -> bool:
+    from creds import MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS
+
+    low = (comment or "").lower()
+    return any(hint in low for hint in MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS)
+
+
+def _postgres_cred_sort_key(row: dict, tags: tuple[str, ...], hlist_users: set[str]) -> tuple:
+    user = row["username"]
+    comment = row.get("comment") or ""
+    if any(tag in comment for tag in tags):
+        return (0, user)
+    if user in hlist_users:
+        return (1, user)
+    if not comment.strip():
+        return (2, user)
+    return (3, user)
+
+
 def list_msfr_creds(ip: str, family: str) -> list[dict]:
-    from creds import MSFR_COMMENT
+    from creds import MSFR_FAMILY_CRED_TAGS
     from db import list_ssh_creds
 
-    tag = MSFR_COMMENT.get(family, "")
-    if not tag:
+    tags = MSFR_FAMILY_CRED_TAGS.get(family, ())
+    if not tags:
         return []
-    return [
-        r
-        for r in list_ssh_creds(ip)
-        if tag in (r.get("comment") or "")
-    ]
+
+    if family == "postgres":
+        from db import list_hash_entries
+        from hash_store import STATE_UNSUPPORTED
+
+        hlist_users = {
+            e.username
+            for e in list_hash_entries(ip)
+            if e.state != STATE_UNSUPPORTED
+        }
+
+        candidates: list[dict] = []
+        for r in list_ssh_creds(ip):
+            user = r["username"]
+            if not user:
+                continue
+            if _postgres_cred_excluded(r.get("comment") or ""):
+                continue
+            candidates.append(r)
+
+        candidates.sort(
+            key=lambda row: _postgres_cred_sort_key(row, tags, hlist_users)
+        )
+        return candidates
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for r in list_ssh_creds(ip):
+        user = r["username"]
+        if not user or user in seen:
+            continue
+        comment = r.get("comment") or ""
+        if any(tag in comment for tag in tags):
+            out.append(r)
+            seen.add(user)
+    return out
 
 
 class MsfrPickError(Exception):
     pass
 
 
+def _prompt_choice(prompt: str) -> str:
+    """Read a line without writing the prompt to stdout (safe inside $(...) )."""
+    import sys
+
+    sys.stderr.write(prompt)
+    sys.stderr.flush()
+    return sys.stdin.readline().strip()
+
+
+def resolve_msfr_user(
+    ip: str,
+    family: str,
+    *,
+    user: str = "",
+    default_user: str = "",
+) -> str:
+    """Resolve username for msfr: explicit -u, else pick from family creds in cl."""
+    from db import list_ssh_creds
+
+    if user:
+        for r in list_ssh_creds(ip):
+            if r["username"] == user:
+                return user
+        raise MsfrPickError(f"user {user} not in creds-list for {ip}")
+
+    return pick_msfr_user(ip, family, default_user=default_user)
+
+
 def pick_msfr_user(ip: str, family: str, *, default_user: str = "") -> str:
-    """Choose a creds-list user for msfr presets (msfr-tagged creds first)."""
+    """Choose a creds-list user for msfr presets (family-tagged creds in cl)."""
     import sys
 
     from db import get_msfr_last_user
@@ -171,30 +249,37 @@ def pick_msfr_user(ip: str, family: str, *, default_user: str = "") -> str:
                 return default_user
 
     if not rows:
-        raise MsfrPickError(
-            f"no {family} creds in creds-list (run msfr {family}-login or creds-add)"
-        )
+        hint = "hash-crack / creds-add" if family == "postgres" else f"msfr {family}-login or creds-add"
+        raise MsfrPickError(f"no {family} creds in creds-list ({hint})")
 
-    users = [r["username"] for r in rows]
-    if len(users) == 1:
-        return users[0]
+    if len(rows) == 1:
+        return rows[0]["username"]
 
     last = get_msfr_last_user(ip, family)
     print(f"[*] {ip} — choose {family} account:", file=sys.stderr)
     idx = None
-    for i, u in enumerate(users, 1):
+    for i, r in enumerate(rows, 1):
+        u = r["username"]
+        c = (r.get("comment") or "").strip()
+        if c:
+            label = f"{u} ({c})"
+        elif family == "postgres":
+            label = f"{u} (manual)"
+        else:
+            label = u
         if last and u == last:
-            print(f"  {i}) {u} (last)", file=sys.stderr)
+            print(f"  {i}) {label} (last)", file=sys.stderr)
             idx = str(i)
         else:
-            print(f"  {i}) {u}", file=sys.stderr)
+            print(f"  {i}) {label}", file=sys.stderr)
+    users = [r["username"] for r in rows]
 
     if idx:
-        choice = input(f"#? [{idx}]: ").strip()
+        choice = _prompt_choice(f"#? [{idx}]: ")
         if not choice:
             choice = idx
     else:
-        choice = input("#? ").strip()
+        choice = _prompt_choice("#? ")
 
     if choice.isdigit() and 1 <= int(choice) <= len(users):
         return users[int(choice) - 1]
@@ -202,12 +287,21 @@ def pick_msfr_user(ip: str, family: str, *, default_user: str = "") -> str:
     raise MsfrPickError("invalid choice")
 
 
-def pick_msfr_user_dry(ip: str, family: str, *, default_user: str = "") -> str:
+def pick_msfr_user_dry(
+    ip: str,
+    family: str,
+    *,
+    user: str = "",
+    default_user: str = "",
+) -> str:
     """Non-interactive user pick for msfr --dry-run."""
     import sys
 
     from db import get_msfr_last_user
     from db import list_ssh_creds
+
+    if user:
+        return resolve_msfr_user(ip, family, user=user, default_user=default_user)
 
     rows = list_msfr_creds(ip, family)
     if not rows and default_user:
@@ -216,9 +310,8 @@ def pick_msfr_user_dry(ip: str, family: str, *, default_user: str = "") -> str:
                 return default_user
 
     if not rows:
-        raise MsfrPickError(
-            f"no {family} creds in creds-list (run msfr {family}-login or creds-add)"
-        )
+        hint = "hash-crack / creds-add" if family == "postgres" else f"msfr {family}-login or creds-add"
+        raise MsfrPickError(f"no {family} creds in creds-list ({hint})")
 
     users = [r["username"] for r in rows]
     if len(users) == 1:

@@ -1371,7 +1371,6 @@ def main():
                 set_ssh_last_user(ip, results[0]["username"])
 
     elif cmd == "hash-import-msf":
-        from creds import RECON_CREDS_BANNER
         from hash_ops import format_import_lines
         from hash_ops import import_msf_hashdump
 
@@ -1424,7 +1423,6 @@ def main():
             print("[-] could not parse hash line", file=sys.stderr)
             sys.exit(1)
         results = import_hash_records(ip, records)
-        from creds import RECON_CREDS_BANNER
 
         print(RECON_CREDS_BANNER)
         for ln in format_import_lines(results):
@@ -1487,8 +1485,6 @@ def main():
     elif cmd == "hash-crack-store":
         from pathlib import Path
 
-        from creds import RECON_CREDS_BANNER
-        from creds import emit_import_results
         from hash_batch import apply_batch_results
         from hash_batch import prepare_batch
         from hash_batch import run_john_batch
@@ -1586,19 +1582,42 @@ def main():
         from msf_run import MsfrPickError
         from msf_run import pick_msfr_user
         from msf_run import pick_msfr_user_dry
+        from msf_run import resolve_msfr_user
 
         args = sys.argv[2:]
         dry = False
-        while args and args[0] in ("--dry-run", "-n"):
-            dry = True
-            args = args[1:]
-        if len(args) < 2:
-            print("usage: recon.py msfr-pick-user [--dry-run] <ip> <family> [default_user]")
+        explicit_user = ""
+        rest = []
+        i = 0
+        while i < len(args):
+            if args[i] in ("--dry-run", "-n"):
+                dry = True
+                i += 1
+            elif args[i] == "--user" and i + 1 < len(args):
+                explicit_user = args[i + 1]
+                i += 2
+            else:
+                rest.append(args[i])
+                i += 1
+        if len(rest) < 2:
+            print(
+                "usage: recon.py msfr-pick-user [--dry-run] [--user NAME] "
+                "<ip> <family> [default_user]"
+            )
             sys.exit(1)
-        ip, family = args[0], args[1]
-        default_user = args[2] if len(args) > 2 else ""
+        ip, family = rest[0], rest[1]
+        default_user = rest[2] if len(rest) > 2 else ""
         try:
-            if dry:
+            if explicit_user:
+                print(
+                    resolve_msfr_user(
+                        ip,
+                        family,
+                        user=explicit_user,
+                        default_user=default_user,
+                    )
+                )
+            elif dry:
                 print(pick_msfr_user_dry(ip, family, default_user=default_user))
             else:
                 print(pick_msfr_user(ip, family, default_user=default_user))

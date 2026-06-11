@@ -406,7 +406,7 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | List registered presets |
 | `msfr <preset> [opts]` | Run an MSF module with case defaults |
 
-`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; `pg-hashdump` saves hashes to `hlist`. Follow-up modules (`pg-sql`, etc.) use `(msfr)`-tagged creds (picker if multiple, like `ssh`).
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; `pg-hashdump` saves hashes to `hlist`. Follow-up modules (`pg-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
 
 | preset | purpose |
 |--------|---------|
