@@ -581,8 +581,8 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 | `scout -d [path]` | 単一 wordlist（catalog default / `-w` / ピッカー）— 上記「偵察（scout）」参照 |
 | `scout -ds [path]` | 並列 dir（default: standard tier；`-p next` で昇格） |
 | `gb-dirs [opts] [url]` | **非推奨** — `scout -ds` へ委譲 |
-| `gb-dns [domain]` | DNS |
-| `gb-vhost ...` | vhost |
+| `gb-dns [domain]` | DNS ブルート（実 DNS 問い合わせ） |
+| `gb-vhost [domain\|ip]` | vhost。`gb-vhost lookup.thm` = `Host: FUZZ.lookup.thm`（THM。apex は `hosts` 要。進捗 `n/total` + `[+] host.domain`、終了時サマリ + `hosts` 自動追記） |
 
 **`-ds` 省略** = **standard** tier まで（累積）。**`-p next`** = 次 tier の adds のみ。
 
@@ -608,8 +608,10 @@ scout -ds /admin
 scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
-gb-vhost              # http + https 両方
-gb-dns example.com
+hosts lookup.thm        # apex のみ先に登録
+gb-vhost lookup.thm   # THM: Host ヘッダ列挙。ヒットは hosts に自動追記
+gb-vhost              # IP 直叩き vhost
+gb-dns example.com    # 実 DNS がある環境向け
 ```
 
 ---

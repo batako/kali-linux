@@ -566,8 +566,8 @@ In recon flow, **`scout -d`** (single) / **`scout -ds`** (parallel) are the prop
 | `scout -d [path]` | Single wordlist (catalog default / `-w` / picker) - see "Recon (scout)" above |
 | `scout -ds [path]` | Parallel dir (default: standard tier; upgrade with `-p next`) |
 | `gb-dirs [opts] [url]` | **Deprecated** - delegated to `scout -ds` |
-| `gb-dns [domain]` | DNS |
-| `gb-vhost ...` | vhost |
+| `gb-dns [domain]` | DNS brute-force (real DNS queries) |
+| `gb-vhost [domain\|ip]` | vhost; `gb-vhost lookup.thm` = `Host: FUZZ.lookup.thm` (THM; apex needs `hosts`; progress `n/total` + `[+] host.domain`, end summary + auto `hosts`) |
 
 Omitting **`-p`** in `-ds` = cumulative up to **standard** tier. **`-p next`** = only add next-tier jobs.
 
@@ -593,8 +593,10 @@ scout -ds /admin
 scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
-gb-vhost              # both http + https
-gb-dns example.com
+hosts lookup.thm
+gb-vhost lookup.thm   # THM: Host header fuzz (like ffuf -H FUZZ.lookup.thm)
+gb-vhost              # vhost against IP
+gb-dns example.com    # when real DNS exists
 ```
 
 ---
