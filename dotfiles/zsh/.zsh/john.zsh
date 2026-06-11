@@ -242,14 +242,33 @@ sshkey-crack() {
   return $rc
 }
 
+_hash_crack_normalize_line() {
+  local line="$1"
+  # MSF postgres_hashdump table: "postgres   md5<hex>" or skip header
+  case "$line" in
+    Username*|----*|'#'*) return 1 ;;
+  esac
+  if [[ "$line" == *:* ]]; then
+    print -r -- "$line"
+    return 0
+  fi
+  if [[ "$line" =~ '^[[:alnum:]_][[:alnum:]_-]*[[:space:]]+md5[0-9a-fA-F]{32}$' ]]; then
+    awk '{print $1 ":" $2}' <<<"$line"
+    return 0
+  fi
+  print -r -- "$line"
+}
+
 _hash_crack_first_line() {
   local raw="${1//$'\r'/}"
-  local line
+  local line norm
   while IFS= read -r line; do
     line="${line%%#*}"
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
-    [[ -n "$line" ]] && print -r -- "$line" && return 0
+    [[ -z "$line" ]] && continue
+    norm="$(_hash_crack_normalize_line "$line")" || continue
+    print -r -- "$norm" && return 0
   done <<<"$raw"
   return 1
 }
@@ -274,12 +293,33 @@ _hash_crack_hash_value() {
   fi
 }
 
+_hash_crack_postgres_john_line() {
+  local user="$1" stored="$2"
+  python3 -c "
+import os, sys
+sys.path.insert(0, os.path.dirname(os.environ['RECON_APP']))
+from hash_crack import postgres_stored_to_john_line
+print(postgres_stored_to_john_line(sys.argv[1], sys.argv[2]))
+" "$user" "$stored"
+}
+
 _hash_crack_john_line() {
   local hash_line="$1" creds_user="$2"
-  local hash_val="${hash_line#*:}"
+  local hash_val user john_line
 
   if [[ "$hash_line" == *:* ]]; then
-    if [[ "$hash_val" =~ ^[a-fA-F0-9]{32}$ && "${hash_line%%:*}" == *' '* ]]; then
+    user="${hash_line%%:*}"
+    hash_val="${hash_line#*:}"
+    if python3 -c "
+import os, sys
+sys.path.insert(0, os.path.dirname(os.environ['RECON_APP']))
+from hash_crack import is_postgres_stored_md5
+sys.exit(0 if is_postgres_stored_md5(sys.argv[1]) else 1)
+" "$hash_val" 2>/dev/null; then
+      _hash_crack_postgres_john_line "$user" "$hash_val"
+      return 0
+    fi
+    if [[ "$hash_val" =~ ^[a-fA-F0-9]{32}$ && "$user" == *' '* ]]; then
       print -r -- "$hash_val"
       return 0
     fi
@@ -312,6 +352,11 @@ elif h.startswith('{SSHA}') or h.startswith('{SHA}'):
     formats = ['nsldap', 'raw-SHA1']
 elif h.startswith('*') and len(h) == 41:
     formats = ['mysql-sha1', 'mysql']
+elif h.startswith('md5') and len(h) == 35 and re.fullmatch(r'md5[a-fA-F0-9]{32}', h):
+    # PostgreSQL stored hash (pg_authid); NOT john's "postgres" C/R format
+    formats = ['dynamic_1034']
+elif h.startswith('\$dynamic_1034\$'):
+    formats = ['dynamic_1034']
 elif re.fullmatch(r'[a-fA-F0-9]{32}', h):
     formats = ['Raw-MD5', 'dynamic=md5(\$p)', 'NT']
 elif re.fullmatch(r'[a-fA-F0-9]{40}', h):
