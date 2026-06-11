@@ -16,6 +16,7 @@ from db import list_executions
 from db import get_execution
 from db import list_artifacts
 from db import delete_artifact
+from creds import import_ffuf_post_json
 from creds import import_hydra
 from creds import import_msf_login
 from creds import RECON_CREDS_BANNER
@@ -1330,6 +1331,34 @@ def main():
             print("", file=sys.stdout)
             print(RECON_CREDS_BANNER, file=sys.stdout)
             print("[i] no hydra credentials found in output", file=sys.stdout)
+
+    elif cmd == "creds-import-ffuf":
+        if len(sys.argv) < 4:
+            print("usage: recon.py creds-import-ffuf <ip> <username> [--file path]")
+            sys.exit(1)
+
+        ip = sys.argv[2]
+        username = sys.argv[3]
+        path = None
+        args = sys.argv[4:]
+        i = 0
+        while i < len(args):
+            if args[i] == "--file" and i + 1 < len(args):
+                path = args[i + 1]
+                i += 2
+            else:
+                i += 1
+
+        if not path:
+            print("usage: recon.py creds-import-ffuf <ip> <username> --file path.json")
+            sys.exit(1)
+
+        results = import_ffuf_post_json(path, ip=ip, username=username)
+        emit_import_results(results)
+        if not results:
+            print("", file=sys.stdout)
+            print(RECON_CREDS_BANNER, file=sys.stdout)
+            print("[i] no ffuf credentials found in output", file=sys.stdout)
 
     elif cmd == "creds-import-msf":
         from db import set_msfr_last_user

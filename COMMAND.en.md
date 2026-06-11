@@ -361,7 +361,8 @@ hint-rm 3         # delete id=3
 | `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |
-| `hydraweb ...` | for http-post-form (see `hydraweb -h`) |
+| `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (live progress + hits; Ctrl+C still saves to cl) |
+| `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
 Automatic login for `ssh` excludes **anonymous** (FTP anonymous saved by `ftpa`).

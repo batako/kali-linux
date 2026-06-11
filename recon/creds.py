@@ -1,4 +1,6 @@
+import json
 import re
+from pathlib import Path
 
 from db import creds_upsert
 
@@ -228,6 +230,54 @@ def import_msf_login(preset: str, text: str, ip: str = None, execution_id=None):
     if not importer:
         return []
     return importer(text, ip=ip, execution_id=execution_id)
+
+
+def import_ffuf_post_json(
+    path: str,
+    ip: str = None,
+    username: str = None,
+    *,
+    fuzz_key: str = "FUZZ",
+    execution_id=None,
+):
+    """Parse ffuf JSON (-of json) for POST body FUZZ password hits."""
+    if not path or not ip or not username:
+        return []
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    results = []
+    seen = set()
+    for row in data.get("results") or []:
+        inp = row.get("input") or {}
+        password = inp.get(fuzz_key)
+        if password is None:
+            continue
+        password = str(password)
+        dedupe = (ip, username, password)
+        if dedupe in seen:
+            continue
+        seen.add(dedupe)
+        status = creds_upsert(
+            ip=ip,
+            username=username,
+            password=password,
+            execution_id=execution_id,
+            comment="HTTP form (ffuf)",
+        )
+        results.append(
+            {
+                "ip": ip,
+                "username": username,
+                "password": password,
+                "comment": "HTTP form (ffuf)",
+                "status": status,
+            }
+        )
+    return results
 
 
 def import_hydra(text: str, ip: str = None, execution_id=None):

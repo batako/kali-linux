@@ -2,23 +2,370 @@
 # hydra helpers
 # ========================
 
+_ffufweb-usage() {
+  echo "usage: ffufweb [options] <url> <username>"
+  echo "  POST login password spray via ffuf (fixed user, FUZZ in password field)"
+  echo ""
+  echo "options:"
+  echo "  -d <data>              POST body (default: username=<user>&password=FUZZ)"
+  echo "  -w <file>              wordlist (default: \$RECON_PASSLIST)"
+  echo "  -H <header>            extra header (repeatable)"
+  echo "  -fw|-fs|-fc|-fl <n>    ffuf filters (e.g. -fw 8)"
+  echo "  -fr <regex>            filter regex"
+  echo "  -t <n>                 threads (default 40)"
+  echo "  -n                     print command only"
+  echo ""
+  echo "examples:"
+  echo "  ffufweb http://lookup.thm/login.php admin -fw 8"
+  echo "  ffufweb http://lookup.thm/login.php admin -d 'username=admin&password=FUZZ' -fw 8"
+  echo ""
+  echo "  on hit: creds → creds-list (Ctrl+C でもヒット分は保存)"
+  echo ""
+  echo "  hydraweb: hydra http-post-form (:F/:S). ffufweb: ffuf spray (-fw など)"
+}
+
+_ffufweb-cred-ip() {
+  local url="$1"
+  if [[ -n "${IP:-}" ]]; then
+    echo "$IP"
+    return 0
+  fi
+  if [[ "$url" =~ ^https?://([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+) ]]; then
+    echo "${match[1]}"
+    return 0
+  fi
+  target-current 2>/dev/null
+}
+
+_ffufweb-import-creds() {
+  local import_json=""
+  if [[ -z "${_FFUFWEB_CRED_IP:-}" || -z "${_FFUFWEB_USER:-}" ]]; then
+    return 0
+  fi
+  if [[ -f "${_FFUFWEB_JSON}.live" ]]; then
+    import_json="${_FFUFWEB_JSON}.live"
+  elif [[ -f "${_FFUFWEB_JSON:-}" ]]; then
+    import_json="$_FFUFWEB_JSON"
+  fi
+  [[ -n "$import_json" ]] || return 0
+  /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-ffuf \
+    "$_FFUFWEB_CRED_IP" "$_FFUFWEB_USER" --file "$import_json"
+}
+
+_ffufweb-cleanup() {
+  _ffufweb-import-creds
+  if [[ -n "${_FFUFWEB_JSON:-}" ]]; then
+    rm -f "$_FFUFWEB_JSON" "${_FFUFWEB_JSON}.live"
+  fi
+  rm -f "${_FFUFWEB_LOG:-}"
+  unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_JSON _FFUFWEB_LOG
+}
+
+_ffufweb-ffuf-filter() {
+  local json_live="$1" total="${2:-0}"
+  /usr/bin/python3 -u -c "
+import json, re, sys
+
+json_live = sys.argv[1]
+total_hint = int(sys.argv[2] or 0)
+progress_re = re.compile(r'Progress:\s*\[(\d+)/(\d+)\]')
+errors_re = re.compile(r'Errors:\s*(\d+)')
+hit_re = re.compile(r'(\S+)\s+\[Status:\s*(\d+),\s*Size:\s*(\d+)')
+ansi_re = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+
+state = {'cur': 0, 'tot': total_hint, 'errors': 0}
+seen = set()
+hits = []
+header_done = False
+progress_active = False
+last_drawn = -1
+
+def progress_line():
+    cur, tot = state['cur'], state['tot']
+    if not tot:
+        return None
+    pct = cur * 100 // tot
+    err = state['errors']
+    suffix = f'  errors={err}' if err else ''
+    return f'[*] {cur}/{tot} ({pct}%){suffix}'
+
+def ensure_header():
+    global header_done
+    if header_done:
+        return
+    sys.stderr.write('===== results =====\n')
+    sys.stderr.flush()
+    header_done = True
+
+def clear_progress():
+    global progress_active
+    if progress_active:
+        sys.stderr.write('\r\033[2K')
+        sys.stderr.flush()
+        progress_active = False
+
+def show_progress(force=False):
+    global progress_active, last_drawn
+    pl = progress_line()
+    if not pl:
+        return
+    if not force and state['cur'] == last_drawn:
+        return
+    last_drawn = state['cur']
+    ensure_header()
+    sys.stderr.write('\r\033[2K' + pl)
+    sys.stderr.flush()
+    progress_active = True
+
+def write_live():
+    with open(json_live, 'w', encoding='utf-8') as f:
+        json.dump({'results': list(hits)}, f)
+
+def add_hit(password, status, size):
+    global progress_active, last_drawn
+    if password in seen:
+        return
+    seen.add(password)
+    hits.append({
+        'input': {'FUZZ': password},
+        'status': int(status),
+        'length': int(size),
+    })
+    write_live()
+    ensure_header()
+    clear_progress()
+    sys.stderr.write(f'[+] {password}\tstatus={status}\tsize={size}\n')
+    sys.stderr.flush()
+    last_drawn = -1
+    show_progress(force=True)
+
+def finish():
+    ensure_header()
+    clear_progress()
+    if not seen:
+        sys.stderr.write('[-] no passwords matched\n')
+    else:
+        sys.stderr.write('\n')
+    sys.stderr.flush()
+
+def apply_progress(text):
+    ms = list(progress_re.finditer(text))
+    if not ms:
+        return
+    m = ms[-1]
+    state['cur'] = int(m.group(1))
+    state['tot'] = int(m.group(2))
+    em = errors_re.search(m.group(0))
+    if em:
+        state['errors'] = int(em.group(1))
+    show_progress()
+
+def apply_hits(text):
+    for line in text.splitlines():
+        line = ansi_re.sub('', line).strip()
+        if not line:
+            continue
+        m = hit_re.search(line)
+        if not m:
+            continue
+        add_hit(m.group(1), m.group(2), m.group(3))
+
+def scan_buf(buf):
+    clean = ansi_re.sub('', buf)
+    if 'Progress:' in clean:
+        apply_progress(clean)
+    apply_hits(clean)
+
+show_progress(force=True)
+
+buf = ''
+try:
+    while True:
+        chunk = sys.stdin.buffer.read(256)
+        if not chunk:
+            break
+        buf += chunk.decode('utf-8', errors='replace')
+        scan_buf(buf)
+        if len(buf) > 8192:
+            buf = buf[-4096:]
+    if buf.strip():
+        scan_buf(buf)
+finally:
+    finish()
+" "$json_live" "$total"
+}
+
+ffufweb() {
+  local url="" user="" data="" wordlist="$RECON_PASSLIST" threads=40 dry_run=0
+  local -a headers=( "Content-Type: application/x-www-form-urlencoded" )
+  local -a ffuf_extra=()
+
+  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    _ffufweb-usage
+    return 0
+  fi
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -d)
+        data="$2"
+        shift 2
+        ;;
+      -w)
+        wordlist="$2"
+        shift 2
+        ;;
+      -H)
+        headers+=("$2")
+        shift 2
+        ;;
+      -t)
+        threads="$2"
+        shift 2
+        ;;
+      -n)
+        dry_run=1
+        shift
+        ;;
+      -fw|-fs|-fc|-fl|-fr|-mc|-ms|-ml|-mr)
+        ffuf_extra+=("$1" "$2")
+        shift 2
+        ;;
+      http://*|https://*)
+        url="$1"
+        shift
+        ;;
+      -*)
+        echo "[-] ffufweb: unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        if [[ -z "$user" ]]; then
+          user="$1"
+        else
+          echo "[-] ffufweb: unexpected argument: $1" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -z "$url" || -z "$user" ]]; then
+    _ffufweb-usage
+    return 1
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "[-] ffufweb: wordlist not found: $wordlist" >&2
+    return 1
+  fi
+
+  if ! command -v ffuf >/dev/null 2>&1; then
+    echo "[-] ffufweb: ffuf not found" >&2
+    return 1
+  fi
+
+  [[ -z "$data" ]] && data="username=${user}&password=FUZZ"
+
+  local cred_ip json log rc wl_total cmd_str
+  local -a run_cmd
+  cred_ip="$(_ffufweb-cred-ip "$url")"
+  wl_total="$(/usr/bin/wc -l <"$wordlist" | tr -d '[:space:]')"
+
+  local -a cmd=(
+    ffuf
+    -w "$wordlist"
+    -X POST
+    -u "$url"
+    -d "$data"
+    -t "$threads"
+    -o /dev/null
+  )
+  local hdr
+  for hdr in "${headers[@]}"; do
+    cmd+=(-H "$hdr")
+  done
+  cmd+=("${ffuf_extra[@]}")
+
+  json="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/ffufweb.XXXXXX.json")"
+  log="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/ffufweb.XXXXXX.log")"
+  : >"${json}.live"
+
+  _FFUFWEB_CRED_IP="$cred_ip"
+  _FFUFWEB_USER="$user"
+  _FFUFWEB_JSON="$json"
+  _FFUFWEB_LOG="$log"
+  trap '_ffufweb-cleanup' EXIT INT TERM
+
+  if command -v stdbuf >/dev/null 2>&1; then
+    run_cmd=(stdbuf -o0 -e0 "${cmd[@]}")
+  else
+    run_cmd=("${cmd[@]}")
+  fi
+  cmd_str="${(j: :)${(@q)run_cmd}}"
+
+  echo "[*] url: $url  user: $user"
+  echo "[*] body: $data"
+  echo "[*] wordlist: $wordlist"
+  echo "[*] scan: ${wl_total:-?} passwords"
+  [[ -n "$cred_ip" ]] && echo "[*] creds ip: $cred_ip"
+  echo ""
+
+  if (( dry_run )); then
+    echo "[*] cmd: $cmd_str"
+    trap - EXIT INT TERM
+    rm -f "$json" "${json}.live" "$log"
+    unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_JSON _FFUFWEB_LOG
+    return 0
+  fi
+
+  if command -v script >/dev/null 2>&1; then
+    script -q -e -f -c "$cmd_str" /dev/null 2>&1 | _ffufweb-ffuf-filter "${json}.live" "$wl_total"
+  else
+    "${run_cmd[@]}" 2>&1 | _ffufweb-ffuf-filter "${json}.live" "$wl_total"
+  fi
+  rc=${pipestatus[1]:-$?}
+
+  if [[ -z "$cred_ip" ]]; then
+    echo "[i] creds ip unknown — target-set <ip> to auto-save hits" >&2
+  fi
+
+  return $rc
+}
+
 _hydraweb-usage() {
   echo "usage:"
-  echo "  hydraweb [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  hydraweb [-H vhost] [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
   echo "  omit target when \$IP is set (target-set <ip>)"
+  echo "  -H vhost: Host header (THM: hydraweb -H lookup.thm /login.php ...)"
   echo "  cookie: sent as H=Cookie: ... (e.g. PHPSESSID=abc; security=low)"
-  echo
+  echo ""
   echo "examples:"
   echo "  hydraweb /login.php Rick F \"Invalid username or password\" username password"
+  echo "  hydraweb -H lookup.thm /login.php admin F \"Wrong password\" username password"
   echo "  hydraweb /login.php admin F \"failed\" username password sub=Login \"PHPSESSID=abc; security=low\""
-  echo "  hydraweb 10.10.10.10 /login.php R1ckR0n43 S \"ingredient\" username password \"sub=Login\""
-  echo
+  echo ""
   echo "extra_post default: sub=Login  (matches login.php submit button)"
-  echo "  on hit: creds saved to creds-list (creds-import-hydra)"
+  echo "  on hit: creds → creds-list (hydra -V output, stops at first hit with -f)"
+  echo ""
+  echo "  word-count / size filters: use ffufweb (e.g. ffufweb http://lookup.thm/login.php admin -fw 8)"
 }
 
 hydraweb() {
-  local target path user mode text userfield passfield extra_post cookie form
+  local target path user mode text userfield passfield extra_post cookie form host_header
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -H)
+        host_header="$2"
+        shift 2
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
   if [[ $# -ge 1 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
     if [[ $# -lt 6 ]]; then
@@ -52,28 +399,32 @@ hydraweb() {
   if [[ -n "$extra_post" ]]; then
     form="${form}&${extra_post}"
   fi
+  if [[ -n "$host_header" ]]; then
+    form="${form}:H=Host: ${host_header}"
+  fi
   if [[ -n "$cookie" ]]; then
     form="${form}:H=Cookie: ${cookie}"
   fi
   form="${form}:${mode}=${text}"
 
   echo "[*] hydra form: ${form}"
+  [[ -n "$host_header" ]] && echo "[*] vhost: ${host_header}"
   [[ -n "$cookie" ]] && echo "[*] cookie: ${cookie}"
-  echo "[*] target: http://$target  user: $user"
+  echo "[*] target: http://${host_header:-$target}${path}  user: $user"
   echo "[*] wordlist: $RECON_PASSLIST"
 
   local log rc
-  log="$(mktemp "${TMPDIR:-/tmp}/hydraweb.XXXXXX")"
+  log="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/hydraweb.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
   /usr/bin/hydra -l "$user" \
     -P "$RECON_PASSLIST" \
     -t 32 -f -V \
     "$target" http-post-form \
-    "$form" 2>&1 | tee "$log"
-  rc=${pipestatus[1]}
+    "$form" 2>&1 | /usr/bin/tee "$log"
+  rc=${pipestatus[1]:-$?}
 
-  python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
+  /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-hydra "$target" --file "$log"
 
   return $rc
 }
