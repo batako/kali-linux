@@ -282,6 +282,23 @@ def discover_web_targets(ip: str) -> list[tuple[int, str]]:
     return targets
 
 
+def resolve_dirs_targets(
+    ip: str,
+    *,
+    urls: Optional[list[str]] = None,
+    host_header: Optional[str] = None,
+) -> list[tuple[Optional[int], str]]:
+    """URL list for scout -d/-ds: explicit paths, DB web ports, or vhost fallback."""
+    if urls:
+        return [(None, resolve_dirs_target(ip, raw)) for raw in urls]
+    targets = discover_web_targets(ip)
+    if targets:
+        return targets
+    if (host_header or "").strip():
+        return [(None, f"http://{ip}/")]
+    return []
+
+
 def resolve_probe_plan(ip: str, port: int, service: str) -> Optional[ProbePlan]:
     """
     Decide one probe from nmap service name (no port-number guessing).
@@ -899,13 +916,7 @@ def _run_dirs_phase(
     from wordlists.scout import resolve_dirs_multi_wordlist_ids
     from wordlists.scout import resolve_dirs_multi_wordlists
 
-    targets: list[tuple[Optional[int], str]] = []
-    if urls:
-        for raw in urls:
-            targets.append((None, resolve_dirs_target(ip, raw)))
-    else:
-        for port, url in discover_web_targets(ip):
-            targets.append((port, url))
+    targets = resolve_dirs_targets(ip, urls=urls, host_header=host_header)
 
     if not targets:
         print("[*] no Web targets — skip")
@@ -1670,7 +1681,7 @@ def run_scout(
         return run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
 
     if dirs_only or dirs_multi:
-        if not dirs_urls and not discover_web_targets(ip):
+        if not resolve_dirs_targets(ip, urls=dirs_urls, host_header=host_header):
             print("[-] no Web targets in DB — run scout first, or pass a URL")
             return 1
         rc = _run_dirs_phase(

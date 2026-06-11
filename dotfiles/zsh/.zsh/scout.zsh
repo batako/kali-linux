@@ -33,6 +33,7 @@ scout() {
   fi
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
+  local vhosts_only="" vhosts_target=""
   local wordlist="" threads="" ext="" host_header=""
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
@@ -71,6 +72,11 @@ scout() {
         echo "ports (scan only — like -d for gobuster):"
         echo "  -fp, --full-ports              TCP 1-65535 then searchsploit (-se)"
         echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
+        echo ""
+        echo "vhost discovery (THM / IP):"
+        echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
+        echo "  s -v lookup.thm                prereq: hosts lookup.thm; hits → cases/<room>/hosts"
+        echo "  s -d -H www.lookup.thm         dir on discovered vhost (not -v)"
         echo ""
         echo "other:"
         echo "  -d, --dirs [path]              gobuster dir only (single wordlist)"
@@ -117,6 +123,8 @@ scout() {
         echo "  s -ds -x php /backup          # ext fuzz, standard tier"
         echo "  s -ds -x bak -p next /api     # next ext tier"
         echo "  s -d /config -w dirbuster-small"
+        echo "  s -v lookup.thm                    # vhost discovery (THM; hosts apex first)"
+        echo "  s -d -H www.lookup.thm             # dir on discovered vhost"
         echo "  s -d -H mafialive.thm              # gobuster with Host: mafialive.thm"
         echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
         echo "  s -ds :443/hoge                # https://\$IP/hoge/"
@@ -203,6 +211,18 @@ scout() {
       --watch|-W)
         echo "[-] use -ws, not --watch" >&2
         return 1
+        ;;
+      -v|--vhosts)
+        vhosts_only=1
+        shift
+        if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+          _scout-vhosts-help
+          return 0
+        fi
+        if [[ -n "${1:-}" && "$1" != -* ]]; then
+          vhosts_target="$1"
+          shift
+        fi
         ;;
       -d|--dirs)
         dirs_only="--dirs"
@@ -352,6 +372,24 @@ scout() {
     return 1
   fi
 
+  if [[ -n "$vhosts_only" ]]; then
+    if [[ -n "$dirs_only$dirs_multi$report$report_ports$report_exploits$report_exploit_pack$report_paths$report_tree_fetch$search_exploits$scout_status$wait_dirs$full_ports$force$dry$quiet$threads$ext$host_header" ]] \
+      || (( ${#wordlist_ids[@]} )) || [[ -n "$wordlist$dirs_preset$scan_jobs" ]]; then
+      echo "[-] scout -v is standalone — do not combine with other flags" >&2
+      return 1
+    fi
+    if [[ $# -gt 0 ]]; then
+      echo "[-] scout -v: unexpected arguments: $*" >&2
+      return 1
+    fi
+  fi
+
+  if [[ -n "$vhosts_only" ]]; then
+    (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null
+    _scout-vhosts ${vhosts_target:+"$vhosts_target"}
+    return $?
+  fi
+
   if [[ -n "$dirs_only" && -n "$dirs_multi" ]]; then
     echo "[-] use -d or -ds, not both" >&2
     return 1
@@ -446,6 +484,7 @@ _scout() {
     '-se[searchsploit and cache]' '--search-exploits[searchsploit and cache]' \
     '-s[dirs status once]' '--status[dirs status once]' \
     '-ws[wait for dirs jobs]:sec:' '--wait-dirs[wait for dirs jobs]:sec:' \
+    '-v[vhost discovery (ffuf / gobuster)]' '--vhosts[vhost discovery (ffuf / gobuster)]' \
     '-d[dirs only]:path:_path_files' '--dirs[dirs only]:path:_path_files' \
     '-ds[parallel dirs]:path:_path_files' '--dirs-multi[parallel dirs]:path:_path_files' \
     '-p[preset light|standard|wide|deep|next with -ds]:preset:(light standard wide deep next)' \

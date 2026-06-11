@@ -17,9 +17,9 @@ For flag details, each command's `-h` / `--help` is the source of truth.
 | Recon CLI | `recon/` (inside container: `/opt/recon/recon.py`). Use through zsh wrappers |
 | `recon.db` | Recon CLI database (`/opt/recon/data/recon.db`, host `recon/data/recon.db`) |
 | `RECON_PASSLIST` | Default wordlist for john / hydra / stegcracker |
-| `GB_VHOST_WORDLIST` | For `gb-vhost` (default: raft-small-words) |
+| `GB_VHOST_WORDLIST` | For `scout -v` IP mode (default: raft-small-words) |
 | `GB_DNS_WORDLIST` | For `gb-dns` (`gb-set-dns`) |
-| `GB_THREADS` | gobuster threads for `gb-dns` / `gb-vhost` (default 40) |
+| `GB_THREADS` | Threads for `gb-dns` / `scout -v` (default 40) |
 | `SCOUT_STATUS_SLOTS` | Max number of **completed dirs jobs** shown by `scout -s` / `-ws` (default **4**) |
 | `CASE_LOOSE=1` | Fallback to `cases/_unscoped/` when room is unset |
 | `CASE_ROOT` | `/workspace/cases` (parent of `CASE_HOME`) |
@@ -186,6 +186,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -ds -w id -w id` | Parallel with explicit ids only |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost dir bust — `http://$IP/` + gobuster `-H Host:<name>` (no `/etc/hosts` needed) |
 | `scout -d mafialive.thm` | dotted FQDN is treated like `-H` (not as `/mafialive.thm/` path) |
+| `scout -v` / `--vhosts [domain\|ip]` | vhost discovery. `s -v lookup.thm` = `Host: FUZZ.lookup.thm` (THM; apex needs `hosts`; live `n/total`, hits auto-added to `hosts`) |
 | `scout -s` / `--status [ip]` | Show dirs job status **once** |
 | `scout -ws` / `--wait-dirs [sec]` | Auto-refresh dirs status. **Ends when running=0** (pair of `-s`) |
 | `scout -n` | Show command plan without execution |
@@ -567,7 +568,8 @@ In recon flow, **`scout -d`** (single) / **`scout -ds`** (parallel) are the prop
 | `scout -ds [path]` | Parallel dir (default: standard tier; upgrade with `-p next`) |
 | `gb-dirs [opts] [url]` | **Deprecated** - delegated to `scout -ds` |
 | `gb-dns [domain]` | DNS brute-force (real DNS queries) |
-| `gb-vhost [domain\|ip]` | vhost; `gb-vhost lookup.thm` = `Host: FUZZ.lookup.thm` (THM; apex needs `hosts`; progress `n/total` + `[+] host.domain`, end summary + auto `hosts`) |
+| `scout -v [domain\|ip]` | vhost discovery (see scout table above) |
+| `gb-vhost [domain\|ip]` | **Deprecated** — delegates to `scout -v` |
 
 Omitting **`-p`** in `-ds` = cumulative up to **standard** tier. **`-p next`** = only add next-tier jobs.
 
@@ -594,8 +596,8 @@ scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
 hosts lookup.thm
-gb-vhost lookup.thm   # THM: Host header fuzz (like ffuf -H FUZZ.lookup.thm)
-gb-vhost              # vhost against IP
+scout -v lookup.thm   # THM: Host header fuzz (like ffuf -H FUZZ.lookup.thm)
+scout -v              # vhost against IP
 gb-dns example.com    # when real DNS exists
 ```
 

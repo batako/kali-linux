@@ -17,9 +17,9 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 | Recon CLI | `recon/`（コンテナ内 `/opt/recon/recon.py`）。zsh ラッパ経由で使用 |
 | `recon.db` | Recon CLI の DB（`/opt/recon/data/recon.db`、ホスト `recon/data/recon.db`） |
 | `RECON_PASSLIST` | john / hydra / stegcracker の既定ワードリスト |
-| `GB_VHOST_WORDLIST` | `gb-vhost` 用（既定: raft-small-words） |
+| `GB_VHOST_WORDLIST` | `scout -v` IP モード用（既定: raft-small-words） |
 | `GB_DNS_WORDLIST` | `gb-dns` 用（`gb-set-dns`） |
-| `GB_THREADS` | `gb-dns` / `gb-vhost` の gobuster スレッド（既定 40） |
+| `GB_THREADS` | `gb-dns` / `scout -v` のスレッド（既定 40） |
 | `SCOUT_STATUS_SLOTS` | `scout -s` / `-ws` で表示する **完了 dirs ジョブ**の上限（既定 **4**） |
 | `CASE_LOOSE=1` | ルーム未設定時に `cases/_unscoped/` へフォールバック |
 | `CASE_ROOT` | `/workspace/cases`（`CASE_HOME` の親） |
@@ -186,6 +186,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
 | `scout -d mafialive.thm` | FQDN（`.` あり）は `-H` と同義（`/mafialive.thm/` にはならない） |
+| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。`s -v lookup.thm` = `Host: FUZZ.lookup.thm`（THM。apex は `hosts` 要。進捗 `n/total`、ヒットは `hosts` 自動追記） |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -582,7 +583,8 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 | `scout -ds [path]` | 並列 dir（default: standard tier；`-p next` で昇格） |
 | `gb-dirs [opts] [url]` | **非推奨** — `scout -ds` へ委譲 |
 | `gb-dns [domain]` | DNS ブルート（実 DNS 問い合わせ） |
-| `gb-vhost [domain\|ip]` | vhost。`gb-vhost lookup.thm` = `Host: FUZZ.lookup.thm`（THM。apex は `hosts` 要。進捗 `n/total` + `[+] host.domain`、終了時サマリ + `hosts` 自動追記） |
+| `scout -v [domain\|ip]` | vhost 列挙（上記 scout 表参照） |
+| `gb-vhost [domain\|ip]` | **非推奨** — `scout -v` へ委譲 |
 
 **`-ds` 省略** = **standard** tier まで（累積）。**`-p next`** = 次 tier の adds のみ。
 
@@ -609,8 +611,8 @@ scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
 hosts lookup.thm        # apex のみ先に登録
-gb-vhost lookup.thm   # THM: Host ヘッダ列挙。ヒットは hosts に自動追記
-gb-vhost              # IP 直叩き vhost
+scout -v lookup.thm   # THM: Host ヘッダ列挙。ヒットは hosts に自動追記
+scout -v              # IP 直叩き vhost
 gb-dns example.com    # 実 DNS がある環境向け
 ```
 

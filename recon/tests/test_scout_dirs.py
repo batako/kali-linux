@@ -22,6 +22,7 @@ from scout_run import parse_soft404_size_from_hits
 from scout_run import parse_wildcard_exclude_length
 from scout_run import probe_wildcard_exclude_length
 from scout_run import resolve_dirs_target
+from scout_run import resolve_dirs_targets
 
 
 class ScoutDirsGobusterTest(unittest.TestCase):
@@ -87,6 +88,14 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         self.assertFalse(looks_like_vhost_hostname("/admin"))
         self.assertFalse(is_dirs_path_arg("mafialive.thm"))
         self.assertTrue(is_dirs_path_arg("admin"))
+
+    @patch("scout_run.discover_web_targets", return_value=[])
+    def test_resolve_dirs_targets_vhost_fallback(self, _mock_discover) -> None:
+        self.assertEqual(
+            resolve_dirs_targets("10.0.0.1", host_header="www.lookup.thm"),
+            [(None, "http://10.0.0.1/")],
+        )
+        self.assertEqual(resolve_dirs_targets("10.0.0.1"), [])
 
     @patch("scout_run.subprocess.run")
     def test_probe_wildcard_exclude_length(self, mock_run) -> None:

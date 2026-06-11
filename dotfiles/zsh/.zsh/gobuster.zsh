@@ -2,7 +2,7 @@
 # gobuster helpers
 # ========================
 
-# gb-vhost only; dir scans use scout -d / scout -ds
+# vhost discovery: scout -v (s -v); dir scans use scout -d / scout -ds
 GB_VHOST_WORDLIST="/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt"
 GB_DNS_WORDLIST="/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
 GB_THREADS=15
@@ -404,7 +404,7 @@ gb-dns() {
   if [[ "${1:-}" == "-h" || "${1:-}" == --help ]]; then
     echo "usage: gb-dns [domain]"
     echo "  real DNS brute-force (gobuster dns)"
-    echo "  THM *.thm with only /etc/hosts → use: gb-vhost lookup.thm"
+    echo "  THM *.thm with only /etc/hosts → use: scout -v lookup.thm"
     return 0
   fi
 
@@ -421,7 +421,7 @@ gb-dns() {
 
   if [[ "$domain" == *.thm ]]; then
     echo "[i] gb-dns: *.thm は THM の DNS に引かないことが多いです" >&2
-    echo "    Host ヘッダ列挙なら: gb-vhost ${domain}" >&2
+    echo "    Host ヘッダ列挙なら: scout -v ${domain}" >&2
   fi
 
   echo "========================"
@@ -436,18 +436,24 @@ gb-dns() {
     -q
 }
 
-gb-vhost() {
+_scout-vhosts-help() {
+  echo "usage: scout -v [domain|ip]   (alias: s -v)"
+  echo "  s -v lookup.thm   # THM: ffuf -H 'Host: FUZZ.lookup.thm' -u http://lookup.thm"
+  echo "  s -v              # IP 直叩き gobuster (raft-small-words)"
+  echo ""
+  echo "  prereq (THM): hosts lookup.thm  (apex のみ。サブドメインは終了後に自動登録)"
+  echo "  wordlist: GB_DNS_WORDLIST (gb-set-dns で変更可)"
+  echo "  filter:   GB_VHOST_EXCLUDE_LENGTH (domain 既定 0 = ffuf -fs 0)"
+  echo "  hosts:    ヒットを cases/<room>/hosts に自動追記"
+  echo ""
+  echo "  見つけた vhost で dir: s -d -H www.lookup.thm"
+}
+
+_scout-vhosts() {
   local target="" wordlist=""
 
   if [[ "${1:-}" == "-h" || "${1:-}" == --help ]]; then
-    echo "usage: gb-vhost [domain|ip]"
-    echo "  gb-vhost lookup.thm   # THM: ffuf -H 'Host: FUZZ.lookup.thm' -u http://lookup.thm"
-    echo "  gb-vhost              # IP 直叩き gobuster (raft-small-words)"
-    echo ""
-    echo "  prereq (THM): hosts lookup.thm  (apex のみ。サブドメインは終了後に自動登録)"
-    echo "  wordlist: GB_DNS_WORDLIST (gb-set-dns で変更可)"
-    echo "  filter:   GB_VHOST_EXCLUDE_LENGTH (domain 既定 0 = ffuf -fs 0)"
-    echo "  hosts:    ヒットを cases/<room>/hosts に自動追記"
+    _scout-vhosts-help
     return 0
   fi
 
@@ -478,12 +484,12 @@ gb-vhost() {
 
   wordlist="$GB_DNS_WORDLIST"
   if ! getent hosts "$target" &>/dev/null; then
-    echo "[-] gb-vhost: $target does not resolve — run: hosts $target" >&2
+    echo "[-] scout -v: $target does not resolve — run: hosts $target" >&2
     return 1
   fi
 
   if ! command -v ffuf >/dev/null 2>&1; then
-    echo "[-] gb-vhost: ffuf not found (domain mode requires ffuf)" >&2
+    echo "[-] scout -v: ffuf not found (domain mode requires ffuf)" >&2
     return 1
   fi
 
@@ -496,4 +502,14 @@ gb-vhost() {
   echo "=============================="
 
   _gb-vhost-domain-ffuf "$target" "$wordlist"
+}
+
+gb-vhost() {
+  if [[ "${1:-}" == "-h" || "${1:-}" == --help ]]; then
+    echo "[!] gb-vhost is deprecated — use: scout -v (alias: s -v)" >&2
+    _scout-vhosts-help
+    return 0
+  fi
+  echo "[!] gb-vhost is deprecated — use: scout -v (alias: s -v)" >&2
+  _scout-vhosts "$@"
 }
