@@ -17,6 +17,7 @@ from db import get_execution
 from db import list_artifacts
 from db import delete_artifact
 from creds import import_hydra
+from creds import import_msf_login
 from creds import RECON_CREDS_BANNER
 from creds import emit_import_results
 from hints import add_hint
@@ -1329,6 +1330,105 @@ def main():
             print("", file=sys.stdout)
             print(RECON_CREDS_BANNER, file=sys.stdout)
             print("[i] no hydra credentials found in output", file=sys.stdout)
+
+    elif cmd == "creds-import-msf":
+        from db import set_msfr_last_user
+        from db import set_ssh_last_user
+        from msf_run import preset_family
+
+        args = sys.argv[2:]
+        if len(args) < 2:
+            print("usage: recon.py creds-import-msf <ip> <preset> [--file path]")
+            sys.exit(1)
+        ip, preset = args[0], args[1]
+        path = None
+        rest = args[2:]
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--file" and i + 1 < len(rest):
+                path = rest[i + 1]
+                i += 2
+            else:
+                print(f"unknown option: {rest[i]}")
+                sys.exit(1)
+        if path:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        else:
+            text = sys.stdin.read()
+
+        results = import_msf_login(preset, text, ip=ip)
+        emit_import_results(results)
+        if not results:
+            print("", file=sys.stdout)
+            print(RECON_CREDS_BANNER, file=sys.stdout)
+            print("[i] no msf login credentials found in output", file=sys.stdout)
+        else:
+            family = preset_family(preset)
+            if family in ("postgres", "ssh", "ftp"):
+                set_msfr_last_user(ip, family, results[0]["username"])
+            if family == "ssh":
+                set_ssh_last_user(ip, results[0]["username"])
+
+    elif cmd == "msfr-pick-user":
+        from msf_run import MsfrPickError
+        from msf_run import pick_msfr_user
+        from msf_run import pick_msfr_user_dry
+
+        args = sys.argv[2:]
+        dry = False
+        while args and args[0] in ("--dry-run", "-n"):
+            dry = True
+            args = args[1:]
+        if len(args) < 2:
+            print("usage: recon.py msfr-pick-user [--dry-run] <ip> <family> [default_user]")
+            sys.exit(1)
+        ip, family = args[0], args[1]
+        default_user = args[2] if len(args) > 2 else ""
+        try:
+            if dry:
+                print(pick_msfr_user_dry(ip, family, default_user=default_user))
+            else:
+                print(pick_msfr_user(ip, family, default_user=default_user))
+        except MsfrPickError as exc:
+            print(f"[-] {exc}", file=sys.stderr)
+            sys.exit(1)
+
+    elif cmd == "msfr-last-set":
+        from db import set_msfr_last_user
+        from db import set_ssh_last_user
+
+        if len(sys.argv) < 5:
+            print("usage: recon.py msfr-last-set <ip> <family> <username>")
+            sys.exit(1)
+        ip, family, user = sys.argv[2], sys.argv[3], sys.argv[4]
+        set_msfr_last_user(ip, family, user)
+        if family == "ssh":
+            set_ssh_last_user(ip, user)
+        print("ok")
+
+    elif cmd == "msf-port":
+        from msf_run import resolve_rport
+
+        args = sys.argv[2:]
+        if len(args) < 2:
+            print("usage: recon.py msf-port <ip> <module> [--port N]")
+            sys.exit(1)
+        ip, module = args[0], args[1]
+        explicit = None
+        rest = args[2:]
+        i = 0
+        while i < len(rest):
+            if rest[i] in ("-p", "--port") and i + 1 < len(rest):
+                explicit = int(rest[i + 1])
+                i += 2
+            else:
+                print(f"unknown option: {rest[i]}")
+                sys.exit(1)
+        port = resolve_rport(ip, module, explicit=explicit)
+        if port is None:
+            sys.exit(1)
+        print(port)
 
     elif cmd == "ssh-last-get":
         if len(sys.argv) < 3:

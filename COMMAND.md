@@ -396,6 +396,34 @@ ssh-get skyfuck ~/credential.pgp
 
 ---
 
+## Metasploit（msfr）
+
+| コマンド | 説明 |
+|----------|------|
+| `msfr list` | 登録済み preset 一覧 |
+| `msfr <preset> [opts]` | MSF モジュールを case 既定で実行 |
+
+`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` 等の login preset は成功時に `cl` へ自動登録。続く `pg-sql` 等は `cl` の `(msfr)` タグ付き creds を使用（複数なら ssh 同様に選択）。
+
+| preset | 用途 |
+|--------|------|
+| `pg-login` … `pg-shell` | PostgreSQL 系 |
+| `ssh-login` | SSH 弱い認証スキャン |
+| `ftp-login` | FTP 弱い認証スキャン |
+| `tomcat-mgr` | Tomcat manager upload（`-u` / `-U`） |
+
+```bash
+msfr pg-login
+msfr pg-sql -n              # dry-run（コマンドと resource のみ表示）
+msfr ssh-login
+msfr tomcat-mgr -u bob -w bubbles -p 1234
+msfr -m exploit/... -u user --creds --stay
+```
+
+詳細: [docs/Metasploit.md](docs/Metasploit.md)
+
+---
+
 ## リスナー・RCE トリガー
 
 | コマンド | 説明 |
@@ -748,6 +776,7 @@ sshkey-crack -h
 gpg-crack -h
 upload-shell -h
 webrsh -h
+msfr -h
 postcmd -h
 enc -h
 rot -h
@@ -777,4 +806,4 @@ hydrabasic -h
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell`（`upsh`）`postcmd`（`pcmd`）`shell-url` `shell-cmd` ·
 `pop3`（`p3`）`pop3-list`（`p3l`）`pop3-get`（`p3g`）`pop3-dump`（`p3d`）`hydrapop3` ·
-`enc`（`dec`）`rot` `vig` `fixmagic` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
+`enc`（`dec`）`rot` `vig` `fixmagic` · `msfr` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

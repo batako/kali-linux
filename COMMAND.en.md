@@ -396,6 +396,34 @@ ssh-get skyfuck ~/credential.pgp
 
 ---
 
+## Metasploit (msfr)
+
+| Command | Description |
+|----------|------|
+| `msfr list` | List registered presets |
+| `msfr <preset> [opts]` | Run an MSF module with case defaults |
+
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; follow-up modules (`pg-sql`, etc.) use `(msfr)`-tagged creds (picker if multiple, like `ssh`).
+
+| preset | purpose |
+|--------|---------|
+| `pg-login` … `pg-shell` | PostgreSQL |
+| `ssh-login` | SSH weak-credential scan |
+| `ftp-login` | FTP weak-credential scan |
+| `tomcat-mgr` | Tomcat manager upload (`-u` / `-U`) |
+
+```bash
+msfr pg-login
+msfr pg-sql -n              # dry-run (print command + resource only)
+msfr ssh-login
+msfr tomcat-mgr -u bob -w bubbles -p 1234
+msfr -m exploit/... -u user --creds --stay
+```
+
+See [docs/Metasploit.md](docs/Metasploit.md).
+
+---
+
 ## Listener / RCE trigger
 
 | Command | Description |
@@ -733,6 +761,7 @@ sshkey-crack -h
 gpg-crack -h
 upload-shell -h
 webrsh -h
+msfr -h
 postcmd -h
 enc -h
 rot -h
@@ -762,4 +791,4 @@ Full names only. Alias is shown in parentheses.
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·
 `pop3` (`p3`) `pop3-list` (`p3l`) `pop3-get` (`p3g`) `pop3-dump` (`p3d`) `hydrapop3` ·
-`enc` (`dec`) `rot` `vig` `fixmagic` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
+`enc` (`dec`) `rot` `vig` `fixmagic` · `msfr` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

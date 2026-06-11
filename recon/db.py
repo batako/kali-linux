@@ -1400,6 +1400,43 @@ def set_ssh_last_user(ip: str, username: str, execution_id=None):
     conn.close()
 
 
+def get_msfr_last_user(ip: str, family: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'msfr_last_user' AND key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, family),
+    ).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_msfr_last_user(ip: str, family: str, username: str, execution_id=None):
+    if get_msfr_last_user(ip, family) == username:
+        return
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM artifacts WHERE ip = ? AND kind = 'msfr_last_user' AND key = ?",
+        (ip, family),
+    )
+    cur.execute(
+        """
+        INSERT INTO artifacts (
+            ip, kind, key, value, execution_id, created_at
+        ) VALUES (?, 'msfr_last_user', ?, ?, ?, datetime('now'))
+        """,
+        (ip, family, username, execution_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 def list_executions(ip: str = None, *, case_name: str = None, limit: int = 50, all_case: bool = False):
     if case_name:
         return list_executions_for_case(case_name, limit=limit, all_case=all_case)

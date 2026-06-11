@@ -24,6 +24,29 @@ HYDRA_HTTP_BASIC_FOUND = re.compile(
     re.IGNORECASE,
 )
 
+# Metasploit scanner/login modules
+# MSF 6.4 postgres_login: "Login Successful: user:pass@db" (no quotes)
+# Older: "Success: 'user:pass@db'"
+MSF_POSTGRES_SUCCESS = re.compile(
+    r"(?:Success:\s*'|Login Successful:\s*)([^:]+):([^@]+)@(?:[^']+'|\S+)",
+    re.IGNORECASE,
+)
+# MSF 6.4 ssh_login may use "Login Successful: user pass proof"
+MSF_SSH_SUCCESS = re.compile(
+    r"(?:Success:\s*'|Login Successful:\s*)([^'\s]+)['\s]+'([^']*)'",
+    re.IGNORECASE,
+)
+MSF_FTP_SUCCESS = re.compile(
+    r"(?:Success:\s*'|Login Successful:\s*)([^:]+):([^'\s]+)'?",
+    re.IGNORECASE,
+)
+
+MSFR_COMMENT = {
+    "postgres": "PostgreSQL (msfr)",
+    "ssh": "SSH (msfr)",
+    "ftp": "FTP (msfr)",
+}
+
 
 def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None, comment: str = ""):
     if not text:
@@ -95,6 +118,98 @@ def import_hydra_pop3(text: str, ip: str = None, execution_id=None):
     return _import_hydra_matches(
         text, HYDRA_POP3_FOUND, ip=ip, execution_id=execution_id, comment="POP3 (hydra)"
     )
+
+
+def _import_msf_pairs(
+    text: str,
+    pattern,
+    ip: str,
+    *,
+    comment: str,
+    execution_id=None,
+):
+    if not text or not ip:
+        return []
+
+    results = []
+    seen = set()
+    for m in pattern.finditer(text):
+        username, password = m.group(1), m.group(2)
+        if not username:
+            continue
+        dedupe_key = (ip, username, password)
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+
+        status = creds_upsert(
+            ip=ip,
+            username=username,
+            password=password,
+            execution_id=execution_id,
+            comment=comment,
+        )
+        results.append(
+            {
+                "ip": ip,
+                "username": username,
+                "password": password,
+                "comment": comment,
+                "status": status,
+            }
+        )
+    return results
+
+
+def import_msf_postgres_login(text: str, ip: str = None, execution_id=None):
+    if not ip:
+        return []
+    return _import_msf_pairs(
+        text,
+        MSF_POSTGRES_SUCCESS,
+        ip,
+        comment=MSFR_COMMENT["postgres"],
+        execution_id=execution_id,
+    )
+
+
+def import_msf_ssh_login(text: str, ip: str = None, execution_id=None):
+    if not ip:
+        return []
+    return _import_msf_pairs(
+        text,
+        MSF_SSH_SUCCESS,
+        ip,
+        comment=MSFR_COMMENT["ssh"],
+        execution_id=execution_id,
+    )
+
+
+def import_msf_ftp_login(text: str, ip: str = None, execution_id=None):
+    if not ip:
+        return []
+    return _import_msf_pairs(
+        text,
+        MSF_FTP_SUCCESS,
+        ip,
+        comment=MSFR_COMMENT["ftp"],
+        execution_id=execution_id,
+    )
+
+
+MSF_LOGIN_IMPORTERS = {
+    "pg-login": import_msf_postgres_login,
+    "postgres-login": import_msf_postgres_login,
+    "ssh-login": import_msf_ssh_login,
+    "ftp-login": import_msf_ftp_login,
+}
+
+
+def import_msf_login(preset: str, text: str, ip: str = None, execution_id=None):
+    importer = MSF_LOGIN_IMPORTERS.get((preset or "").lower())
+    if not importer:
+        return []
+    return importer(text, ip=ip, execution_id=execution_id)
 
 
 def import_hydra(text: str, ip: str = None, execution_id=None):
