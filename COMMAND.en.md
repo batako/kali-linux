@@ -402,7 +402,7 @@ ssh-get skyfuck ~/credential.pgp
 |----------|------|
 | `listen [port]` | `nc -lvnp` (default 4444) |
 | `listen -l [port]` | Save connection log to `cases/.../logs/revshell_*` |
-| `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0` |
+| `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0`. `-u user[:pass]` for HTTP Basic (pass from `cl` if omitted) |
 
 Before `ftp-revshell`, start `listen` in **another terminal**.
 

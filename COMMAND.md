@@ -402,7 +402,7 @@ ssh-get skyfuck ~/credential.pgp
 |----------|------|
 | `listen [port]` | `nc -lvnp`（既定 4444） |
 | `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
-| `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動 |
+| `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`-u user[:pass]` で HTTP Basic（pass 省略時は `cl`） |
 
 `ftp-revshell` の前に **別ターミナルで `listen`** を起動する。
 
