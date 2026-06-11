@@ -218,6 +218,19 @@ _msfr-import-login() {
   python3 "$RECON_APP" creds-import-msf "$ip" "$preset" --file "$log"
 }
 
+_msfr-hash-preset() {
+  case "$1" in
+    pg-hashdump|postgres-hashdump) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+_msfr-import-hash() {
+  local preset="$1" ip="$2" log="$3"
+  _msfr-hash-preset "$preset" || return 0
+  python3 "$RECON_APP" hash-import-msf "$ip" --file "$log"
+}
+
 _msfr-resolve-pass() {
   local ip="$1" user="$2" pass="$3"
   [[ -n "$pass" ]] && { echo "$pass"; return 0; }
@@ -422,6 +435,9 @@ msfr() {
       echo "---"
       echo "# post-run: creds-import-msf $rhost $preset --file <log>"
     fi
+    if _msfr-hash-preset "$preset"; then
+      echo "# post-run: hash-import-msf $rhost --file <log>"
+    fi
     [[ "$kind" == exploit && ! $do_exit -eq 1 ]] && echo "# tip: sessions -l / sessions -i 1"
     return 0
   fi
@@ -434,6 +450,7 @@ msfr() {
   msf_exit=${pipestatus[1]}
 
   _msfr-import-login "$preset" "$rhost" "$log"
+  _msfr-import-hash "$preset" "$rhost" "$log"
 
   return $msf_exit
 }

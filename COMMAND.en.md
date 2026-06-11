@@ -355,6 +355,9 @@ hint-rm 3         # delete id=3
 | `creds-add [-c comment] [ip] <user> <pass>` | Manual add (alias: `ca`. `-c` sets usage hint) |
 | `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `case-set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
 | `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
+| `hash-list [--json] [ip]` | Hash list (`user<TAB>stored<TAB>state`). alias: `hlist` |
+| `hash-add [ip] <user hash-line>` | Manual add (alias: `hxa`) |
+| `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |
 | `hydraweb ...` | for http-post-form (see `hydraweb -h`) |
@@ -403,7 +406,7 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | List registered presets |
 | `msfr <preset> [opts]` | Run an MSF module with case defaults |
 
-`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; follow-up modules (`pg-sql`, etc.) use `(msfr)`-tagged creds (picker if multiple, like `ssh`).
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; `pg-hashdump` saves hashes to `hlist`. Follow-up modules (`pg-sql`, etc.) use `(msfr)`-tagged creds (picker if multiple, like `ssh`).
 
 | preset | purpose |
 |--------|---------|
@@ -602,11 +605,12 @@ gb-dns example.com
 |----------|------|
 | `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john -> `creds-add` on success |
 | `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john -> decrypt `credential.pgp` -> add plaintext `user:pass` via `creds-add` |
-| `hash-crack [-f] [-b] [-u user] <hash\|file\|url> [wordlist]` | Hash string/file/URL to john (htpasswd, etc.). `-b` saves creds as `borg@$IP` |
+| `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | Single hash/file/URL to john. No arg (or `-a`) cracks all pending `hlist` entries → `cl` on success. `-b` saves creds as `borg@$IP` |
 | `zip-crack <zip> [wordlist]` | zip hash |
 | `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | Detect Borg repo in directory -> `borg extract` all archives |
 
 ```bash
+msfr pg-hashdump && hlist && hash-crack      # hlist → john → cl
 hash-crack -b http://$IP/etc/squid/passwd   # creds-list: borg@$IP
 borg-crack <dir>                            # auto-use borg from creds-list
 borg-crack -u <user> <dir>
@@ -709,6 +713,9 @@ If no repair is needed, exits with `[=] ok`. Supports PNG / JPEG / GIF.
 | `hint-add` | `ha` |
 | `hint-list` | `hl` |
 | `hint-rm` | `hr` |
+| `hash-list` | `hlist` |
+| `hash-add` | `hxa` |
+| `hash-rm` | `hxr` |
 | `ssh-get` | `sget` |
 | `ftp-revshell` | `ftprsh` |
 | `upload-shell` | `upsh` |
@@ -783,6 +790,7 @@ Full names only. Alias is shown in parentheses.
 `scan` ·
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
+`hash-list` (`hlist`) `hash-add` (`hxa`) `hash-rm` (`hxr`) ·
 `ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·

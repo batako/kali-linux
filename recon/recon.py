@@ -1370,6 +1370,218 @@ def main():
             if family == "ssh":
                 set_ssh_last_user(ip, results[0]["username"])
 
+    elif cmd == "hash-import-msf":
+        from creds import RECON_CREDS_BANNER
+        from hash_ops import format_import_lines
+        from hash_ops import import_msf_hashdump
+
+        args = sys.argv[2:]
+        if len(args) < 1:
+            print("usage: recon.py hash-import-msf <ip> [--file path]")
+            sys.exit(1)
+        ip = args[0]
+        path = None
+        rest = args[1:]
+        i = 0
+        while i < len(rest):
+            if rest[i] == "--file" and i + 1 < len(rest):
+                path = rest[i + 1]
+                i += 2
+            else:
+                print(f"unknown option: {rest[i]}")
+                sys.exit(1)
+        if path:
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        else:
+            text = sys.stdin.read()
+
+        results = import_msf_hashdump(text, ip)
+        if results:
+            print("", file=sys.stdout)
+            print(RECON_CREDS_BANNER, file=sys.stdout)
+            for line in format_import_lines(results):
+                print(line, file=sys.stdout)
+        else:
+            print("", file=sys.stdout)
+            print(RECON_CREDS_BANNER, file=sys.stdout)
+            print("[i] no hashes found in output", file=sys.stdout)
+
+    elif cmd == "hash-add":
+        from hash_import import parse_hashdump_text
+        from hash_ops import format_import_lines
+        from hash_ops import import_hash_records
+
+        args = sys.argv[2:]
+        if len(args) < 2:
+            print("usage: recon.py hash-add <ip> <user hash-line>")
+            print("  e.g. hash-add 10.0.0.1 'postgres md532e12f...'")
+            sys.exit(1)
+        ip = args[0]
+        line = " ".join(args[1:])
+        records = parse_hashdump_text(line)
+        if not records:
+            print("[-] could not parse hash line", file=sys.stderr)
+            sys.exit(1)
+        results = import_hash_records(ip, records)
+        from creds import RECON_CREDS_BANNER
+
+        print(RECON_CREDS_BANNER)
+        for ln in format_import_lines(results):
+            print(ln)
+
+    elif cmd == "hash-list":
+        from db import list_hash_entries
+
+        args = sys.argv[2:]
+        as_json = False
+        while args and args[0] == "--json":
+            as_json = True
+            args = args[1:]
+        ip = args[0] if args else None
+        if not ip:
+            ip = os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py hash-list [--json] [ip]")
+            sys.exit(1)
+        entries = list_hash_entries(ip)
+        if as_json:
+            import json as _json
+
+            print(
+                _json.dumps(
+                    [
+                        {
+                            "username": e.username,
+                            "stored": e.stored,
+                            "state": e.state,
+                            "format": e.format,
+                            "john": e.john,
+                            "source": e.source,
+                        }
+                        for e in entries
+                    ]
+                )
+            )
+        else:
+            if not entries:
+                print(f"(no hashes for {ip})")
+            else:
+                for e in entries:
+                    print(f"{e.username}\t{e.stored}\t{e.state}")
+
+    elif cmd == "hash-rm":
+        from db import hash_delete
+
+        if len(sys.argv) < 3:
+            print("usage: recon.py hash-rm <ip> [username]")
+            sys.exit(1)
+        ip = sys.argv[2]
+        username = sys.argv[3] if len(sys.argv) > 3 else None
+        n = hash_delete(ip, username)
+        if username:
+            print(f"removed {n} hash row(s) for {username}@{ip}")
+        else:
+            print(f"removed {n} hash row(s) for {ip}")
+
+    elif cmd == "hash-crack-store":
+        from pathlib import Path
+
+        from creds import RECON_CREDS_BANNER
+        from creds import emit_import_results
+        from hash_batch import apply_batch_results
+        from hash_batch import prepare_batch
+        from hash_batch import run_john_batch
+        from hash_batch import show_john_batch
+
+        args = sys.argv[2:]
+        force = False
+        wordlist = os.environ.get("RECON_PASSLIST", "")
+        ip = None
+        user_filter = None
+        i = 0
+        while i < len(args):
+            if args[i] == "--force" or args[i] == "-f":
+                force = True
+                i += 1
+            elif args[i] in ("--wordlist", "-w") and i + 1 < len(args):
+                wordlist = args[i + 1]
+                i += 2
+            elif args[i] in ("--user", "-u") and i + 1 < len(args):
+                user_filter = args[i + 1]
+                i += 2
+            elif ip is None:
+                ip = args[i]
+                i += 1
+            else:
+                print(f"unknown option: {args[i]}")
+                sys.exit(1)
+        if not ip:
+            ip = os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py hash-crack-store [--force] [--wordlist path] [-u user] [ip]")
+            sys.exit(1)
+        if not wordlist or not os.path.isfile(wordlist):
+            print(f"wordlist not found: {wordlist}", file=sys.stderr)
+            sys.exit(1)
+
+        lines, users, john_fmt = prepare_batch(ip, force=force)
+        if user_filter:
+            pairs = [(l, u) for l, u in zip(lines, users) if u == user_filter]
+            if not pairs:
+                print(f"[-] no crackable hash for user {user_filter}", file=sys.stderr)
+                sys.exit(1)
+            lines, users = zip(*pairs)
+            lines, users = list(lines), list(users)
+        if not lines:
+            print("[i] no hashes to crack (hlist; states: imported/john_ready, or -f for failed)")
+            sys.exit(0)
+        if not john_fmt:
+            print("[-] no supported hash format in batch", file=sys.stderr)
+            sys.exit(1)
+
+        case_home = os.environ.get("CASE_HOME")
+        if case_home:
+            exports = os.path.join(case_home, "exports")
+        elif os.environ.get("CASE_LOOSE") == "1":
+            exports = os.path.join(
+                os.environ.get("CASE_ROOT", "/workspace/cases"),
+                "_unscoped",
+                "exports",
+            )
+        else:
+            exports = os.path.join(os.getcwd(), "exports")
+        os.makedirs(exports, exist_ok=True)
+        hash_file = os.path.join(exports, "hashlist_batch.john")
+        pot_file = hash_file + ".pot"
+        with open(hash_file, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        print(f"[*] hash-list: {len(lines)} hash(es) @ {ip}")
+        print(f"[*] john file: {hash_file}")
+        print(f"[*] format:    {john_fmt}")
+        print(f"[*] wordlist:  {wordlist}")
+        print("")
+
+        _, crack_out = run_john_batch(
+            Path(hash_file),
+            Path(pot_file),
+            Path(wordlist),
+            john_fmt,
+            force=force,
+        )
+        show = show_john_batch(Path(hash_file), Path(pot_file), john_fmt)
+        cred_results = apply_batch_results(
+            ip, users, show, crack_text=crack_out
+        )
+        if cred_results:
+            print("")
+            emit_import_results(cred_results)
+        else:
+            print("")
+            print(RECON_CREDS_BANNER)
+            print("[-] no passwords cracked")
+
     elif cmd == "msfr-pick-user":
         from msf_run import MsfrPickError
         from msf_run import pick_msfr_user

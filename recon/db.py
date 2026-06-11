@@ -1264,8 +1264,142 @@ def creds_delete(ip: str, username: str = None) -> int:
     return deleted
 
 
-# Stored for creds/ssh; hidden from artifact-list (use creds-list / cl)
-_ARTIFACT_CRED_KINDS = ("username", "password", "creds_comment", "ssh_last_user")
+def _get_hash_artifact(ip: str, username: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT id, value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'hash' AND key = ?
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip, username),
+    ).fetchone()
+    conn.close()
+    return row
+
+
+def hash_upsert_entry(ip: str, entry, execution_id=None) -> str:
+    """Insert or update hash-list entry. Returns saved|updated|unchanged."""
+    from hash_store import HashEntry
+    from hash_store import entry_from_import
+    from hash_store import merge_on_import
+
+    if not ip or not entry.username:
+        raise ValueError("ip and username required")
+
+    if not isinstance(entry, HashEntry):
+        entry = entry_from_import(entry)
+
+    case_name = _current_case_name()
+    _touch_case_ip(ip)
+
+    existing_row = _get_hash_artifact(ip, entry.username)
+    existing = (
+        HashEntry.from_json(entry.username, existing_row["value"])
+        if existing_row
+        else None
+    )
+    merged, status = merge_on_import(existing, entry)
+
+    conn = connect()
+    cur = conn.cursor()
+    if existing_row:
+        cur.execute(
+            """
+            UPDATE artifacts
+            SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                created_at = datetime('now')
+            WHERE id = ?
+            """,
+            (merged.to_json(), execution_id, case_name, int(existing_row["id"])),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO artifacts (
+                ip, kind, key, value, execution_id, created_at, case_name
+            ) VALUES (?, 'hash', ?, ?, ?, datetime('now'), ?)
+            """,
+            (ip, entry.username, merged.to_json(), execution_id, case_name),
+        )
+    conn.commit()
+    conn.close()
+    return status
+
+
+def hash_save_entry(ip: str, entry) -> str:
+    """Persist entry (state/john updates). Returns updated|unchanged."""
+    from hash_store import HashEntry
+
+    row = _get_hash_artifact(ip, entry.username)
+    if not row:
+        raise ValueError(f"hash not found: {entry.username}@{ip}")
+    stored = HashEntry.from_json(entry.username, row["value"])
+    if stored.to_json() == entry.to_json():
+        return "unchanged"
+    conn = connect()
+    conn.execute(
+        """
+        UPDATE artifacts
+        SET value = ?, created_at = datetime('now')
+        WHERE id = ?
+        """,
+        (entry.to_json(), int(row["id"])),
+    )
+    conn.commit()
+    conn.close()
+    return "updated"
+
+
+def list_hash_entries(ip: str) -> list:
+    from hash_store import HashEntry
+
+    conn = connect()
+    rows = conn.execute(
+        """
+        SELECT key, value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'hash' AND key != ''
+        ORDER BY key
+        """,
+        (ip,),
+    ).fetchall()
+    conn.close()
+    return [HashEntry.from_json(r["key"], r["value"]) for r in rows]
+
+
+def hash_delete(ip: str, username: str = None) -> int:
+    if not ip:
+        raise ValueError("ip required")
+    conn = connect()
+    cur = conn.cursor()
+    if username:
+        cur.execute(
+            "DELETE FROM artifacts WHERE ip = ? AND kind = 'hash' AND key = ?",
+            (ip, username),
+        )
+    else:
+        cur.execute(
+            "DELETE FROM artifacts WHERE ip = ? AND kind = 'hash'",
+            (ip,),
+        )
+    deleted = cur.rowcount
+    conn.commit()
+    conn.close()
+    return deleted
+
+
+# Stored for creds/ssh/hash; hidden from artifact-list (use cl / hlist)
+_ARTIFACT_CRED_KINDS = (
+    "username",
+    "password",
+    "creds_comment",
+    "ssh_last_user",
+    "msfr_last_user",
+    "hash",
+)
 
 
 def _creds_row_dict(row) -> dict:

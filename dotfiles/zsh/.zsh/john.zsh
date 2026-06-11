@@ -445,34 +445,41 @@ _hash_crack_apply_creds() {
 }
 
 # john wordlist crack for a hash line (htpasswd/shadow/etc.)
-# usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]
+# usage: hash-crack [-f] [-a] [-b] [-u user] [-] [<hash|file|url>] [wordlist]
+#   hash-crack                    # hlist 全件（$IP）
+#   hash-crack -a [wordlist]      # 同上（明示）
 #   hash-crack -b http://$IP/etc/squid/passwd   # creds-add as borg@$IP (borg-crack 用)
 #   hash-crack 'music_archive:$apr1$...'
-#   hash-crack squid.pass
 #   curl -sS ... | hash-crack -
-# -f: ignore this hash's pot and re-run wordlist
+# -f: ignore pot and re-run wordlist (single hash or hlist batch)
+# -a: crack all pending hashes from hlist (alias for no hash argument)
 # -b: creds-add ユーザを $RECON_BORG_CREDS_USER（既定 borg）にする
-# -u: username when hash is hash-only; also used for creds-add on success
+# -u: username when hash is hash-only; batch: crack one user from hlist
 hash-crack() {
   local force=0
+  local batch=0
   local creds_user=""
   local from_stdin=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -f) force=1; shift ;;
+      -a|--all) batch=1; shift ;;
       -b) creds_user="${RECON_BORG_CREDS_USER:-borg}"; shift ;;
       -u) creds_user="$2"; shift 2 ;;
       -h|--help)
-        echo "usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]"
+        echo "usage: hash-crack [-f] [-a] [-b] [-u user] [-] [<hash|file|url>] [wordlist]"
         echo "  default wordlist: \$RECON_PASSLIST"
-        echo "  -f  force re-crack (ignore this hash's pot)"
+        echo "  no hash arg (or -a): crack hlist for \$IP → cl on success"
+        echo "  -f  force re-crack (ignore pot)"
+        echo "  -a  hlist batch (same as no hash argument)"
         echo "  -b  save creds as \$RECON_BORG_CREDS_USER (default: borg) for borg-crack"
-        echo "  -u  username for hash-only input; creds-add on success"
+        echo "  -u  username for hash-only input; batch: one user from hlist"
         echo "  -   read hash line from stdin"
         echo "  auto-tries john --format by hash shape (e.g. 32 hex -> Raw-MD5)"
         echo ""
         echo "examples:"
+        echo "  msfr pg-hashdump && hlist && hash-crack"
         echo "  hash-crack -b http://\$IP/etc/squid/passwd"
         echo "  hash-crack 'music_archive:\$apr1\$...'"
         echo "  curl -sS http://\$IP/etc/shadow | hash-crack -"
@@ -489,8 +496,22 @@ hash-crack() {
     esac
   done
 
+  if [[ $from_stdin -eq 0 && ( $batch -eq 1 || $# -eq 0 ) ]]; then
+    local -a store_args=(hash-crack-store)
+    (( force )) && store_args+=(-f)
+    [[ -n "$creds_user" ]] && store_args+=(-u "$creds_user")
+    if [[ -n "${1:-}" && -f "$1" ]]; then
+      store_args+=(--wordlist "$1")
+    elif [[ -n "${1:-}" && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+      store_args+=("$1")
+      [[ -n "${2:-}" && -f "$2" ]] && store_args+=(--wordlist "$2")
+    fi
+    python3 "$RECON_APP" "${store_args[@]}"
+    return $?
+  fi
+
   if [[ $from_stdin -eq 0 && $# -lt 1 ]]; then
-    echo "usage: hash-crack [-f] [-b] [-u user] [-] <hash|file|url> [wordlist]"
+    echo "usage: hash-crack [-f] [-a] [-b] [-u user] [-] [<hash|file|url>] [wordlist]"
     return 1
   fi
 

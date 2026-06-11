@@ -355,6 +355,9 @@ hint-rm 3         # id=3 を削除
 | `creds-add [-c comment] [ip] <user> <pass>` | 手動登録（alias: `ca`。`-c` で用途メモ。`???` 等は `noglob` 付き） |
 | `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`case-set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
+| `hash-list [--json] [ip]` | ハッシュ一覧（`user<TAB>stored<TAB>state`）。alias: `hlist` |
+| `hash-add [ip] <user hash-line>` | 手動登録（alias: `hxa`） |
+| `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
 | `hydraweb ...` | http-post-form 用（`hydraweb -h` 参照） |
@@ -403,7 +406,7 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | 登録済み preset 一覧 |
 | `msfr <preset> [opts]` | MSF モジュールを case 既定で実行 |
 
-`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` 等の login preset は成功時に `cl` へ自動登録。続く `pg-sql` 等は `cl` の `(msfr)` タグ付き creds を使用（複数なら ssh 同様に選択）。
+`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` 等の login preset は成功時に `cl` へ自動登録。`pg-hashdump` は成功時に `hlist` へ自動登録。続く `pg-sql` 等は `cl` の `(msfr)` タグ付き creds を使用（複数なら ssh 同様に選択）。
 
 | preset | 用途 |
 |--------|------|
@@ -617,11 +620,12 @@ gb-dns example.com
 |----------|------|
 | `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john → 成功時 `creds-add` |
 | `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john → `credential.pgp` 復号 → 平文の `user:pass` を `creds-add` |
-| `hash-crack [-f] [-b] [-u user] <hash\|file\|url> [wordlist]` | ハッシュ文字列・ファイル・URL を john（htpasswd 等）。`-b` で creds を `borg@$IP` に保存 |
+| `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | 1行/ファイル/URL を john。引数なし（または `-a`）で `hlist` 全件バッチ → 成功時 `cl`。`-b` で creds を `borg@$IP` に保存 |
 | `zip-crack <zip> [wordlist]` | zip ハッシュ |
 | `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | フォルダ内の Borg リポジトリを検出 → 全アーカイブを `borg extract` |
 
 ```bash
+msfr pg-hashdump && hlist && hash-crack      # hlist → john → cl
 hash-crack -b http://$IP/etc/squid/passwd   # creds-list: borg@$IP
 borg-crack <dir>                            # creds-list の borg を自動使用
 borg-crack -u <user> <dir>
@@ -724,6 +728,9 @@ upload-shell 63
 | `hint-add` | `ha` |
 | `hint-list` | `hl` |
 | `hint-rm` | `hr` |
+| `hash-list` | `hlist` |
+| `hash-add` | `hxa` |
+| `hash-rm` | `hxr` |
 | `ssh-get` | `sget` |
 | `ftp-revshell` | `ftprsh` |
 | `upload-shell` | `upsh` |
@@ -798,6 +805,7 @@ hydrabasic -h
 `scan` ·
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
+`hash-list`（`hlist`）`hash-add`（`hxa`）`hash-rm`（`hxr`） ·
 `ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
 `steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
