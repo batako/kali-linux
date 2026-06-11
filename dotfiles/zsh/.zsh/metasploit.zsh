@@ -70,6 +70,7 @@ options:
   --stay              keep msf open (default: exploits)
 
 env: MSFR_PORT, DB_PORT, SSH_PORT, FTP_PORT, HTTP_PORT, SMB_PORT
+      MSFR_USERLIST / MSFR_SSH_USERLIST, MSFR_PASSLIST (default: \$RECON_PASSLIST)
 
 examples:
   msfr pg-login
@@ -182,6 +183,7 @@ _msfr-preset-sets() {
       _msfr-rc-set "$rc" STOP_ON_SUCCESS true
       _msfr-rc-set "$rc" BLANK_PASSWORDS true
       _msfr-rc-set "$rc" USER_AS_PASS true
+      _msfr-rc-set "$rc" ANONYMOUS_LOGIN true
       ;;
     ftp-login)
       _msfr-rc-set "$rc" STOP_ON_SUCCESS true
@@ -198,6 +200,27 @@ _msfr-login-preset() {
     pg-login|postgres-login|ssh-login|ftp-login) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+_msfr-login-scan-rc() {
+  local preset="$1" rc="$2" user="$3" pass="$4"
+  local line key val
+
+  while IFS=$'\t' read -r key val; do
+    [[ -n "$key" ]] || continue
+    _msfr-rc-set "$rc" "$key" "$val"
+  done < <(_msfr-py "
+import msf_run, sys
+try:
+    sets = msf_run.login_scan_resource_sets(
+        sys.argv[1], user=sys.argv[2] or '', password=sys.argv[3] or ''
+    )
+except msf_run.LoginScanConfigError as e:
+    print(f'[-] msfr: {e}', file=sys.stderr)
+    sys.exit(1)
+for k, v in sets:
+    print(f'{k}\t{v}')
+" "$preset" "$user" "$pass") || return 1
 }
 
 _msfr-creds-family() {
@@ -364,6 +387,14 @@ msfr() {
     _msfr-preset-sets "$preset" "$rc" "$rfile" "$sql" "${targeturi:-$default_uri}" || return 1
   elif [[ -n "$targeturi" ]]; then
     _msfr-rc-set "$rc" TARGETURI "$targeturi"
+  fi
+
+  if _msfr-login-preset "$preset"; then
+    case "$preset" in
+      ssh-login|ftp-login)
+        _msfr-login-scan-rc "$preset" "$rc" "$user" "$pass" || return 1
+        ;;
+    esac
   fi
 
   local apply_creds=0

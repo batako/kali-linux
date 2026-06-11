@@ -63,3 +63,37 @@ class TestMsfRun(unittest.TestCase):
     def test_default_ssl(self) -> None:
         self.assertTrue(msf_run.default_ssl(443, "exploit/multi/http/foo"))
         self.assertFalse(msf_run.default_ssl(80, "exploit/multi/http/foo"))
+
+    @mock.patch("msf_run.os.path.isfile", return_value=True)
+    @mock.patch.dict(
+        "os.environ",
+        {
+            "MSFR_USERLIST": "/wl/users.txt",
+            "RECON_PASSLIST": "/wl/pass.txt",
+        },
+        clear=False,
+    )
+    def test_login_scan_resource_sets_default(self, _mock_isfile) -> None:
+        sets = dict(msf_run.login_scan_resource_sets("ssh-login"))
+        self.assertEqual(sets["USER_FILE"], "/wl/users.txt")
+        self.assertEqual(sets["PASS_FILE"], "/wl/pass.txt")
+
+    @mock.patch("msf_run.os.path.isfile", return_value=True)
+    @mock.patch.dict("os.environ", {"RECON_PASSLIST": "/wl/pass.txt"}, clear=False)
+    def test_login_scan_resource_sets_single_user(self, _mock_isfile) -> None:
+        sets = dict(msf_run.login_scan_resource_sets("ssh-login", user="root"))
+        self.assertEqual(sets["USERNAME"], "root")
+        self.assertEqual(sets["PASS_FILE"], "/wl/pass.txt")
+        self.assertNotIn("USER_FILE", sets)
+
+    def test_login_scan_resource_sets_user_pass(self) -> None:
+        sets = dict(
+            msf_run.login_scan_resource_sets(
+                "ftp-login", user="anonymous", password="anonymous@"
+            )
+        )
+        self.assertEqual(sets["FTPUSER"], "anonymous")
+        self.assertEqual(sets["FTPPASS"], "anonymous@")
+
+    def test_login_scan_pg_login_empty(self) -> None:
+        self.assertEqual(msf_run.login_scan_resource_sets("pg-login"), [])

@@ -139,6 +139,80 @@ def preset_family(preset: str) -> str:
     return PRESET_FAMILY.get((preset or "").lower(), module_family(preset))
 
 
+DEFAULT_LOGIN_USER_FILE = (
+    "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+)
+DEFAULT_LOGIN_PASS_FILE = (
+    "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
+)
+
+LOGIN_SCAN_PRESETS = frozenset({"ssh-login", "ftp-login", "pg-login", "postgres-login"})
+
+
+class LoginScanConfigError(Exception):
+    pass
+
+
+def is_login_scan_preset(preset: str) -> bool:
+    return (preset or "").lower() in LOGIN_SCAN_PRESETS
+
+
+def default_login_user_file(family: str) -> str:
+    env_key = {"ssh": "MSFR_SSH_USERLIST", "ftp": "MSFR_FTP_USERLIST"}.get(family)
+    if env_key:
+        val = os.environ.get(env_key, "").strip()
+        if val:
+            return val
+    return os.environ.get("MSFR_USERLIST", DEFAULT_LOGIN_USER_FILE).strip()
+
+
+def default_login_pass_file() -> str:
+    for key in ("MSFR_PASSLIST", "RECON_PASSLIST"):
+        val = os.environ.get(key, "").strip()
+        if val:
+            return val
+    return DEFAULT_LOGIN_PASS_FILE
+
+
+def _require_file(path: str, label: str) -> str:
+    if not path or not os.path.isfile(path):
+        raise LoginScanConfigError(f"{label} not found: {path}")
+    return path
+
+
+def login_scan_resource_sets(
+    preset: str,
+    *,
+    user: str = "",
+    password: str = "",
+) -> list[tuple[str, str]]:
+    """MSF resource set lines for ssh-login / ftp-login brute-force presets."""
+    family = preset_family(preset)
+    if family not in ("ssh", "ftp"):
+        return []
+
+    user_key = "USERNAME" if family == "ssh" else "FTPUSER"
+    pass_key = "PASSWORD" if family == "ssh" else "FTPPASS"
+    sets: list[tuple[str, str]] = []
+
+    if user and password:
+        sets.append((user_key, user))
+        sets.append((pass_key, password))
+        return sets
+
+    pass_file = _require_file(default_login_pass_file(), "pass wordlist")
+
+    if user:
+        sets.append((user_key, user))
+        sets.append(("PASS_FILE", pass_file))
+        return sets
+
+    user_file = _require_file(default_login_user_file(family), "user wordlist")
+    sets.append(("USER_FILE", user_file))
+    sets.append(("PASS_FILE", pass_file))
+    return sets
+
+
 def _postgres_cred_excluded(comment: str) -> bool:
     from creds import MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS
 
