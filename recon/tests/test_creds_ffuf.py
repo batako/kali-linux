@@ -34,6 +34,25 @@ class CredsFfufTest(unittest.TestCase):
         self.assertEqual(rows[0]["username"], "admin")
         self.assertEqual(rows[0]["password"], "secret123")
 
+    def test_import_ffuf_post_json_user_spray(self) -> None:
+        payload = {
+            "results": [
+                {"input": {"FUZZ": "admin"}, "status": 302},
+            ]
+        }
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(payload, f)
+            path = f.name
+        try:
+            rows = import_ffuf_post_json(
+                path, ip="10.0.0.1", password="Password123"
+            )
+        finally:
+            Path(path).unlink(missing_ok=True)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["username"], "admin")
+        self.assertEqual(rows[0]["password"], "Password123")
+
 
 if __name__ == "__main__":
     unittest.main()

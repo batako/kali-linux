@@ -361,7 +361,7 @@ hint-rm 3         # id=3 を削除
 | `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
-| `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。ライブ進捗 + ヒット表示。Ctrl+C でも cl 保存） |
+| `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
 

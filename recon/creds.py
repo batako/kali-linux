@@ -237,11 +237,20 @@ def import_ffuf_post_json(
     ip: str = None,
     username: str = None,
     *,
+    password: str = None,
     fuzz_key: str = "FUZZ",
     execution_id=None,
 ):
-    """Parse ffuf JSON (-of json) for POST body FUZZ password hits."""
-    if not path or not ip or not username:
+    """Parse ffuf JSON (-of json) for POST body FUZZ hits.
+
+    password spray (default): fixed username, FUZZ in password field.
+    user spray: pass password=..., FUZZ in username field.
+    """
+    if not path or not ip:
+        return []
+    if username is None and password is None:
+        return []
+    if username is not None and password is not None:
         return []
     try:
         raw = Path(path).read_text(encoding="utf-8")
@@ -253,26 +262,31 @@ def import_ffuf_post_json(
     seen = set()
     for row in data.get("results") or []:
         inp = row.get("input") or {}
-        password = inp.get(fuzz_key)
-        if password is None:
+        fuzz_val = inp.get(fuzz_key)
+        if fuzz_val is None:
             continue
-        password = str(password)
-        dedupe = (ip, username, password)
+        if username is not None:
+            user = username
+            passwd = str(fuzz_val)
+        else:
+            user = str(fuzz_val)
+            passwd = password
+        dedupe = (ip, user, passwd)
         if dedupe in seen:
             continue
         seen.add(dedupe)
         status = creds_upsert(
             ip=ip,
-            username=username,
-            password=password,
+            username=user,
+            password=passwd,
             execution_id=execution_id,
             comment="HTTP form (ffuf)",
         )
         results.append(
             {
                 "ip": ip,
-                "username": username,
-                "password": password,
+                "username": user,
+                "password": passwd,
                 "comment": "HTTP form (ffuf)",
                 "status": status,
             }

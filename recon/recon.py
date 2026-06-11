@@ -1333,29 +1333,49 @@ def main():
             print("[i] no hydra credentials found in output", file=sys.stdout)
 
     elif cmd == "creds-import-ffuf":
-        if len(sys.argv) < 4:
-            print("usage: recon.py creds-import-ffuf <ip> <username> [--file path]")
+        if len(sys.argv) < 3:
+            print(
+                "usage: recon.py creds-import-ffuf <ip> <username> --file path.json"
+            )
+            print(
+                "       recon.py creds-import-ffuf <ip> --password pass --file path.json"
+            )
             sys.exit(1)
 
         ip = sys.argv[2]
-        username = sys.argv[3]
+        username = None
+        password = None
         path = None
-        args = sys.argv[4:]
+        args = sys.argv[3:]
         i = 0
         while i < len(args):
             if args[i] == "--file" and i + 1 < len(args):
                 path = args[i + 1]
                 i += 2
+            elif args[i] == "--password" and i + 1 < len(args):
+                password = args[i + 1]
+                i += 2
+            elif not args[i].startswith("-") and username is None:
+                username = args[i]
+                i += 1
             else:
                 i += 1
 
         if not path:
-            print("usage: recon.py creds-import-ffuf <ip> <username> --file path.json")
+            print(
+                "usage: recon.py creds-import-ffuf <ip> <username> --file path.json"
+            )
+            print(
+                "       recon.py creds-import-ffuf <ip> --password pass --file path.json"
+            )
             sys.exit(1)
 
-        results = import_ffuf_post_json(path, ip=ip, username=username)
-        emit_import_results(results)
-        if not results:
+        results = import_ffuf_post_json(
+            path, ip=ip, username=username, password=password
+        )
+        if results:
+            emit_import_results(results)
+        else:
             print("", file=sys.stdout)
             print(RECON_CREDS_BANNER, file=sys.stdout)
             print("[i] no ffuf credentials found in output", file=sys.stdout)

@@ -3,12 +3,15 @@
 # ========================
 
 _ffufweb-usage() {
-  echo "usage: ffufweb [options] <url> <username>"
-  echo "  POST login password spray via ffuf (fixed user, FUZZ in password field)"
+  echo "usage:"
+  echo "  ffufweb [options] <url> <username>       # password spray (default)"
+  echo "  ffufweb -U [options] <url> <password>     # username spray"
   echo ""
   echo "options:"
-  echo "  -d <data>              POST body (default: username=<user>&password=FUZZ)"
-  echo "  -w <file>              wordlist (default: \$RECON_PASSLIST)"
+  echo "  -U                     fixed password, FUZZ in username (wordlist: \$RECON_USERLIST)"
+  echo "  -d <data>              POST body (default pass: username=<user>&password=FUZZ"
+  echo "                         default -U: username=FUZZ&password=<pass>)"
+  echo "  -w <file>              wordlist (default: \$RECON_PASSLIST or \$RECON_USERLIST with -U)"
   echo "  -H <header>            extra header (repeatable)"
   echo "  -fw|-fs|-fc|-fl <n>    ffuf filters (e.g. -fw 8)"
   echo "  -fr <regex>            filter regex"
@@ -17,11 +20,23 @@ _ffufweb-usage() {
   echo ""
   echo "examples:"
   echo "  ffufweb http://lookup.thm/login.php admin -fw 8"
-  echo "  ffufweb http://lookup.thm/login.php admin -d 'username=admin&password=FUZZ' -fw 8"
+  echo "  ffufweb -U http://lookup.thm/login.php password123 -fr 'Wrong username or password'"
+  echo "  ffufweb -U http://lookup.thm/login.php 'Password123' -w users.txt -fr '...'"
+  echo ""
+  echo "  -fw は password spray 向け。username spray は失敗レスポンスの words/size が違うので要調整"
   echo ""
   echo "  on hit: creds → creds-list (Ctrl+C でもヒット分は保存)"
   echo ""
   echo "  hydraweb: hydra http-post-form (:F/:S). ffufweb: ffuf spray (-fw など)"
+}
+
+_ffufweb-filters-summary() {
+  local -a extra=("$@")
+  if (( ${#extra[@]} )); then
+    echo "${extra[*]}"
+  else
+    echo "(none)"
+  fi
 }
 
 _ffufweb-cred-ip() {
@@ -39,7 +54,10 @@ _ffufweb-cred-ip() {
 
 _ffufweb-import-creds() {
   local import_json=""
-  if [[ -z "${_FFUFWEB_CRED_IP:-}" || -z "${_FFUFWEB_USER:-}" ]]; then
+  if [[ -z "${_FFUFWEB_CRED_IP:-}" ]]; then
+    return 0
+  fi
+  if [[ -z "${_FFUFWEB_USER:-}" && -z "${_FFUFWEB_PASS:-}" ]]; then
     return 0
   fi
   if [[ -f "${_FFUFWEB_JSON}.live" ]]; then
@@ -48,8 +66,13 @@ _ffufweb-import-creds() {
     import_json="$_FFUFWEB_JSON"
   fi
   [[ -n "$import_json" ]] || return 0
-  /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-ffuf \
-    "$_FFUFWEB_CRED_IP" "$_FFUFWEB_USER" --file "$import_json"
+  if [[ -n "${_FFUFWEB_USER:-}" ]]; then
+    /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-ffuf \
+      "$_FFUFWEB_CRED_IP" "$_FFUFWEB_USER" --file "$import_json"
+  else
+    /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-ffuf \
+      "$_FFUFWEB_CRED_IP" --password "$_FFUFWEB_PASS" --file "$import_json"
+  fi
 }
 
 _ffufweb-cleanup() {
@@ -58,7 +81,7 @@ _ffufweb-cleanup() {
     rm -f "$_FFUFWEB_JSON" "${_FFUFWEB_JSON}.live"
   fi
   rm -f "${_FFUFWEB_LOG:-}"
-  unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_JSON _FFUFWEB_LOG
+  unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_PASS _FFUFWEB_JSON _FFUFWEB_LOG
 }
 
 _ffufweb-ffuf-filter() {
@@ -144,8 +167,6 @@ def finish():
     clear_progress()
     if not seen:
         sys.stderr.write('[-] no passwords matched\n')
-    else:
-        sys.stderr.write('\n')
     sys.stderr.flush()
 
 def apply_progress(text):
@@ -196,7 +217,8 @@ finally:
 }
 
 ffufweb() {
-  local url="" user="" data="" wordlist="$RECON_PASSLIST" threads=40 dry_run=0
+  local url="" fixed="" data="" wordlist="" threads=40 dry_run=0 user_spray=0
+  local user="" pass="" spray_label="passwords"
   local -a headers=( "Content-Type: application/x-www-form-urlencoded" )
   local -a ffuf_extra=()
 
@@ -207,6 +229,10 @@ ffufweb() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -U)
+        user_spray=1
+        shift
+        ;;
       -d)
         data="$2"
         shift 2
@@ -240,8 +266,8 @@ ffufweb() {
         return 1
         ;;
       *)
-        if [[ -z "$user" ]]; then
-          user="$1"
+        if [[ -z "$fixed" ]]; then
+          fixed="$1"
         else
           echo "[-] ffufweb: unexpected argument: $1" >&2
           return 1
@@ -251,9 +277,20 @@ ffufweb() {
     esac
   done
 
-  if [[ -z "$url" || -z "$user" ]]; then
+  if [[ -z "$url" || -z "$fixed" ]]; then
     _ffufweb-usage
     return 1
+  fi
+
+  if (( user_spray )); then
+    pass="$fixed"
+    wordlist="${wordlist:-${RECON_USERLIST:-/usr/share/seclists/Usernames/Names/names.txt}}"
+    spray_label="usernames"
+    [[ -z "$data" ]] && data="username=FUZZ&password=${pass}"
+  else
+    user="$fixed"
+    wordlist="${wordlist:-$RECON_PASSLIST}"
+    [[ -z "$data" ]] && data="username=${user}&password=FUZZ"
   fi
 
   if [[ ! -f "$wordlist" ]]; then
@@ -265,8 +302,6 @@ ffufweb() {
     echo "[-] ffufweb: ffuf not found" >&2
     return 1
   fi
-
-  [[ -z "$data" ]] && data="username=${user}&password=FUZZ"
 
   local cred_ip json log rc wl_total cmd_str
   local -a run_cmd
@@ -294,6 +329,7 @@ ffufweb() {
 
   _FFUFWEB_CRED_IP="$cred_ip"
   _FFUFWEB_USER="$user"
+  _FFUFWEB_PASS="$pass"
   _FFUFWEB_JSON="$json"
   _FFUFWEB_LOG="$log"
   trap '_ffufweb-cleanup' EXIT INT TERM
@@ -305,10 +341,21 @@ ffufweb() {
   fi
   cmd_str="${(j: :)${(@q)run_cmd}}"
 
-  echo "[*] url: $url  user: $user"
+  echo "[*] url: $url"
+  if (( user_spray )); then
+    echo "[*] mode: username spray (fixed password)"
+    echo "[*] pass: $pass"
+  else
+    echo "[*] mode: password spray (fixed user)"
+    echo "[*] user: $user"
+  fi
   echo "[*] body: $data"
   echo "[*] wordlist: $wordlist"
-  echo "[*] scan: ${wl_total:-?} passwords"
+  echo "[*] scan: ${wl_total:-?} ${spray_label}"
+  echo "[*] filters: $(_ffufweb-filters-summary "${ffuf_extra[@]}")"
+  if (( user_spray )) && [[ "${ffuf_extra[*]}" == *"-fw"* ]]; then
+    echo "[i] -U + -fw: word count is often wrong for username spray — calibrate with curl or use -fr" >&2
+  fi
   [[ -n "$cred_ip" ]] && echo "[*] creds ip: $cred_ip"
   echo ""
 
@@ -316,7 +363,7 @@ ffufweb() {
     echo "[*] cmd: $cmd_str"
     trap - EXIT INT TERM
     rm -f "$json" "${json}.live" "$log"
-    unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_JSON _FFUFWEB_LOG
+    unset _FFUFWEB_CRED_IP _FFUFWEB_USER _FFUFWEB_PASS _FFUFWEB_JSON _FFUFWEB_LOG
     return 0
   fi
 
