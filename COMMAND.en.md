@@ -408,11 +408,12 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | List registered presets |
 | `msfr <preset> [opts]` | Run an MSF module with case defaults |
 
-`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, etc.) save hits to `cl`; `pg-hashdump` saves hashes to `hlist`. Follow-up modules (`pg-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, `my-login`, etc.) save hits to `cl`; `pg-hashdump` / `my-hashdump` save hashes to `hlist`. Follow-up modules (`pg-sql`, `my-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
 
 | preset | purpose |
 |--------|---------|
 | `pg-login` … `pg-shell` | PostgreSQL |
+| `my-login` … `my-shell` | MySQL (`mysql-*` aliases) |
 | `ssh-login` | SSH weak-credential scan |
 | `ftp-login` | FTP weak-credential scan |
 | `tomcat-mgr` | Tomcat manager upload (`-u` / `-U`) |
@@ -420,6 +421,8 @@ ssh-get skyfuck ~/credential.pgp
 ```bash
 msfr pg-login
 msfr pg-sql -n              # dry-run (print command + resource only)
+msfr my-login
+msfr my-sql -u root
 msfr ssh-login
 msfr tomcat-mgr -u bob -w bubbles -p 1234
 msfr -m exploit/... -u user --creds --stay

@@ -11,6 +11,10 @@ class TestMsfRun(unittest.TestCase):
             "postgres",
         )
         self.assertEqual(
+            msf_run.module_family("auxiliary/scanner/mysql/mysql_login"),
+            "mysql",
+        )
+        self.assertEqual(
             msf_run.module_family("exploit/multi/http/tomcat_mgr_upload"),
             "http",
         )
@@ -35,9 +39,11 @@ class TestMsfRun(unittest.TestCase):
         mock_ports.return_value = [
             (22, "tcp", "open", "ssh", "OpenSSH"),
             (80, "tcp", "open", "http", "Apache"),
+            (3306, "tcp", "open", "mysql", "5.7"),
             (5432, "tcp", "open", "postgresql", "9.5"),
         ]
         self.assertEqual(msf_run.resolve_port_from_scout("10.0.0.1", "postgres"), 5432)
+        self.assertEqual(msf_run.resolve_port_from_scout("10.0.0.1", "mysql"), 3306)
         self.assertEqual(msf_run.resolve_port_from_scout("10.0.0.1", "http"), 80)
         self.assertIsNone(msf_run.resolve_port_from_scout("10.0.0.1", "ftp"))
 

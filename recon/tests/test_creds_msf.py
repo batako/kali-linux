@@ -46,6 +46,21 @@ class CredsMsfImportTest(unittest.TestCase):
         self.assertEqual(rows[0]["password"], "password")
 
     @patch("creds.creds_upsert", return_value="saved")
+    def test_import_mysql_login(self, mock_upsert) -> None:
+        text = "[+] 10.0.0.1:3306 - Success: 'root:secret'\n"
+        rows = import_msf_login("my-login", text, ip="10.0.0.1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["username"], "root")
+        self.assertEqual(rows[0]["password"], "secret")
+        mock_upsert.assert_called_once_with(
+            ip="10.0.0.1",
+            username="root",
+            password="secret",
+            execution_id=None,
+            comment="MySQL (msfr)",
+        )
+
+    @patch("creds.creds_upsert", return_value="saved")
     def test_import_ssh_login(self, mock_upsert) -> None:
         text = "[+] 10.0.0.1:22 - Success: 'root' 'toor' 'SSH-2.0-OpenSSH'\n"
         rows = import_msf_login("ssh-login", text, ip="10.0.0.1")

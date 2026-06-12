@@ -17,6 +17,12 @@ _MSF_COLON = re.compile(
     r"^([A-Za-z0-9_.-]+):md5([a-fA-F0-9]{32})\s*$",
     re.IGNORECASE,
 )
+_MSF_MYSQL_LOOT = re.compile(
+    r"Saving HashString as Loot:\s*([^:\s]+):(\S+)",
+    re.IGNORECASE,
+)
+_MYSQL_SHA1 = re.compile(r"^\*[A-Fa-f0-9]{40}$")
+_MYSQL_OLD = re.compile(r"^[A-Fa-f0-9]{16}$")
 _MANUAL_COLON = re.compile(
     r"^([A-Za-z0-9_.-]+):([^\s]+)\s*$",
 )
@@ -35,6 +41,16 @@ class HashRecord:
 
 def _canonical_postgres_md5(hex_part: str) -> str:
     return f"md5{hex_part.lower()}"
+
+
+def _record_mysql_sha1(username: str, stored: str, raw: str, parser: str) -> HashRecord:
+    return HashRecord(
+        username=username,
+        format="mysql_sha1",
+        stored=stored,
+        raw=raw,
+        parser=parser,
+    )
 
 
 def _record_postgres(username: str, hex_part: str, raw: str, parser: str) -> HashRecord:
@@ -61,6 +77,21 @@ def _try_line(line: str) -> HashRecord | None:
     line = line.strip()
     if not line:
         return None
+
+    m = _MSF_MYSQL_LOOT.search(line)
+    if m:
+        user, val = m.group(1), m.group(2)
+        if _MYSQL_SHA1.match(val):
+            return _record_mysql_sha1(user, val, line, "msf_hashdump/mysql_loot")
+        if _MYSQL_OLD.match(val):
+            return HashRecord(
+                username=user,
+                format="mysql_old",
+                stored=val,
+                raw=line,
+                parser="msf_hashdump/mysql_old",
+            )
+
     low = line.lower()
     if any(low.startswith(p) for p in _SKIP_PREFIXES):
         return None
@@ -76,6 +107,16 @@ def _try_line(line: str) -> HashRecord | None:
     m = _MANUAL_COLON.match(line)
     if m:
         user, val = m.group(1), m.group(2)
+        if _MYSQL_SHA1.match(val):
+            return _record_mysql_sha1(user, val, line, "manual/mysql_sha1")
+        if _MYSQL_OLD.match(val):
+            return HashRecord(
+                username=user,
+                format="mysql_old",
+                stored=val,
+                raw=line,
+                parser="manual/mysql_old",
+            )
         if _POSTGRES_MD5.match(val):
             return _record_postgres(user, _POSTGRES_MD5.match(val).group(1), line, "manual/colon")
         if _SCRAM.match(val):

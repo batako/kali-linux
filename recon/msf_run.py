@@ -26,6 +26,8 @@ def module_family(module: str) -> str:
     m = (module or "").lower()
     if "postgres" in m:
         return "postgres"
+    if "mysql" in m:
+        return "mysql"
     if "/ssh/" in m or m.endswith("/ssh"):
         return "ssh"
     if "/ftp/" in m:
@@ -45,6 +47,8 @@ def resolve_port_from_scout(ip: str, family: str) -> int | None:
         blob = f"{svc} {ver}"
         if family == "postgres" and "postgres" in blob:
             return port
+        if family == "mysql" and "mysql" in blob:
+            return port
         if family == "ssh" and svc == "ssh":
             return port
         if family == "ftp" and svc == "ftp":
@@ -60,6 +64,7 @@ def resolve_port_from_scout(ip: str, family: str) -> int | None:
 
 FAMILY_DEFAULT_PORTS: dict[str, int] = {
     "postgres": 5432,
+    "mysql": 3306,
     "ssh": 22,
     "ftp": 21,
     "http": 80,
@@ -68,6 +73,7 @@ FAMILY_DEFAULT_PORTS: dict[str, int] = {
 
 FAMILY_ENV_PORTS: dict[str, str] = {
     "postgres": "DB_PORT",
+    "mysql": "MYSQL_PORT",
     "ssh": "SSH_PORT",
     "ftp": "FTP_PORT",
     "http": "HTTP_PORT",
@@ -130,6 +136,16 @@ PRESET_FAMILY = {
     "postgres-shell": "postgres",
     "pg-rce": "postgres",
     "postgres-rce": "postgres",
+    "my-login": "mysql",
+    "mysql-login": "mysql",
+    "my-sql": "mysql",
+    "mysql-sql": "mysql",
+    "my-hashdump": "mysql",
+    "mysql-hashdump": "mysql",
+    "my-shell": "mysql",
+    "mysql-shell": "mysql",
+    "my-rce": "mysql",
+    "mysql-rce": "mysql",
     "ssh-login": "ssh",
     "ftp-login": "ftp",
 }
@@ -213,11 +229,12 @@ def login_scan_resource_sets(
     return sets
 
 
-def _postgres_cred_excluded(comment: str) -> bool:
-    from creds import MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS
+def _db_cred_excluded(comment: str, family: str) -> bool:
+    from creds import MSFR_DB_EXCLUDE_COMMENT_HINTS
 
     low = (comment or "").lower()
-    return any(hint in low for hint in MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS)
+    hints = MSFR_DB_EXCLUDE_COMMENT_HINTS.get(family, ())
+    return any(hint in low for hint in hints)
 
 
 def _postgres_cred_sort_key(row: dict, tags: tuple[str, ...], hlist_users: set[str]) -> tuple:
@@ -240,7 +257,7 @@ def list_msfr_creds(ip: str, family: str) -> list[dict]:
     if not tags:
         return []
 
-    if family == "postgres":
+    if family in ("postgres", "mysql"):
         from db import list_hash_entries
         from hash_store import STATE_UNSUPPORTED
 
@@ -255,7 +272,7 @@ def list_msfr_creds(ip: str, family: str) -> list[dict]:
             user = r["username"]
             if not user:
                 continue
-            if _postgres_cred_excluded(r.get("comment") or ""):
+            if _db_cred_excluded(r.get("comment") or "", family):
                 continue
             candidates.append(r)
 
@@ -323,7 +340,11 @@ def pick_msfr_user(ip: str, family: str, *, default_user: str = "") -> str:
                 return default_user
 
     if not rows:
-        hint = "hash-crack / creds-add" if family == "postgres" else f"msfr {family}-login or creds-add"
+        hint = (
+            "hash-crack / creds-add"
+            if family in ("postgres", "mysql")
+            else f"msfr {family}-login or creds-add"
+        )
         raise MsfrPickError(f"no {family} creds in creds-list ({hint})")
 
     if len(rows) == 1:
@@ -337,7 +358,7 @@ def pick_msfr_user(ip: str, family: str, *, default_user: str = "") -> str:
         c = (r.get("comment") or "").strip()
         if c:
             label = f"{u} ({c})"
-        elif family == "postgres":
+        elif family in ("postgres", "mysql"):
             label = f"{u} (manual)"
         else:
             label = u
@@ -384,7 +405,11 @@ def pick_msfr_user_dry(
                 return default_user
 
     if not rows:
-        hint = "hash-crack / creds-add" if family == "postgres" else f"msfr {family}-login or creds-add"
+        hint = (
+            "hash-crack / creds-add"
+            if family in ("postgres", "mysql")
+            else f"msfr {family}-login or creds-add"
+        )
         raise MsfrPickError(f"no {family} creds in creds-list ({hint})")
 
     users = [r["username"] for r in rows]

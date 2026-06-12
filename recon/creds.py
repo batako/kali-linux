@@ -45,6 +45,7 @@ MSF_FTP_SUCCESS = re.compile(
 
 MSFR_COMMENT = {
     "postgres": "PostgreSQL (msfr)",
+    "mysql": "MySQL (msfr)",
     "ssh": "SSH (msfr)",
     "ftp": "FTP (msfr)",
 }
@@ -52,20 +53,37 @@ MSFR_COMMENT = {
 # creds-list comments that qualify for msfr user pick (per family)
 MSFR_FAMILY_CRED_TAGS = {
     "postgres": ("PostgreSQL (msfr)", "hash-crack postgres"),
+    "mysql": ("MySQL (msfr)", "hash-crack mysql"),
     "ssh": ("SSH (msfr)",),
     "ftp": ("FTP (msfr)",),
 }
 
-# postgres msfr picker: exclude creds clearly tagged for other services
-MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS = (
-    "ssh",
-    "hydra",
-    "ftp",
-    "borg",
-    "http",
-    "pop3",
-    "tomcat",
-)
+# DB msfr picker: exclude creds clearly tagged for other services
+MSFR_DB_EXCLUDE_COMMENT_HINTS = {
+    "postgres": (
+        "ssh",
+        "hydra",
+        "ftp",
+        "borg",
+        "http",
+        "pop3",
+        "tomcat",
+        "mysql",
+    ),
+    "mysql": (
+        "ssh",
+        "hydra",
+        "ftp",
+        "borg",
+        "http",
+        "pop3",
+        "tomcat",
+        "postgres",
+    ),
+}
+
+# backward-compatible alias
+MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS = MSFR_DB_EXCLUDE_COMMENT_HINTS["postgres"]
 
 
 def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None, comment: str = ""):
@@ -193,6 +211,18 @@ def import_msf_postgres_login(text: str, ip: str = None, execution_id=None):
     )
 
 
+def import_msf_mysql_login(text: str, ip: str = None, execution_id=None):
+    if not ip:
+        return []
+    return _import_msf_pairs(
+        text,
+        MSF_FTP_SUCCESS,
+        ip,
+        comment=MSFR_COMMENT["mysql"],
+        execution_id=execution_id,
+    )
+
+
 def import_msf_ssh_login(text: str, ip: str = None, execution_id=None):
     if not ip:
         return []
@@ -220,6 +250,8 @@ def import_msf_ftp_login(text: str, ip: str = None, execution_id=None):
 MSF_LOGIN_IMPORTERS = {
     "pg-login": import_msf_postgres_login,
     "postgres-login": import_msf_postgres_login,
+    "my-login": import_msf_mysql_login,
+    "mysql-login": import_msf_mysql_login,
     "ssh-login": import_msf_ssh_login,
     "ftp-login": import_msf_ftp_login,
 }

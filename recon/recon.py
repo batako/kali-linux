@@ -1414,7 +1414,7 @@ def main():
             print("[i] no msf login credentials found in output", file=sys.stdout)
         else:
             family = preset_family(preset)
-            if family in ("postgres", "ssh", "ftp"):
+            if family in ("postgres", "mysql", "ssh", "ftp"):
                 set_msfr_last_user(ip, family, results[0]["username"])
             if family == "ssh":
                 set_ssh_last_user(ip, results[0]["username"])
@@ -1615,7 +1615,7 @@ def main():
         )
         show = show_john_batch(Path(hash_file), Path(pot_file), john_fmt)
         cred_results = apply_batch_results(
-            ip, users, show, crack_text=crack_out
+            ip, users, show, crack_text=crack_out, john_format=john_fmt
         )
         if cred_results:
             print("")

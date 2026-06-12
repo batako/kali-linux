@@ -408,11 +408,12 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | 登録済み preset 一覧 |
 | `msfr <preset> [opts]` | MSF モジュールを case 既定で実行 |
 
-`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` 等の login preset は成功時に `cl` へ自動登録。`pg-hashdump` は成功時に `hlist` へ自動登録。続く `pg-sql` 等は `$IP` の `cl` からユーザ選択（手動 `ca` も可。`SSH`/`hydra` 等の comment は除外）。`-u USER` または `msfr pg-sql USER` で指定可。
+`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` / `my-login` 等の login preset は成功時に `cl` へ自動登録。`pg-hashdump` / `my-hashdump` は成功時に `hlist` へ自動登録。続く `pg-sql` / `my-sql` 等は `$IP` の `cl` からユーザ選択（手動 `ca` も可。`SSH`/`hydra` 等の comment は除外）。`-u USER` または `msfr pg-sql USER` で指定可。
 
 | preset | 用途 |
 |--------|------|
 | `pg-login` … `pg-shell` | PostgreSQL 系 |
+| `my-login` … `my-shell` | MySQL 系（`mysql-*` エイリアス可） |
 | `ssh-login` | SSH 弱い認証スキャン |
 | `ftp-login` | FTP 弱い認証スキャン |
 | `tomcat-mgr` | Tomcat manager upload（`-u` / `-U`） |
@@ -420,6 +421,8 @@ ssh-get skyfuck ~/credential.pgp
 ```bash
 msfr pg-login
 msfr pg-sql -n              # dry-run（コマンドと resource のみ表示）
+msfr my-login
+msfr my-sql -u root
 msfr ssh-login
 msfr tomcat-mgr -u bob -w bubbles -p 1234
 msfr -m exploit/... -u user --creds --stay

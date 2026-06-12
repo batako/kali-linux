@@ -86,14 +86,23 @@ def parse_john_crack_stdout(text: str) -> dict[str, str]:
     return cracked
 
 
+def hash_crack_comment(john_format: str | None) -> str:
+    if john_format in ("mysql-sha1", "mysql"):
+        return "hash-crack mysql"
+    return "hash-crack postgres"
+
+
 def apply_batch_results(
     ip: str,
     attempted_users: list[str],
     show_text: str,
     *,
     crack_text: str = "",
-    comment: str = "hash-crack postgres",
+    comment: str | None = None,
+    john_format: str | None = None,
 ) -> list[dict]:
+    if comment is None:
+        comment = hash_crack_comment(john_format)
     cracked_map = parse_john_show(show_text)
     if not cracked_map and crack_text:
         cracked_map = parse_john_crack_stdout(crack_text)

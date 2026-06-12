@@ -66,6 +66,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     enum4linux-ng \
     exploitdb \
     ffuf \
+    ghidra \
     gobuster \
     kali-tools-web \
     seclists \

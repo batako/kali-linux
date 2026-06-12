@@ -54,6 +54,15 @@ class HashImportTest(unittest.TestCase):
         text = "Username\tHash\n--------\t----\n"
         self.assertEqual(parse_hashdump_text(text), [])
 
+    def test_mysql_msf_loot_line(self) -> None:
+        stored = "*2470C0C06DEE42FD1618BBF0525B79CE08141583"
+        text = f"[+] Saving HashString as Loot: root:{stored}\n"
+        rows = parse_msf_hashdump(text)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].username, "root")
+        self.assertEqual(rows[0].format, "mysql_sha1")
+        self.assertEqual(rows[0].stored, stored)
+
 
 if __name__ == "__main__":
     unittest.main()
