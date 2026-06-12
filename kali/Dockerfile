@@ -25,6 +25,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     beef \
     jq \
     python3-pip \
+    python3-venv \
     \
     # === forensics ===
     binwalk \
@@ -65,6 +66,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     burpsuite \
     enum4linux-ng \
     exploitdb \
+    exploitdb-papers \
     ffuf \
     ghidra \
     gobuster \

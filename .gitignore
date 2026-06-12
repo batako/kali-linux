@@ -3,6 +3,9 @@ tmp/*
 # p10k prompt (personal — run p10k configure in container)
 dotfiles/zsh/.p10k.zsh
 
+# Local env (docker-compose secrets, API keys)
+.env
+
 # OpenVPN (contains credentials; place .ovpn locally)
 config/openvpn/*.ovpn
 
