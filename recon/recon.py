@@ -1769,6 +1769,11 @@ def main():
     elif cmd == "wordlist":
         sys.exit(run_wordlist_cli(sys.argv[2:]))
 
+    elif cmd == "exploit":
+        from exploit_run import main as exploit_main
+
+        sys.exit(exploit_main(sys.argv[2:]))
+
     else:
         print(f"unknown command: {cmd}")
         sys.exit(1)

@@ -115,6 +115,35 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 
 ---
 
+## exploit (PoC runner)
+
+Select an exploit per room and run it inside an **isolated venv**. Requires `case-set`. State in `cases/<room>/exploit` (shared across tabs).
+
+Wrapper meta (short forms). Exploit args like `-u` pass through unchanged.
+
+| form | description |
+|------|-------------|
+| `<CVE-id>` | select + venv + pip (e.g. `CVE-2021-44228`) |
+| `use <id>` | same |
+| `<git-url>` | `git clone` (`https://github.com/<org>/<repo>.git`, etc.) |
+| `fetch\|f <url> [id]` | same (explicit) |
+| `show` `clear` `prepare` | status / unset / re-pip |
+| `--use` `--fetch` … | long flags (same) |
+| `-h` | help |
+
+```bash
+exploit https://github.com/<org>/<repo>.git
+exploit CVE-2021-44228
+exploit CVE-2021-44228 -u https://target/
+exploit -u https://target/
+```
+
+Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch=`).
+
+**Note:** third-party PoCs always run via venv python (never system `pip install`). Distinct from scout's `exploit-reject` (`erj`).
+
+---
+
 ## Target IP
 
 | Command | Description |
@@ -803,7 +832,7 @@ Full names only. Alias is shown in parentheses.
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·
-`exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·
+`exploit` · `exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·
 `pop3` (`p3`) `pop3-list` (`p3l`) `pop3-get` (`p3g`) `pop3-dump` (`p3d`) `hydrapop3` ·

@@ -68,6 +68,11 @@ case-show() {
     else
       echo "hosts: (none)"
     fi
+    if [[ -f "${CASE_HOME}/exploit" ]]; then
+      echo "exploit: $(head -1 "${CASE_HOME}/exploit" | tr -d '[:space:]')"
+    else
+      echo "exploit: (none)"
+    fi
     return 0
   fi
   if [[ "${CASE_LOOSE:-}" == 1 ]]; then

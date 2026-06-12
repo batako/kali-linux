@@ -26,6 +26,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     jq \
     python3-pip \
     python3-venv \
+    python3-yaml \
     \
     # === forensics ===
     binwalk \

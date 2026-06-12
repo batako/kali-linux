@@ -115,6 +115,35 @@ case-set startup
 
 ---
 
+## exploit（PoC ランナー）
+
+ルーム単位で exploit を選択し、**隔離 venv** 内で実行する。`case-set` 必須。状態は `cases/<room>/exploit` に保存（マルチタブ共有）。
+
+ラッパー用メタ（短い形式）。`-u` 等の exploit 引数はそのまま転送。
+
+| 形式 | 説明 |
+|------|------|
+| `<CVE-id>` | 選択 + venv + pip（例: `CVE-2021-44228`） |
+| `use <id>` | 同上 |
+| `<git-url>` | `git clone`（`https://github.com/<org>/<repo>.git` 等） |
+| `fetch\|f <url> [id]` | 同上（明示） |
+| `show` `clear` `prepare` | 状態表示 / 解除 / pip 再実行 |
+| `--use` `--fetch` … | 長いフラグ（上と同義） |
+| `-h` | ヘルプ |
+
+```bash
+exploit https://github.com/<org>/<repo>.git
+exploit CVE-2021-44228
+exploit CVE-2021-44228 -u https://target/
+exploit -u https://target/
+```
+
+任意: `/workspace/exploits/<id>/exploit.manifest`（`entry=` `python=` `fetch=`）。
+
+**注意:** 第三者 PoC は常に venv 内 python で実行（システムへの `pip install` なし）。`scout` 連携の `exploit-reject`（`erj`）とは別コマンド。
+
+---
+
 ## ターゲット IP
 
 | コマンド | 説明 |
@@ -818,7 +847,7 @@ hydrabasic -h
 `steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` ·
-`exploit-reject`（`erj`）`exploit-rejects`（`erl`）`exploit-unreject`（`eru`）·
+`exploit` · `exploit-reject`（`erj`）`exploit-rejects`（`erl`）`exploit-unreject`（`eru`）·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell`（`upsh`）`postcmd`（`pcmd`）`shell-url` `shell-cmd` ·
 `pop3`（`p3`）`pop3-list`（`p3l`）`pop3-get`（`p3g`）`pop3-dump`（`p3d`）`hydrapop3` ·

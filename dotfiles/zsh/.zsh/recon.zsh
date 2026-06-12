@@ -60,6 +60,9 @@ _case-on-enter() {
   if [[ -f "${CASE_HOME:-}/ftp-shell" ]]; then
     echo "[+] ftp-shell: $CASE_HOME/ftp-shell"
   fi
+  if [[ -f "${CASE_HOME:-}/exploit" ]]; then
+    echo "[+] exploit: $(head -1 "${CASE_HOME}/exploit" | tr -d '[:space:]')"
+  fi
   if (( $+functions[_recon-hosts-apply] )); then
     _recon-hosts-apply
   fi
