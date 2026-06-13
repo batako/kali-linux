@@ -452,7 +452,7 @@ ssh-get skyfuck ~/credential.pgp
 |----------|------|
 | `ftp [user] [ip]` | Connect with DB creds |
 | `ftp -l` | Session log |
-| `ftpa [ip]` | Anonymous FTP (`anonymous` / `anonymous@` saved to DB) |
+| `ftpa [ip]` | Anonymous FTP — same tries as strike auth-ftp-anon; netrc connect on 230; no password prompt on failure |
 | `ftpa -l` / `ftp -l` | Session log (`cases/.../logs/`) |
 | `ftp -A <host>` | Anonymous mode (`ftpa`-style, different from OpenSSH `-A`) |
 

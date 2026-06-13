@@ -452,7 +452,7 @@ ssh-get skyfuck ~/credential.pgp
 |----------|------|
 | `ftp [user] [ip]` | DB creds で接続 |
 | `ftp -l` | セッションログ |
-| `ftpa [ip]` | 匿名 FTP（`anonymous` / `anonymous@` を DB に保存） |
+| `ftpa [ip]` | 匿名 FTP — strike と同じ候補を自動試行、230 成功時のみ creds 保存＋ netrc 接続（失敗時はパスワード入力なし） |
 | `ftpa -l` / `ftp -l` | セッションログ（`cases/.../logs/`） |
 | `ftp -A <host>` | 匿名（`ftpa` と同系、OpenSSH の `-A` とは別） |
 
