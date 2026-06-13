@@ -33,6 +33,7 @@ scout() {
   fi
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
+  local plan_only="" no_plan=""
   local vhosts_only="" vhosts_target=""
   local wordlist="" threads="" ext="" host_header=""
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
@@ -82,6 +83,13 @@ scout() {
         echo "  -d, --dirs [path]              gobuster dir only (single wordlist)"
         echo "  -ds, --dirs-multi [path]       parallel dirs (see presets below)"
         echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
+        echo "  --plan                         auth-quick enqueue only (phase 2.5; no hydra)"
+        echo "  --no-plan                      skip auth enqueue during full scout"
+        echo ""
+        echo "attack queue (see also: strike):"
+        echo "  s --plan [ip]                  enqueue auth tasks from DB ports"
+        echo "  strike [ip]                    run pending auth tasks"
+        echo "  strike -l                      list tasks"
         echo ""
         echo "dirs job cache (-d / -ds):"
         echo "  skip when same ip + url + wordlist + Host is running or done"
@@ -271,6 +279,14 @@ scout() {
         force="--force"
         shift
         ;;
+      --plan)
+        plan_only="--plan"
+        shift
+        ;;
+      --no-plan)
+        no_plan="--no-plan"
+        shift
+        ;;
       -n|--dry-run)
         dry="-n"
         shift
@@ -415,6 +431,11 @@ scout() {
     return 1
   fi
 
+  if [[ -n "$plan_only" && ( -n "$dirs_only$dirs_multi$report$report_ports$report_exploits$report_exploit_pack$report_paths$report_tree_fetch$search_exploits$scout_status$wait_dirs$full_ports$vhosts_only" ) ]]; then
+    echo "[-] --plan does not combine with -d, -ds, -s, -ws, -se, -fp, -v, or report flags" >&2
+    return 1
+  fi
+
   if [[ -n "$full_ports" && ( -n "$dirs_only" || -n "$dirs_multi" || -n "$scout_status" || -n "$wait_dirs" || -n "$search_exploits" || -n "$report" || -n "$report_ports" || -n "$report_exploits" || -n "$report_exploit_pack" || -n "$report_paths" || -n "$report_tree_fetch" ) ]]; then
     echo "[-] -fp is port scan only — do not combine with report/status/dirs flags" >&2
     return 1
@@ -454,6 +475,8 @@ scout() {
   [[ -n "$host_header" ]] && args+=(${=host_header})
   [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
   [[ -n "$force" ]] && args+=("$force")
+  [[ -n "$plan_only" ]] && args+=("$plan_only")
+  [[ -n "$no_plan" ]] && args+=("$no_plan")
   [[ -n "$dry" ]] && args+=(-n)
   [[ -n "$quiet" ]] && args+=(-q)
   [[ -n "$full_ports" ]] && args+=("$full_ports")

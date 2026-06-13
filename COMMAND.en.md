@@ -193,7 +193,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | Command | Description |
 |----------|------|
 | `scout [ip]` | Run Phase 1-3 + **exploit search**. **After dirs dispatch, auto-watch like `-ws`** (ends when running=0) |
-| `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + **OS** + probes + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
+| `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + **OS** + probes + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** only (DB) |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** only (DB, no re-search) |
 | `scout -ep` / `--exploit-pack [ip]` | **AI submission pack** — refresh searchsploit + Metasploit, save Markdown under `cases/<room>/plans/` (prints paths only) |
@@ -219,6 +219,8 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -s` / `--status [ip]` | Show dirs job status **once** |
 | `scout -ws` / `--wait-dirs [sec]` | Auto-refresh dirs status. **Ends when running=0** (pair of `-s`) |
 | `scout -n` | Show command plan without execution |
+| `scout --no-plan` | Skip Phase 2.5 auth enqueue during full scout |
+| `scout --plan [ip]` | Auth enqueue only (phase 2.5; no hydra) |
 | `scout --force` | Re-scan Phase 1 and re-dispatch Phase 3 dirs (**not needed for `-se`** - `-se` always refreshes) |
 
 **Prerequisite:** `$IP` or `[ip]`. Web exploration targets ports marked **open** in DB and with **web-like service** (`http` / `https` / `nginx`, etc.). `scout -d` requires Phase 1 already done (run `scout` first if not scanned).
@@ -240,6 +242,32 @@ Scans **all open ports**, and runs short probes only where DB **service** matche
 Ports with unknown service are skipped (probe results do not overwrite service). Output goes to console and **`executions`** (`exec-list` / `exec-view`). `task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`.
 
 **Re-run behavior:** For same `ip` + **command**, if a previous run **succeeded** (`done`, `exit_code=0`), it does not rerun and shows `(cached)`. URL normalization treats `http://IP/` and `http://IP:80/` as same, and `https://IP/` and `https://IP:443/` as same. Non-standard ports (e.g. `:8080`) remain separate probes. **`scout --force` does not affect probes** (dirs / scan / exploit only).
+
+### Phase 2.5 - task-plan (sync, enqueue only)
+
+After Phase 2, enqueue **auth-quick** tasks into `tasks` from open port services (**does not run hydra**). Run them with **`strike`**.
+
+| service (examples) | task_type | Action |
+|---------------|-----------|------|
+| `ftp` (excluding `sftp`) | `auth-ftp-anon` | anonymous + empty / same-as-login pass (`hydra -e ns`) |
+| `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
+| `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
+
+Dedupe key: `{case}:{ip}:{port}:{task_type}`. Skips re-enqueue when `done` or `running`. Non-standard ports use `-s {port}` in the command.
+
+```bash
+scout                    # task-plan at end
+scout --no-plan          # skip enqueue
+scout --plan [ip]        # manual enqueue only
+scout --plan -n          # dry-run
+strike [ip]              # run pending auth tasks -> cl
+strike -l                  # list tasks
+strike -l --all-case     # all IPs in case
+strike --force           # redo completed auth tasks
+strike -n                # dry-run
+```
+
+Env: `SCOUT_NO_PLAN=1` disables task-plan.
 
 ### Phase search-exploits - searchsploit (synchronous)
 

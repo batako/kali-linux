@@ -1511,6 +1511,13 @@ def show_scout_report(ip: str) -> int:
             print(f"         $ {row['command']}")
     print("")
 
+    print("--- TASKS ---")
+    from task_run import format_task_report_lines
+
+    for line in format_task_report_lines(ip):
+        print(line)
+    print("")
+
     latest, _running = _fetch_paths_report_state(ip)
     _print_paths_section(ip, latest)
     print("")
@@ -1533,6 +1540,7 @@ def show_scout_report(ip: str) -> int:
         print(line)
     print("")
     print("[i] detail: ev <id>  |  scout -s  |  scout -se  |  scout -re  |  scout -rt")
+    print("[i] tasks: strike -l  |  strike")
     print("[i] hints: ha <text>  |  hl  |  hr <id>")
     print("[i] tried & N/A: erj <EDB>  |  undo: eru <EDB>")
     return 0
@@ -1636,6 +1644,7 @@ def run_scout(
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
+    no_plan: bool = False,
 ):
     upsert_host(ip, status="up")
 
@@ -1750,6 +1759,13 @@ def run_scout(
     rc = _run_probe_phase(ip, dry_run=dry_run)
     if rc != 0:
         return rc
+
+    from task_run import run_task_plan_phase
+
+    if not no_plan:
+        plan_rc = run_task_plan_phase(ip, dry_run=dry_run)
+        if plan_rc != 0:
+            return plan_rc
 
     from scout_exploit import run_exploit_phase
 

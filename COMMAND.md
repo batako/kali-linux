@@ -193,7 +193,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | コマンド | 説明 |
 |----------|------|
 | `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + **OS** + プローブ + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
+| `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + **OS** + プローブ + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
 | `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
 | `scout -ep` / `--exploit-pack [ip]` | **AI 提出資料** — searchsploit + Metasploit を更新し `cases/<room>/plans/` に Markdown 保存（パスのみ表示） |
@@ -219,6 +219,8 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
+| `scout --no-plan` | Phase 2.5 の auth enqueue をスキップ（フル scout 時） |
+| `scout --plan [ip]` | auth enqueue のみ（phase 2.5・hydra は走らせない） |
 | `scout --force` | Phase 1 の再スキャン、Phase 3 dirs の再 dispatch（**`-se` には不要** — `-se` は常に refresh） |
 
 **前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout -d` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
@@ -240,6 +242,32 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 service 不明のポートはスキップ（プローブ結果で service を上書きしない）。出力はコンソールと **`executions`**（`exec-list` / `exec-view`）。`task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`。
 
 **再実行:** 同一 `ip` + **command** で過去に **成功**（`done`, `exit_code=0`）があれば再実行せず `(cached)` と表示する。`http://IP/` と `http://IP:80/`、`https://IP/` と `https://IP:443/` は URL 正規化により同一扱い。非標準ポート（例: `:8080`）はポート付きのまま別 probe。**`scout --force` は probe には効かない**（dirs / scan / exploit のみ）。
+
+### Phase 2.5 — task-plan（同期・enqueue のみ）
+
+Phase 2 の後、**open ポート**の service から **auth-quick** タスクを `tasks` テーブルに登録する（**hydra は走らせない**）。実行は **`strike`**。
+
+| service（例） | task_type | 内容 |
+|---------------|-----------|------|
+| `ftp`（`sftp` 除く） | `auth-ftp-anon` | anonymous + 空パス / ユーザー名同パス（`hydra -e ns`） |
+| `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
+| `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
+
+dedupe: `{case}:{ip}:{port}:{task_type}`。`done` / `running` は再 enqueue しない。非標準ポートは `-s {port}` をコマンドに埋め込む。
+
+```bash
+scout                    # task-plan at end
+scout --no-plan          # enqueue スキップ
+scout --plan [ip]        # 手動 enqueue のみ
+scout --plan -n           # dry-run
+strike [ip]              # pending auth タスクを実行 → cl
+strike -l                  # タスク一覧
+strike -l --all-case     # ルーム内全 IP
+strike --force           # 完了済み auth を再実行
+strike -n                # dry-run
+```
+
+環境変数: `SCOUT_NO_PLAN=1` で task-plan オフ。
 
 ### Phase search-exploits — searchsploit（同期）
 

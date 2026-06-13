@@ -54,14 +54,14 @@ class DbMigrationTests(unittest.TestCase):
             os.environ["RECON_DB_PATH"] = self._old_db
         self._tmpdir.cleanup()
 
-    def test_init_db_drops_legacy_tasks_table(self) -> None:
+    def test_init_db_replaces_legacy_tasks_schema(self) -> None:
         self.db.init_db()
         conn = self.db.connect()
-        row = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"
-        ).fetchone()
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
         conn.close()
-        self.assertIsNone(row)
+        self.assertIn("dedupe_key", cols)
+        self.assertIn("outcome", cols)
+        self.assertIn("execution_id", cols)
 
 
 if __name__ == "__main__":

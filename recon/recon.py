@@ -379,6 +379,12 @@ def main():
         extensions = None
         host_header = None
         dirs_urls = []
+        no_plan = os.environ.get("SCOUT_NO_PLAN", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
+        plan_only = False
 
         while args:
             a = args[0]
@@ -458,6 +464,12 @@ def main():
                 args = args[1:]
             elif a in ("-n", "--dry-run"):
                 dry_run = True
+                args = args[1:]
+            elif a == "--no-plan":
+                no_plan = True
+                args = args[1:]
+            elif a == "--plan":
+                plan_only = True
                 args = args[1:]
             elif a in ("-q", "--quiet"):
                 quiet_ports = True
@@ -546,9 +558,24 @@ def main():
         if not ip:
             print(
                 "usage: recon.py scout [options] <ip>"
-                "  (-r|-rp|-re|-rt|-se, -s, -ws, -d, ...)"
+                "  (-r|-rp|-re|-rt|-se, -s, -ws, -d, --plan, ...)"
             )
             sys.exit(1)
+
+        if plan_only:
+            if (
+                status_mode
+                or wait_dirs_mode
+                or dirs_only
+                or search_exploits_only
+                or full_ports
+            ):
+                print("[-] --plan does not combine with -d, -ds, -s, -ws, -se, or -fp")
+                sys.exit(1)
+            from task_run import run_task_plan_phase
+
+            rc = run_task_plan_phase(ip, dry_run=dry_run)
+            sys.exit(0 if rc == 0 else 1)
 
         if search_exploits_only:
             if status_mode or wait_dirs_mode or dirs_only:
@@ -654,6 +681,72 @@ def main():
             dirs_multi_preset_from_flag=dirs_preset_from_flag,
             dirs_multi_preset_is_next=dirs_preset_is_next,
             host_header=host_header,
+            no_plan=no_plan,
+        )
+        sys.exit(0 if rc == 0 else 1)
+
+    elif cmd == "strike":
+        from task_run import run_strike
+        from task_run import show_task_list
+
+        args = sys.argv[2:]
+        dry_run = False
+        force = False
+        list_mode = False
+        all_case = False
+        task_type_prefix = "auth-"
+        ip = None
+        while args:
+            a = args[0]
+            if a in ("-n", "--dry-run"):
+                dry_run = True
+                args = args[1:]
+            elif a in ("-l", "--list"):
+                list_mode = True
+                args = args[1:]
+            elif a in ("--all-case",):
+                all_case = True
+                args = args[1:]
+            elif a == "--force":
+                force = True
+                args = args[1:]
+            elif a == "--type":
+                if len(args) < 2:
+                    print(
+                        "usage: recon.py strike [-l] [--all-case] [--force]"
+                        " [--type prefix] [-n] [ip]"
+                    )
+                    sys.exit(1)
+                task_type_prefix = args[1]
+                args = args[2:]
+            elif a.startswith("-"):
+                print(
+                    "usage: recon.py strike [-l] [--all-case] [--force]"
+                    " [--type prefix] [-n] [ip]"
+                )
+                sys.exit(1)
+            else:
+                ip = a
+                args = args[1:]
+        if not ip and not all_case:
+            ip = read_target_ip() or os.environ.get("IP", "")
+        if list_mode:
+            if not all_case and (not ip or not case_looks_like_ipv4(ip)):
+                print("usage: recon.py strike -l [--all-case] [ip]")
+                sys.exit(1)
+            rc = show_task_list(ip or "", all_case=all_case)
+            sys.exit(0 if rc == 0 else 1)
+        if not ip or not case_looks_like_ipv4(ip):
+            print(
+                "usage: recon.py strike [-l] [--all-case] [--force]"
+                " [--type prefix] [-n] [ip]"
+            )
+            sys.exit(1)
+        rc = run_strike(
+            ip,
+            dry_run=dry_run,
+            force=force,
+            task_type_prefix=task_type_prefix,
         )
         sys.exit(0 if rc == 0 else 1)
 

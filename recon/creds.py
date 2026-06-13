@@ -13,6 +13,14 @@ HYDRA_FTP_FOUND = re.compile(
     r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
 )
+HYDRA_POSTGRES_FOUND = re.compile(
+    r"\[\d+\]\[postgres\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
+HYDRA_MYSQL_FOUND = re.compile(
+    r"\[\d+\]\[mysql\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    re.IGNORECASE,
+)
 HYDRA_POP3_FOUND = re.compile(
     r"\[\d+\]\[pop3\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
     re.IGNORECASE,
@@ -134,6 +142,28 @@ def import_hydra_ftp(text: str, ip: str = None, execution_id=None):
     """Parse hydra output for ftp valid pairs."""
     return _import_hydra_matches(
         text, HYDRA_FTP_FOUND, ip=ip, execution_id=execution_id, comment="FTP (hydra)"
+    )
+
+
+def import_hydra_postgres(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for postgres valid pairs."""
+    return _import_hydra_matches(
+        text,
+        HYDRA_POSTGRES_FOUND,
+        ip=ip,
+        execution_id=execution_id,
+        comment="PostgreSQL (hydra)",
+    )
+
+
+def import_hydra_mysql(text: str, ip: str = None, execution_id=None):
+    """Parse hydra output for mysql valid pairs."""
+    return _import_hydra_matches(
+        text,
+        HYDRA_MYSQL_FOUND,
+        ip=ip,
+        execution_id=execution_id,
+        comment="MySQL (hydra)",
     )
 
 
@@ -333,6 +363,8 @@ def import_hydra(text: str, ip: str = None, execution_id=None):
     for importer in (
         import_hydra_ssh,
         import_hydra_ftp,
+        import_hydra_postgres,
+        import_hydra_mysql,
         import_hydra_http,
         import_hydra_http_basic,
         import_hydra_pop3,

@@ -196,7 +196,7 @@ def ensure_schema(conn):
     """)
 
     # Backward-compatible migrations for older DBs
-    _migrate_drop_tasks_table(cur)
+    _migrate_tasks_table(cur)
     _migrate_case_scope_columns(cur)
 
     conn.commit()
@@ -206,8 +206,48 @@ def _table_columns(cur, table_name: str):
     return {r[1] for r in rows}  # name is column 2
 
 
-def _migrate_drop_tasks_table(cur):
-    cur.execute("DROP TABLE IF EXISTS tasks")
+def _migrate_tasks_table(cur):
+    """Create tasks table or replace legacy schema (no dedupe_key)."""
+    rows = cur.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'tasks'"
+    ).fetchall()
+    if rows:
+        cols = _table_columns(cur, "tasks")
+        if "dedupe_key" not in cols:
+            cur.execute("DROP TABLE tasks")
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        case_name TEXT,
+        ip TEXT NOT NULL,
+        port INTEGER,
+        service TEXT,
+        task_type TEXT NOT NULL,
+        dedupe_key TEXT NOT NULL UNIQUE,
+        command TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        outcome TEXT,
+        source TEXT DEFAULT 'scout-plan',
+        assignee TEXT,
+        execution_id INTEGER,
+        result_summary TEXT,
+        meta TEXT,
+        created_at TEXT,
+        updated_at TEXT,
+        started_at TEXT,
+        ended_at TEXT
+    )
+    """)
+
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_tasks_case_status
+    ON tasks (case_name, status, created_at DESC)
+    """)
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_tasks_ip_status
+    ON tasks (ip, status, created_at DESC)
+    """)
 
 
 def _migrate_case_scope_columns(cur):
@@ -1699,3 +1739,229 @@ def delete_artifact(artifact_id: int):
     conn.commit()
     conn.close()
     return deleted
+
+
+# =========================
+# tasks (strike queue)
+# =========================
+
+def build_task_dedupe_key(
+    case_name: str | None,
+    ip: str,
+    port: int,
+    task_type: str,
+) -> str:
+    case = (case_name or "").strip()
+    return f"{case}:{ip}:{int(port)}:{task_type}"
+
+
+def upsert_task(
+    *,
+    ip: str,
+    port: int,
+    service: str,
+    task_type: str,
+    command: str,
+    case_name: str | None = None,
+    source: str = "scout-plan",
+    meta: dict | None = None,
+) -> tuple[str, int]:
+    """
+    Insert or refresh a pending task. Skips when status is done or running.
+    Returns (action, task_id) where action is created|updated|skipped.
+    """
+    import json
+
+    case_name = case_name if case_name is not None else _current_case_name()
+    dedupe_key = build_task_dedupe_key(case_name, ip, port, task_type)
+    meta_json = json.dumps(meta, ensure_ascii=False) if meta else None
+    _touch_case_ip(ip)
+
+    conn = connect()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT id, status FROM tasks WHERE dedupe_key = ?",
+        (dedupe_key,),
+    ).fetchone()
+
+    if row:
+        task_id = int(row["id"])
+        if row["status"] in ("done", "running"):
+            conn.close()
+            return "skipped", task_id
+        cur.execute(
+            """
+            UPDATE tasks
+            SET command = ?,
+                service = ?,
+                case_name = ?,
+                source = ?,
+                meta = ?,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (command, service or "", case_name, source, meta_json, task_id),
+        )
+        conn.commit()
+        conn.close()
+        return "updated", task_id
+
+    cur.execute(
+        """
+        INSERT INTO tasks (
+            case_name, ip, port, service, task_type, dedupe_key, command,
+            status, source, meta, created_at, updated_at
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, ?,
+            'pending', ?, ?, datetime('now'), datetime('now')
+        )
+        """,
+        (
+            case_name,
+            ip,
+            int(port),
+            service or "",
+            task_type,
+            dedupe_key,
+            command,
+            source,
+            meta_json,
+        ),
+    )
+    task_id = int(cur.lastrowid)
+    conn.commit()
+    conn.close()
+    return "created", task_id
+
+
+def get_task(task_id: int):
+    conn = connect()
+    row = conn.execute("SELECT * FROM tasks WHERE id = ?", (int(task_id),)).fetchone()
+    conn.close()
+    return row
+
+
+def list_tasks(
+    ip: str | None = None,
+    *,
+    case_name: str | None = None,
+    status: str | None = None,
+    task_type_prefix: str | None = None,
+    scope_ips: list[str] | None = None,
+    limit: int = 200,
+):
+    conn = connect()
+    clauses: list[str] = []
+    params: list = []
+
+    if scope_ips:
+        placeholders = ",".join("?" * len(scope_ips))
+        clauses.append(f"ip IN ({placeholders})")
+        params.extend(scope_ips)
+    elif ip:
+        clauses.append("ip = ?")
+        params.append(ip)
+
+    if case_name:
+        clauses.append("case_name = ?")
+        params.append(case_name)
+
+    if status:
+        clauses.append("status = ?")
+        params.append(status)
+
+    if task_type_prefix:
+        clauses.append("task_type LIKE ?")
+        params.append(f"{task_type_prefix}%")
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    rows = conn.execute(
+        f"""
+        SELECT *
+        FROM tasks
+        {where}
+        ORDER BY
+            CASE status
+                WHEN 'pending' THEN 0
+                WHEN 'running' THEN 1
+                WHEN 'failed' THEN 2
+                WHEN 'done' THEN 3
+                ELSE 4
+            END,
+            port ASC,
+            id ASC
+        LIMIT ?
+        """,
+        (*params, int(limit)),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def mark_task_running(task_id: int) -> None:
+    conn = connect()
+    conn.execute(
+        """
+        UPDATE tasks
+        SET status = 'running',
+            started_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (int(task_id),),
+    )
+    conn.commit()
+    conn.close()
+
+
+def finish_task(
+    task_id: int,
+    *,
+    status: str,
+    outcome: str | None = None,
+    execution_id: int | None = None,
+    result_summary: str | None = None,
+) -> None:
+    conn = connect()
+    conn.execute(
+        """
+        UPDATE tasks
+        SET status = ?,
+            outcome = ?,
+            execution_id = ?,
+            result_summary = ?,
+            ended_at = datetime('now'),
+            updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (
+            status,
+            outcome,
+            execution_id,
+            (result_summary or "")[:500] if result_summary else None,
+            int(task_id),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def reset_task_pending(task_id: int) -> None:
+    conn = connect()
+    conn.execute(
+        """
+        UPDATE tasks
+        SET status = 'pending',
+            outcome = NULL,
+            execution_id = NULL,
+            result_summary = NULL,
+            started_at = NULL,
+            ended_at = NULL,
+            updated_at = datetime('now')
+        WHERE id = ?
+        """,
+        (int(task_id),),
+    )
+    conn.commit()
+    conn.close()
+
