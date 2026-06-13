@@ -496,15 +496,23 @@ _hydra-parse-args() {
     fi
   fi
 
-  if [[ ${#args[@]} -ge 2 && "${args[1]}" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+  if [[ ${#args[@]} -ge 2 ]] && _recon-looks-like-host "${args[1]}"; then
     _HYDRA_TARGET="${args[1]}"
     _HYDRA_USER="${args[2]}"
+  elif [[ ${#args[@]} -eq 2 ]] && _recon-looks-like-host "${args[2]}"; then
+    _HYDRA_TARGET="${args[2]}"
+    _HYDRA_USER="${args[1]}"
   elif [[ ${#args[@]} -eq 2 ]]; then
     _HYDRA_TARGET="${args[1]}"
     _HYDRA_USER="${args[2]}"
   elif [[ ${#args[@]} -eq 1 ]]; then
-    _HYDRA_TARGET="${IP:-}"
-    _HYDRA_USER="${args[1]}"
+    if _recon-looks-like-host "${args[1]}"; then
+      _HYDRA_TARGET="${args[1]}"
+      _HYDRA_USER="$default_user"
+    else
+      _HYDRA_TARGET="${IP:-}"
+      _HYDRA_USER="${args[1]}"
+    fi
   elif [[ ${#args[@]} -eq 0 ]]; then
     _HYDRA_TARGET="${IP:-}"
     _HYDRA_USER="$default_user"
@@ -604,19 +612,56 @@ hydrassh() {
   _hydra-run-service ssh "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydrassh "$port"
 }
 
+_hydraftp-usage() {
+  echo "usage: hydraftp [-p port] [-t threads] [target] [user] [wordlist]"
+  echo "  hydra FTP password spray (default user: anonymous)"
+  echo "  default wordlist: \$RECON_PASSLIST   default threads: 16"
+  echo "  target: IPv4 or FQDN (team.thm); omit when \$IP is set (target-set <ip>)"
+  echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
+  echo
+  echo "examples:"
+  echo "  hydraftp                    # anonymous @ \$IP"
+  echo "  hydraftp team.thm           # anonymous @ team.thm"
+  echo "  hydraftp team.thm ./locks.txt"
+  echo "  hydraftp ftpuser ./locks.txt"
+  echo "  hydraftp -p 2121 team.thm ftpuser"
+}
+
 hydraftp() {
-  _hydra-parse-args anonymous "$@" || {
-    echo "usage: hydraftp [target] [user] [wordlist]"
-    echo "  default user: anonymous"
-    echo "  omit target when \$IP is set (target-set <ip>)"
-    echo "  examples:"
-    echo "    hydraftp                    # anonymous @ \$IP"
-    echo "    hydraftp ./locks.txt        # anonymous + wordlist"
-    echo "    hydraftp ftpuser ./locks.txt"
+  local port="" threads=16
+  local -a args=()
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p[0-9]*)
+        port="${1#-p}"
+        shift
+        ;;
+      -p)
+        port="$2"
+        shift 2
+        ;;
+      -t)
+        threads="$2"
+        shift 2
+        ;;
+      -h|--help)
+        _hydraftp-usage
+        return 0
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  _hydra-parse-args anonymous "${args[@]}" || {
+    _hydraftp-usage >&2
     return 1
   }
 
-  _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" 16 hydraftp
+  _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydraftp "$port"
 }
 
 # usage: hydrapop3 [target] -L users.txt -P passes.txt
@@ -797,7 +842,7 @@ hydrabasic() {
       return 1
     }
     passfile="${passfile:-$RECON_PASSLIST}"
-    if [[ ${#args[@]} -ge 1 && "${args[1]}" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+    if [[ ${#args[@]} -ge 1 ]] && _recon-looks-like-host "${args[1]}"; then
       target="${args[1]}"
       [[ ${#args[@]} -ge 2 && "${args[2]}" == /* ]] && url_path="${args[2]}"
     elif [[ ${#args[@]} -ge 1 && "${args[1]}" == /* ]]; then
@@ -818,7 +863,7 @@ hydrabasic() {
   fi
 
   local target="" user=""
-  if [[ ${#args[@]} -ge 2 && "${args[1]}" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
+  if [[ ${#args[@]} -ge 2 ]] && _recon-looks-like-host "${args[1]}"; then
     target="${args[1]}"
     user="${args[2]}"
     args=("${args[3,-1]}")

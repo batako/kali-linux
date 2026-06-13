@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+"""Tests for msfr helpers."""
+
+from __future__ import annotations
+
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -70,36 +77,71 @@ class TestMsfRun(unittest.TestCase):
         self.assertTrue(msf_run.default_ssl(443, "exploit/multi/http/foo"))
         self.assertFalse(msf_run.default_ssl(80, "exploit/multi/http/foo"))
 
-    @mock.patch("msf_run.os.path.isfile", return_value=True)
-    @mock.patch.dict(
-        "os.environ",
-        {
-            "MSFR_USERLIST": "/wl/users.txt",
-            "RECON_PASSLIST": "/wl/pass.txt",
-        },
-        clear=False,
-    )
-    def test_login_scan_resource_sets_default(self, _mock_isfile) -> None:
-        sets = dict(msf_run.login_scan_resource_sets("ssh-login"))
-        self.assertEqual(sets["USER_FILE"], "/wl/users.txt")
-        self.assertEqual(sets["PASS_FILE"], "/wl/pass.txt")
+    def test_login_scan_resource_sets_default(self) -> None:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as tmp:
+            tmp.write("root:toor\n")
+            path = tmp.name
+        try:
+            with mock.patch.dict(
+                os.environ, {"MSFR_SSH_USERPASS": path}, clear=False
+            ):
+                result = msf_run.login_scan_resource_sets("ssh-login")
+            sets = dict(result.sets)
+            self.assertEqual(len(result.temp_files), 1)
+            self.assertIn("USERPASS_FILE", sets)
+            with open(sets["USERPASS_FILE"], encoding="utf-8") as handle:
+                self.assertEqual(handle.read(), "root toor\n")
+        finally:
+            os.remove(path)
+            for temp in result.temp_files:
+                if os.path.isfile(temp):
+                    os.remove(temp)
 
-    @mock.patch("msf_run.os.path.isfile", return_value=True)
-    @mock.patch.dict("os.environ", {"RECON_PASSLIST": "/wl/pass.txt"}, clear=False)
-    def test_login_scan_resource_sets_single_user(self, _mock_isfile) -> None:
-        sets = dict(msf_run.login_scan_resource_sets("ssh-login", user="root"))
+    def test_login_scan_resource_sets_single_user(self) -> None:
+        result = msf_run.login_scan_resource_sets("ssh-login", user="root")
+        sets = dict(result.sets)
         self.assertEqual(sets["USERNAME"], "root")
-        self.assertEqual(sets["PASS_FILE"], "/wl/pass.txt")
+        self.assertNotIn("PASS_FILE", sets)
         self.assertNotIn("USER_FILE", sets)
+        self.assertNotIn("USERPASS_FILE", sets)
 
     def test_login_scan_resource_sets_user_pass(self) -> None:
         sets = dict(
             msf_run.login_scan_resource_sets(
                 "ftp-login", user="anonymous", password="anonymous@"
-            )
+            ).sets
         )
         self.assertEqual(sets["FTPUSER"], "anonymous")
         self.assertEqual(sets["FTPPASS"], "anonymous@")
 
     def test_login_scan_pg_login_empty(self) -> None:
-        self.assertEqual(msf_run.login_scan_resource_sets("pg-login"), [])
+        result = msf_run.login_scan_resource_sets("pg-login")
+        self.assertEqual(result.sets, [])
+        self.assertEqual(result.temp_files, [])
+
+    def test_prepare_msf_userpass_file_converts_colon(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, "src.txt")
+            with open(src, "w", encoding="utf-8") as handle:
+                handle.write("root:toor\nadmin:admin\n")
+            msf_path, is_temp = msf_run.prepare_msf_userpass_file(src)
+            self.assertTrue(is_temp)
+            try:
+                with open(msf_path, encoding="utf-8") as handle:
+                    self.assertEqual(handle.read(), "root toor\nadmin admin\n")
+            finally:
+                os.remove(msf_path)
+
+    def test_login_scan_result_iter_compat(self) -> None:
+        result = msf_run.LoginScanResult(sets=[("USERNAME", "root")])
+        self.assertEqual(dict(result), {"USERNAME": "root"})
+        path = msf_run.default_quick_userpass_file("ssh")
+        self.assertIn("ssh-betterdefaultpasslist.txt", path)
+
+    def test_default_quick_userpass_file_ftp(self) -> None:
+        path = msf_run.default_quick_userpass_file("ftp")
+        self.assertIn("ftp-betterdefaultpasslist.txt", path)
+
+
+if __name__ == "__main__":
+    unittest.main()

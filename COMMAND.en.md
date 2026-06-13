@@ -389,7 +389,7 @@ hint-rm 3         # delete id=3
 | `hash-add [ip] <user hash-line>` | Manual add (alias: `hxa`) |
 | `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
-| `hydraftp [ip] [user] [wordlist]` | hydra FTP (default user: anonymous) |
+| `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP (target: IP or FQDN; default user: anonymous, `hydraftp -h`) |
 | `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (`-U` for username spray) |
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
@@ -437,14 +437,14 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | List registered presets |
 | `msfr <preset> [opts]` | Run an MSF module with case defaults |
 
-`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, `my-login`, etc.) save hits to `cl`; `pg-hashdump` / `my-hashdump` save hashes to `hlist`. Follow-up modules (`pg-sql`, `my-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, `my-login`, `ssh-login`, `ftp-login`) are **quick default checks**. DB modules use MSF built-ins; SSH/FTP use seclists `*-betterdefaultpasslist.txt`. Full spray → `hydrassh` / `hydraftp`. Hits go to `cl`; `pg-hashdump` / `my-hashdump` to `hlist`. Follow-up modules (`pg-sql`, `my-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
 
 | preset | purpose |
 |--------|---------|
 | `pg-login` … `pg-shell` | PostgreSQL |
 | `my-login` … `my-shell` | MySQL (`mysql-*` aliases) |
-| `ssh-login` | SSH weak-credential scan |
-| `ftp-login` | FTP weak-credential scan |
+| `ssh-login` | SSH quick login (defaults only → `cl`) |
+| `ftp-login` | FTP quick login (anonymous etc. → `cl`) |
 | `tomcat-mgr` | Tomcat manager upload (`-u` / `-U`) |
 
 ```bash

@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from dataclasses import dataclass
+from dataclasses import field
+from pathlib import Path
 
 from db import fetch_merged_open_ports
 
@@ -155,14 +159,16 @@ def preset_family(preset: str) -> str:
     return PRESET_FAMILY.get((preset or "").lower(), module_family(preset))
 
 
-DEFAULT_LOGIN_USER_FILE = (
-    "/usr/share/seclists/Usernames/top-usernames-shortlist.txt"
+LOGIN_PRESETS = frozenset(
+    {
+        "pg-login",
+        "postgres-login",
+        "my-login",
+        "mysql-login",
+        "ssh-login",
+        "ftp-login",
+    }
 )
-DEFAULT_LOGIN_PASS_FILE = (
-    "/usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt"
-)
-
-LOGIN_SCAN_PRESETS = frozenset({"ssh-login", "ftp-login", "pg-login", "postgres-login"})
 
 
 class LoginScanConfigError(Exception):
@@ -170,24 +176,36 @@ class LoginScanConfigError(Exception):
 
 
 def is_login_scan_preset(preset: str) -> bool:
-    return (preset or "").lower() in LOGIN_SCAN_PRESETS
+    return (preset or "").lower() in LOGIN_PRESETS
 
 
-def default_login_user_file(family: str) -> str:
-    env_key = {"ssh": "MSFR_SSH_USERLIST", "ftp": "MSFR_FTP_USERLIST"}.get(family)
+SECLISTS_ROOT = Path("/usr/share/seclists")
+
+# Services without MSF built-in default creds → seclists betterdefaultpasslist
+FAMILY_QUICK_USERPASS_REL: dict[str, str] = {
+    "ssh": "Passwords/Default-Credentials/ssh-betterdefaultpasslist.txt",
+    "ftp": "Passwords/Default-Credentials/ftp-betterdefaultpasslist.txt",
+}
+
+FAMILY_QUICK_USERPASS_ENV: dict[str, str] = {
+    "ssh": "MSFR_SSH_USERPASS",
+    "ftp": "MSFR_FTP_USERPASS",
+}
+
+
+def default_quick_userpass_file(family: str) -> str:
+    env_key = FAMILY_QUICK_USERPASS_ENV.get(family)
     if env_key:
         val = os.environ.get(env_key, "").strip()
         if val:
             return val
-    return os.environ.get("MSFR_USERLIST", DEFAULT_LOGIN_USER_FILE).strip()
-
-
-def default_login_pass_file() -> str:
-    for key in ("MSFR_PASSLIST", "RECON_PASSLIST"):
-        val = os.environ.get(key, "").strip()
-        if val:
-            return val
-    return DEFAULT_LOGIN_PASS_FILE
+    global_val = os.environ.get("MSFR_QUICK_USERPASS", "").strip()
+    if global_val:
+        return global_val
+    rel = FAMILY_QUICK_USERPASS_REL.get(family)
+    if not rel:
+        raise LoginScanConfigError(f"no quick userpass list for family: {family}")
+    return str(SECLISTS_ROOT / rel)
 
 
 def _require_file(path: str, label: str) -> str:
@@ -196,37 +214,91 @@ def _require_file(path: str, label: str) -> str:
     return path
 
 
+def _first_userpass_line(path: str) -> str:
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for raw in handle:
+            line = raw.strip()
+            if line and not line.startswith("#"):
+                return line
+    return ""
+
+
+def _is_colon_userpass_file(path: str) -> bool:
+    sample = _first_userpass_line(path)
+    if not sample:
+        return False
+    if " " in sample:
+        return False
+    return ":" in sample
+
+
+def prepare_msf_userpass_file(path: str) -> tuple[str, bool]:
+    """Return (path, is_temp). SecLists user:pass → MSF space-separated USERPASS_FILE."""
+    path = _require_file(path, "quick user:pass list")
+    if not _is_colon_userpass_file(path):
+        return path, False
+
+    fd, tmp = tempfile.mkstemp(prefix="msfr-userpass.", suffix=".txt")
+    with os.fdopen(fd, "w", encoding="utf-8") as out:
+        with open(path, encoding="utf-8", errors="replace") as src:
+            for raw in src:
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if ":" in line:
+                    user, _, passwd = line.partition(":")
+                    out.write(f"{user.strip()} {passwd.strip()}\n")
+                else:
+                    out.write(f"{line}\n")
+    return tmp, True
+
+
+@dataclass
+class LoginScanResult:
+    sets: list[tuple[str, str]] = field(default_factory=list)
+    temp_files: list[str] = field(default_factory=list)
+
+    def __iter__(self):
+        """Backward compat: old msfr zsh iterated result directly."""
+        return iter(self.sets)
+
+
 def login_scan_resource_sets(
     preset: str,
     *,
     user: str = "",
     password: str = "",
-) -> list[tuple[str, str]]:
-    """MSF resource set lines for ssh-login / ftp-login brute-force presets."""
+) -> LoginScanResult:
+    """USERPASS_FILE / USERNAME for ssh-login / ftp-login (no MSF built-in defaults).
+
+    Default: seclists *-betterdefaultpasslist.txt via USERPASS_FILE.
+    postgres/mysql login presets return empty (MSF module defaults).
+    Full wordlist spray → hydrassh / hydraftp.
+    """
     family = preset_family(preset)
     if family not in ("ssh", "ftp"):
-        return []
+        return LoginScanResult()
 
     user_key = "USERNAME" if family == "ssh" else "FTPUSER"
     pass_key = "PASSWORD" if family == "ssh" else "FTPPASS"
     sets: list[tuple[str, str]] = []
+    temp_files: list[str] = []
 
     if user and password:
         sets.append((user_key, user))
         sets.append((pass_key, password))
-        return sets
-
-    pass_file = _require_file(default_login_pass_file(), "pass wordlist")
+        return LoginScanResult(sets=sets)
 
     if user:
         sets.append((user_key, user))
-        sets.append(("PASS_FILE", pass_file))
-        return sets
+        return LoginScanResult(sets=sets)
 
-    user_file = _require_file(default_login_user_file(family), "user wordlist")
-    sets.append(("USER_FILE", user_file))
-    sets.append(("PASS_FILE", pass_file))
-    return sets
+    source = default_quick_userpass_file(family)
+    msf_path, is_temp = prepare_msf_userpass_file(source)
+    if is_temp:
+        temp_files.append(msf_path)
+    sets.append(("USERPASS_FILE", msf_path))
+    return LoginScanResult(sets=sets, temp_files=temp_files)
 
 
 def _db_cred_excluded(comment: str, family: str) -> bool:

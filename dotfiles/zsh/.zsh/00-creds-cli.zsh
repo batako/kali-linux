@@ -6,6 +6,15 @@ _recon-ip-re() {
   echo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
+# IPv4 or FQDN (team.thm) — not bare short names like "admin"
+_recon-looks-like-host() {
+  local s="$1"
+  [[ -n "$s" && "$s" != *@* && "$s" != */* ]] || return 1
+  [[ "$s" =~ $(_recon-ip-re) ]] && return 0
+  [[ "$s" == *.* && "$s" =~ '^[a-zA-Z0-9]([a-zA-Z0-9-]*\.)+[a-zA-Z0-9-]+$' ]] && return 0
+  return 1
+}
+
 # $IP → cases/<room>/target (lazy load when CASE is set)
 _recon-ip-default() {
   if [[ -n "${IP:-}" ]]; then
@@ -139,7 +148,7 @@ sys.exit(1)
 
 _recon-parse-user-ip() {
   # sets _RECON_USER _RECON_IP from positional args; returns 1 on missing ip
-  local -a pos=("${(@)1}")
+  local -a pos=("$@")
   _RECON_USER=""
   _RECON_IP=""
 
@@ -151,7 +160,7 @@ _recon-parse-user-ip() {
       if [[ "${pos[1]}" == *@* ]]; then
         _RECON_USER="${pos[1]%%@*}"
         _RECON_IP="${pos[1]#*@}"
-      elif [[ "${pos[1]}" =~ $(_recon-ip-re) ]]; then
+      elif _recon-looks-like-host "${pos[1]}"; then
         _RECON_IP="${pos[1]}"
       else
         _RECON_USER="${pos[1]}"
@@ -159,7 +168,7 @@ _recon-parse-user-ip() {
       fi
       ;;
     2)
-      if [[ "${pos[1]}" =~ $(_recon-ip-re) ]]; then
+      if _recon-looks-like-host "${pos[1]}"; then
         _RECON_IP="${pos[1]}"
         _RECON_USER="${pos[2]}"
       else

@@ -389,7 +389,7 @@ hint-rm 3         # id=3 を削除
 | `hash-add [ip] <user hash-line>` | 手動登録（alias: `hxa`） |
 | `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
-| `hydraftp [ip] [user] [wordlist]` | hydra FTP（既定 user: anonymous） |
+| `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
 | `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
@@ -437,14 +437,14 @@ ssh-get skyfuck ~/credential.pgp
 | `msfr list` | 登録済み preset 一覧 |
 | `msfr <preset> [opts]` | MSF モジュールを case 既定で実行 |
 
-`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。`pg-login` / `my-login` 等の login preset は成功時に `cl` へ自動登録。`pg-hashdump` / `my-hashdump` は成功時に `hlist` へ自動登録。続く `pg-sql` / `my-sql` 等は `$IP` の `cl` からユーザ選択（手動 `ca` も可。`SSH`/`hydra` 等の comment は除外）。`-u USER` または `msfr pg-sql USER` で指定可。
+`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。login preset（`pg-login` / `my-login` / `ssh-login` / `ftp-login`）は **定番の簡易チェック**。DB 系は MSF 内蔵、SSH/FTP は seclists `*-betterdefaultpasslist.txt`。フルスプレーは `hydrassh` / `hydraftp`。成功時は `cl` へ自動登録。`pg-hashdump` / `my-hashdump` は `hlist` へ。続く `pg-sql` / `my-sql` 等は `$IP` の `cl` からユーザ選択（手動 `ca` も可。`SSH`/`hydra` 等の comment は除外）。`-u USER` または `msfr pg-sql USER` で指定可。
 
 | preset | 用途 |
 |--------|------|
 | `pg-login` … `pg-shell` | PostgreSQL 系 |
 | `my-login` … `my-shell` | MySQL 系（`mysql-*` エイリアス可） |
-| `ssh-login` | SSH 弱い認証スキャン |
-| `ftp-login` | FTP 弱い認証スキャン |
+| `ssh-login` | SSH 簡易ログイン（定番のみ → `cl`） |
+| `ftp-login` | FTP 簡易ログイン（anonymous 等 → `cl`） |
 | `tomcat-mgr` | Tomcat manager upload（`-u` / `-U`） |
 
 ```bash
