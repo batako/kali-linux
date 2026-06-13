@@ -380,13 +380,23 @@ _ssh-get-help() {
   echo "  download via scp using creds-list (sshpass)"
   echo "  -i key   private key (passphrase + user from creds-list)"
   echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
-  echo "  -o dir   local destination (default: .)"
+  echo "  -o dir   local destination (default: cases/<room>/exports/scp/)"
   echo "  -r       scp -r (directory)"
   echo "examples:"
   echo "  ssh-get tryhackme.asc credential.pgp"
   echo "  ssh-get -i id_rsa /etc/passwd /etc/shadow"
   echo "  ssh-get -o workspace/cases/tomghost ~/tryhackme.asc"
   echo "  ssh-get skyfuck ~/credential.pgp"
+}
+
+_ssh-get-default-dest() {
+  local base
+  if base="$(case-exports-dir 2>/dev/null)"; then
+    echo "$base/scp"
+    return 0
+  fi
+  echo "[!] ssh-get: case unset — saving to . (cs <room> → cases/<room>/exports/scp/)" >&2
+  echo "."
 }
 
 # True when name is a saved cred user for ip (not a remote filename).
@@ -426,7 +436,7 @@ _ssh-get-parse() {
 }
 
 ssh-get() {
-  local dest="." recursive=false identity="" key_abs=""
+  local dest="" dest_explicit=false recursive=false identity="" key_abs=""
   local -a pos=() a
   local ip="" user="" pass=""
   local -a scp_args=() remote_specs=() r
@@ -443,6 +453,7 @@ ssh-get() {
         ;;
       -o)
         dest="$2"
+        dest_explicit=true
         shift 2
         ;;
       -r)
@@ -538,6 +549,10 @@ ssh-get() {
   if ! command -v sshpass >/dev/null 2>&1; then
     echo "[-] sshpass not installed" >&2
     return 1
+  fi
+
+  if ! $dest_explicit; then
+    dest="$(_ssh-get-default-dest)"
   fi
 
   mkdir -p "$dest" || return 1

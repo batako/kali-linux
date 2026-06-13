@@ -449,7 +449,7 @@ hint-rm 3         # id=3 を削除
 | `ssh [user]`（`-i` 省略） | 同一 ip+user で前回成功した `ssh -i` の鍵を自動再利用 |
 | `ssh -l` / `ssh --log` | セッションを `cases/.../logs/ssh_*` に記録 |
 | `ssh-list [ip]` | creds 一覧（`creds-list` と同系） |
-| `ssh-get` | `creds-list` の creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰。alias: `sget`） |
+| `ssh-get` | `creds-list` の creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰。省略時 `cases/<room>/exports/scp/`。alias: `sget`） |
 | `ssh-put` | `creds-list` の creds で **scp アップロード**（`-r` 再帰。alias: `sput`） |
 
 **注意:** `-l` は OpenSSH の login user ではなく **ログ保存**。ユーザー指定は `ssh holt` のように引数で。

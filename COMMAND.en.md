@@ -436,7 +436,7 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 | `ssh [user]` (no `-i`) | Reuses the last successful `ssh -i` key for that ip+user |
 | `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |
 | `ssh-list [ip]` | List creds (same style as `creds-list`) |
-| `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive. alias: `sget`) |
+| `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive; default `cases/<room>/exports/scp/`. alias: `sget`) |
 | `ssh-put` | **scp upload** using creds from `creds-list` (`-r` recursive. alias: `sput`) |
 
 **Note:** `-l` is for **log save**, not OpenSSH login user. Specify user as argument, e.g. `ssh holt`.
