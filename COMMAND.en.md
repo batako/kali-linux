@@ -433,6 +433,7 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 |----------|------|
 | `ssh [user] [ip]` | Connect using DB creds + `sshpass` |
 | `ssh -i <key> [user] [ip]` | Key-based login (passphrase loaded from creds) |
+| `ssh [user]` (no `-i`) | Reuses the last successful `ssh -i` key for that ip+user |
 | `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |
 | `ssh-list [ip]` | List creds (same style as `creds-list`) |
 | `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive. alias: `sget`) |

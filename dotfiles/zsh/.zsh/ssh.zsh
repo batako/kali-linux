@@ -39,6 +39,7 @@ _ssh-consume-flags() {
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
         echo "  ssh -p 6498 boring   → non-default port (OpenSSH -p)"
         echo "  ssh -i keyfile  → \$IP + user from creds-list (ssh-last / single cred / picker)"
+        echo "  after a successful ssh -i login, later ssh [user] reuses that key (per ip+user)"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
         echo "  login name: ssh user / ssh user@ip (not ssh -l; use command ssh -l user for OpenSSH)"
         echo "  plain: command ssh ..."
@@ -53,6 +54,22 @@ _ssh-consume-flags() {
   done
 
   _SSH_ARGS=("${out[@]}")
+}
+
+_ssh-last-key-path() {
+  local ip="$1" user="$2"
+  [[ -n "$ip" && -n "$user" ]] || return 1
+  python3 "$RECON_APP" ssh-key-get "$ip" "$user" 2>/dev/null
+}
+
+# Prepend saved -i and run ssh-key-login; returns 1 if no saved key.
+_ssh-try-saved-key-login() {
+  local ip="$1" user="$2" key=""
+  key="$(_ssh-last-key-path "$ip" "$user")"
+  [[ -n "$key" && -f "$key" ]] || return 1
+  _SSH_ARGS=(-i "$key" "${_SSH_ARGS[@]}")
+  ssh-key-login
+  return $?
 }
 
 _ssh-run-session() {
@@ -211,6 +228,11 @@ ssh-key-login() {
   cmd+=(-tt "${_SSH_USER}@${_SSH_IP}")
 
   _ssh-run-session "$logfile" "${cmd[@]}"
+  local rc=$?
+  if (( rc == 0 )); then
+    python3 "$RECON_APP" ssh-key-set "$_SSH_IP" "$_SSH_USER" "$key_abs" >/dev/null 2>&1
+  fi
+  return rc
 }
 
 ssh-login() {
@@ -238,6 +260,14 @@ ssh-login() {
   if [[ "$user" == anonymous ]]; then
     echo "[-] ssh: user anonymous is for FTP (use: ftp / creds from strike)" >&2
     return 1
+  fi
+
+  if [[ -z "${_SSH_ARGS[(r)-i]}" ]]; then
+    local -a _ssh_saved_args=("${_SSH_ARGS[@]}")
+    if _ssh-try-saved-key-login "$ip" "$user"; then
+      return 0
+    fi
+    _SSH_ARGS=("${_ssh_saved_args[@]}")
   fi
 
   if $_SSH_LOG; then
@@ -480,6 +510,17 @@ ssh-get() {
     user="$(_recon-pick-user "$ip" 1)" || return 1
   fi
 
+  if [[ -z "$identity" ]]; then
+    identity="$(_ssh-last-key-path "$ip" "$user")"
+    if [[ -n "$identity" && -f "$identity" ]]; then
+      chmod 600 "$identity" 2>/dev/null
+      key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
+      scp_args+=(-i "$key_abs")
+    else
+      identity=""
+    fi
+  fi
+
   if _recon-skip-ssh-user "$user"; then
     echo "[-] ssh-get: invalid login user: $user (creds-add <user> <pass> first)" >&2
     return 1
@@ -685,6 +726,17 @@ ssh-put() {
 
   if [[ -z "$user" ]]; then
     user="$(_recon-pick-user "$ip" 1)" || return 1
+  fi
+
+  if [[ -z "$identity" ]]; then
+    identity="$(_ssh-last-key-path "$ip" "$user")"
+    if [[ -n "$identity" && -f "$identity" ]]; then
+      chmod 600 "$identity" 2>/dev/null
+      key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
+      scp_args+=(-i "$key_abs")
+    else
+      identity=""
+    fi
   fi
 
   if _recon-skip-ssh-user "$user"; then

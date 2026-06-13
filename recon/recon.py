@@ -11,7 +11,9 @@ from db import creds_upsert
 from db import list_ssh_creds
 from db import list_ssh_creds_for_case
 from db import get_ssh_last_user
+from db import get_ssh_last_key
 from db import set_ssh_last_user
+from db import set_ssh_last_key
 from db import list_executions
 from db import get_execution
 from db import list_artifacts
@@ -1865,6 +1867,21 @@ def main():
             print("usage: recon.py ssh-last-set <ip> <username>")
             sys.exit(1)
         set_ssh_last_user(sys.argv[2], sys.argv[3])
+        print("ok")
+
+    elif cmd == "ssh-key-get":
+        if len(sys.argv) < 4:
+            print("usage: recon.py ssh-key-get <ip> <username>")
+            sys.exit(1)
+        key = get_ssh_last_key(sys.argv[2], sys.argv[3])
+        if key:
+            print(key)
+
+    elif cmd == "ssh-key-set":
+        if len(sys.argv) < 5:
+            print("usage: recon.py ssh-key-set <ip> <username> <key_path>")
+            sys.exit(1)
+        set_ssh_last_key(sys.argv[2], sys.argv[3], sys.argv[4])
         print("ok")
 
     elif cmd == "artifact-list":
