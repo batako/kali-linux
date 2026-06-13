@@ -24,6 +24,7 @@ from case_scope import looks_like_ipv4
 from scout_run import _fetch_paths_report_state
 from scout_run import _looks_like_file
 from scout_run import _merge_job_findings
+from scout_run import _paths_group_origin
 from scout_run import _paths_report_groups
 from scout_run import _paths_tree_insert
 from scout_run import _paths_tree_lines
@@ -231,7 +232,7 @@ def _collect_path_seeds(ip: str) -> tuple[list[str], list[tuple[str, list]], set
     if running:
         print("[!] dirs jobs still running — seeds may be incomplete", file=sys.stderr)
     groups = _paths_report_groups(rows)
-    origins = [o for o, _ in groups]
+    origins = [_paths_group_origin(origin_rows) for _, origin_rows in groups]
     internal_hosts = {urlparse(o).hostname for o in origins if urlparse(o).hostname}
     internal_hosts.add(ip)
     return origins, groups, internal_hosts
@@ -267,19 +268,20 @@ def _build_seed_entries(
         if prev is None or (entry.status == 200 and prev.status != 200):
             entries[canon] = entry
 
-    for origin, origin_rows in groups:
+    for label, origin_rows in groups:
+        base_origin = _paths_group_origin(origin_rows)
         findings = _merge_job_findings(origin_rows)
         for path, status in findings:
             if status not in (200, 301):
                 continue
-            full = urljoin(origin, path.lstrip("/"))
+            full = urljoin(base_origin, path.lstrip("/"))
             full = canonicalize_url(full)
             if status == 200:
                 if not _looks_like_file(path):
                     continue
                 add_entry(
                     full,
-                    origin=origin,
+                    origin=label,
                     path=path if path.startswith("/") else f"/{path}",
                     status=200,
                     source="paths",
@@ -289,11 +291,11 @@ def _build_seed_entries(
                 if _looks_like_file(dir_path):
                     continue
                 redirect_url, redirect_path = resolve_redirect(
-                    full, [o for o, _ in groups]
+                    full, origins
                 )
                 add_entry(
                     full,
-                    origin=origin,
+                    origin=label,
                     path=dir_path,
                     status=301,
                     source="paths",
@@ -302,7 +304,7 @@ def _build_seed_entries(
                 if redirect_url and redirect_path and _looks_like_file(redirect_path):
                     add_entry(
                         redirect_url,
-                        origin=origin,
+                        origin=label,
                         path=redirect_path,
                         status=200,
                         source="redirect",

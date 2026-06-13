@@ -19,6 +19,7 @@ from urllib.parse import urljoin
 from urllib.parse import urlparse
 
 from db import connect
+from db import dirs_command_host_header
 from db import find_done_scout_job
 from db import find_running_scout_job
 from db import format_scan_snapshot_lines
@@ -1233,15 +1234,46 @@ def format_paths_tree(
     return lines
 
 
+def _paths_row_vhost(row) -> str:
+    try:
+        cmd = row["command"] or ""
+    except (KeyError, TypeError):
+        cmd = ""
+    return dirs_command_host_header(cmd) or ""
+
+
+def _paths_group_origin(rows: list) -> str:
+    if not rows:
+        return ""
+    return dirs_origin_url(rows[0]["url"] or "")
+
+
+def _paths_display_label(origin: str, vhost: str) -> str:
+    if not vhost:
+        return origin
+    parsed = urlparse(origin.rstrip("/") or origin)
+    scheme = (parsed.scheme or "http").lower()
+    port = parsed.port
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    if (scheme == "http" and port == 80) or (scheme == "https" and port == 443):
+        return f"{scheme}://{vhost}/"
+    return f"{scheme}://{vhost}:{port}/"
+
+
 def _paths_report_groups(rows) -> list[tuple[str, list]]:
-    """Group dirs jobs by site origin (scheme + host + port), merge scan bases."""
-    groups: dict[str, list] = {}
+    """Group dirs jobs by site origin + vhost (IP-direct vs -H scans stay separate)."""
+    groups: dict[tuple[str, str], list] = {}
     for row in rows:
-        key = dirs_origin_url(row["url"] or "")
-        if not key:
+        origin = dirs_origin_url(row["url"] or "")
+        if not origin:
             continue
-        groups.setdefault(key, []).append(row)
-    return [(url, groups[url]) for url in sorted(groups.keys(), key=str.lower)]
+        vhost = _paths_row_vhost(row)
+        groups.setdefault((origin, vhost), []).append(row)
+    return [
+        (_paths_display_label(origin, vhost), groups[(origin, vhost)])
+        for origin, vhost in sorted(groups.keys(), key=lambda k: (k[0].lower(), k[1].lower()))
+    ]
 
 
 def _service_key_from_scan_url(url: str) -> str:
@@ -1264,16 +1296,20 @@ def _display_origin_for_service(current_ip: str, service_key: str) -> str:
 
 
 def _paths_report_groups_case(rows, *, current_ip: str) -> list[tuple[str, list]]:
-    """Merge lineage dirs by service; display roots on the current target IP."""
-    groups: dict[str, list] = {}
+    """Merge lineage dirs by service + vhost; display roots on the current target IP."""
+    groups: dict[tuple[str, str], list] = {}
     for row in rows:
-        key = _service_key_from_scan_url(row["url"] or "")
-        if not key:
+        service_key = _service_key_from_scan_url(row["url"] or "")
+        if not service_key:
             continue
-        groups.setdefault(key, []).append(row)
+        vhost = _paths_row_vhost(row)
+        groups.setdefault((service_key, vhost), []).append(row)
     return [
-        (_display_origin_for_service(current_ip, key), groups[key])
-        for key in sorted(groups.keys())
+        (
+            _paths_display_label(_display_origin_for_service(current_ip, service_key), vhost),
+            groups[(service_key, vhost)],
+        )
+        for service_key, vhost in sorted(groups.keys(), key=lambda k: (k[0], k[1].lower()))
     ]
 
 

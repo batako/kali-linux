@@ -57,15 +57,93 @@ class ScoutPathsReportTest(unittest.TestCase):
 
     def test_paths_report_groups_merges_same_origin(self) -> None:
         rows = [
-            {"url": "http://10.0.0.1/"},
-            {"url": "http://10.0.0.1/hidden/"},
-            {"url": "http://10.0.0.1:65524/"},
+            {"url": "http://10.0.0.1/", "command": "gobuster dir -u http://10.0.0.1/ -w /tmp/w.txt"},
+            {"url": "http://10.0.0.1/hidden/", "command": "gobuster dir -u http://10.0.0.1/hidden/ -w /tmp/w.txt"},
+            {"url": "http://10.0.0.1:65524/", "command": "gobuster dir -u http://10.0.0.1:65524/ -w /tmp/w.txt"},
         ]
         groups = _paths_report_groups(rows)
         self.assertEqual(len(groups), 2)
         self.assertEqual(groups[0][0], "http://10.0.0.1/")
         self.assertEqual(len(groups[0][1]), 2)
         self.assertEqual(groups[1][0], "http://10.0.0.1:65524/")
+
+    def test_paths_report_groups_splits_ip_and_vhost(self) -> None:
+        rows = [
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -w /tmp/w.txt",
+                "hits_summary": "/admin/  301",
+                "status": "done",
+            },
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "hits_summary": "/login/  200",
+                "status": "done",
+            },
+        ]
+        groups = _paths_report_groups(rows)
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(groups[0][0], "http://10.0.0.1/")
+        self.assertEqual(groups[1][0], "http://team.thm/")
+
+    def test_print_paths_section_shows_ip_and_vhost_separately(self) -> None:
+        rows = [
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -w /tmp/w.txt",
+                "log_path": "",
+                "hits_summary": "/admin/  301",
+                "status": "done",
+            },
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "log_path": "",
+                "hits_summary": "/login/  200",
+                "status": "done",
+            },
+        ]
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            _print_paths_section("10.0.0.1", rows)
+        out = buf.getvalue()
+        self.assertIn("http://10.0.0.1/\n  admin/  301", out)
+        self.assertIn("http://team.thm/\n  login/  200", out)
+
+    def test_paths_report_groups_case_splits_vhost(self) -> None:
+        rows = [
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -w /tmp/w.txt",
+                "log_path": "",
+                "hits_summary": "/admin/  301",
+                "status": "done",
+            },
+            {
+                "url": "http://10.0.0.1/",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "log_path": "",
+                "hits_summary": "/login/  200",
+                "status": "done",
+            },
+        ]
+        groups = _paths_report_groups_case(rows, current_ip="10.0.0.99")
+        self.assertEqual(len(groups), 2)
+        self.assertEqual(groups[0][0], "http://10.0.0.99/")
+        self.assertEqual(groups[1][0], "http://team.thm/")
+
+    def test_paths_display_label_https_nonstandard_port(self) -> None:
+        from scout_run import _paths_display_label
+
+        self.assertEqual(
+            _paths_display_label("https://10.0.0.1:10000/", "team.thm"),
+            "https://team.thm:10000/",
+        )
+        self.assertEqual(
+            _paths_display_label("https://10.0.0.1/", "team.thm"),
+            "https://team.thm/",
+        )
 
     def test_paths_report_groups_merges_trailing_slash_variants(self) -> None:
         rows = [

@@ -348,11 +348,11 @@ scout --force              # dirs / scan をやり直す
 | ブロック | 内容 |
 |----------|------|
 | **jobs** | id・URL・wordlist 名・状態・pid・ログパス（ヒット本文は出さない） |
-| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ |
+| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ。**IP 直スキャン**（`http://10.x.x.x/`）と **`-H` vhost スキャン**（`http://team.thm/` 等、scheme/port は元 URL から継承）は別ツリー |
 
 `-s` の jobs は **完了分を古い順**（新しいものが下）、**running は常に末尾**。完了ジョブの表示上限は **`SCOUT_STATUS_SLOTS`**（既定 **4**、並列 dirs 本数に合わせて調整）。超過分はヘッダに `N older hidden`。
 
-`-r` / `-rt` の PATHS は **URL ごとに最新の dirs ジョブ**だけをマージする（再実行なし・DB のみ）。
+`-r` / `-rt` の PATHS は dirs ジョブを **origin + vhost** ごとにマージする（再実行なし・DB のみ）。同一 IP:port でも `s -d` と `s -d -H team.thm` は混ざらない。
 
 **PATHS の例**（ルート dirs + `-d /etc/` の結果を統合）:
 
@@ -362,6 +362,10 @@ http://10.49.140.183/
   admin/  301
   etc/  301
     squid/  301
+
+http://team.thm/
+  login/  200
+  dashboard/  301
 ```
 
 数字は gobuster の HTTP ステータス。200 / 301 / 302 / 401 のみ表示（ノイズ・拡張子 fuzz は除外）。
