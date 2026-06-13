@@ -13,6 +13,10 @@ POSTGRES_USERPASS = (
     SECLISTS_ROOT / "Passwords/Default-Credentials/postgres-betterdefaultpasslist.txt"
 )
 
+SSH_QUICK_USERPASS = (
+    Path(__file__).resolve().parent / "wordlists" / "ssh-quick-userpass.txt"
+)
+
 
 @dataclass(frozen=True)
 class AuthTaskPlan:
@@ -57,6 +61,11 @@ def build_auth_command(
     if task_type == "auth-my-quick":
         cmd = f"hydra -l root -e ns -t 16 -f -V {pf}{ip} mysql"
         return cmd, "mysql", {"mode": "root-empty-ns"}
+
+    if task_type == "auth-ssh-quick":
+        userpass = str(SSH_QUICK_USERPASS)
+        cmd = f"hydra -C {userpass} -t 4 -f -V {pf}{ip} ssh"
+        return cmd, "ssh", {"userpass": userpass}
 
     raise ValueError(f"unknown auth task_type: {task_type}")
 
@@ -113,6 +122,22 @@ def match_auth_plans(
                 port=int(port),
                 service=service or "mysql",
                 task_type="auth-my-quick",
+                command=cmd,
+                hydra_service=hydra_svc,
+                meta=meta,
+            )
+        )
+
+    if "ssh" in svc and "sftp" not in svc:
+        cmd, hydra_svc, meta = build_auth_command(
+            ip=ip, port=port, task_type="auth-ssh-quick"
+        )
+        plans.append(
+            AuthTaskPlan(
+                ip=ip,
+                port=int(port),
+                service=service or "ssh",
+                task_type="auth-ssh-quick",
                 command=cmd,
                 hydra_service=hydra_svc,
                 meta=meta,

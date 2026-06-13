@@ -250,6 +250,7 @@ After Phase 2, enqueue **auth-quick** tasks into `tasks` from open port services
 | service (examples) | task_type | Action |
 |---------------|-----------|------|
 | `ftp` (excluding `sftp`) | `auth-ftp-anon` | anonymous + empty / same-as-login pass (`hydra -e ns`) |
+| `ssh` (excluding `sftp`) | `auth-ssh-quick` | default users × empty / user-as-pass / `toor` (`ssh-quick-userpass.txt`) |
 | `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
 | `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
 
@@ -422,7 +423,7 @@ hint-rm 3         # delete id=3
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
-Automatic login for `ssh` excludes **anonymous** (FTP anonymous saved by `ftpa`).
+Automatic login for `ssh` excludes **anonymous** (FTP anonymous saved by `ftpa`). SSH quick defaults run via **strike `auth-ssh-quick`** (enqueued when scout finds an SSH port).
 
 ---
 

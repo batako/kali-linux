@@ -39,11 +39,13 @@ class TaskAuthTests(unittest.TestCase):
     def test_ssh_on_nonstandard_port(self) -> None:
         import task_auth
 
-        # SSH auth not in phase 1 catalog — no plan for ssh service
         plans = task_auth.match_auth_plans("10.0.0.1", 8080, "ssh", "OpenSSH")
-        self.assertEqual(plans, [])
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0].task_type, "auth-ssh-quick")
+        self.assertIn("-s 8080", plans[0].command)
+        self.assertIn("ssh-quick-userpass", plans[0].command)
 
-    def test_no_sftp_ftp(self) -> None:
+    def test_no_sftp_ssh(self) -> None:
         import task_auth
 
         plans = task_auth.match_auth_plans("10.0.0.1", 22, "sftp", "")
