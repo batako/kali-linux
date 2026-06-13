@@ -33,7 +33,7 @@ TASK_TIMEOUTS = {
     "auth-ftp-anon": 120,
     "auth-pg-quick": 180,
     "auth-my-quick": 180,
-    "auth-ssh-quick": 300,
+    "auth-ssh-quick": 120,
 }
 
 

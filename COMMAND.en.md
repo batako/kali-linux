@@ -250,7 +250,7 @@ After Phase 2, enqueue **auth-quick** tasks into `tasks` from open port services
 | service (examples) | task_type | Action |
 |---------------|-----------|------|
 | `ftp` (excluding `sftp`) | `auth-ftp-anon` | `ftp-quick-userpass.txt` (anonymous / ftp / guest quick pairs) |
-| `ssh` (excluding `sftp`) | `auth-ssh-quick` | default users × empty / user-as-pass / `toor` (`ssh-quick-userpass.txt`) |
+| `ssh` (excluding `sftp`) | `auth-ssh-quick` | `ssh-quick-userpass.txt` (empty pass, then user-as-pass, then retries) |
 | `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
 | `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
 

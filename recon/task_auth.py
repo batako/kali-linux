@@ -60,11 +60,11 @@ def build_auth_command(
 
     if task_type == "auth-pg-quick":
         userpass = str(POSTGRES_USERPASS)
-        cmd = f"hydra -C {userpass} -t 16 -f -V {pf}{ip} postgres"
+        cmd = f"hydra -C {userpass} -t 4 -f -V {pf}{ip} postgres"
         return cmd, "postgres", {"userpass": userpass}
 
     if task_type == "auth-my-quick":
-        cmd = f"hydra -l root -e ns -t 16 -f -V {pf}{ip} mysql"
+        cmd = f"hydra -l root -e ns -t 4 -f -V {pf}{ip} mysql"
         return cmd, "mysql", {"mode": "root-empty-ns"}
 
     if task_type == "auth-ssh-quick":

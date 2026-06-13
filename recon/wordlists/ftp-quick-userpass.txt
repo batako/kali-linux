@@ -3,9 +3,16 @@ anonymous:
 ftp:
 ftp:ftp
 guest:
-guest:guest
 user:
 test:
 admin:
 root:
 www-data:
+upload:
+files:
+public:
+incoming:
+ftpuser:
+backup:
+service:
+www:
