@@ -1,0 +1,12 @@
+old
+bak
+txt
+save
+orig
+backup
+copy
+swp
+swo
+tmp
+dist
+~

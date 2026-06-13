@@ -605,6 +605,86 @@ def build_dirs_plan(
     )
 
 
+def build_ext_fuzz_log_path(
+    seed_url: str,
+    wordlist: str,
+    *,
+    dry_run: bool = False,
+    host_header: Optional[str] = None,
+) -> str:
+    logs = _case_logs_dir()
+    if not logs:
+        if dry_run:
+            logs = os.environ.get("TMPDIR", "/tmp")
+        else:
+            raise RuntimeError("case not set — cs <name> first (or export CASE_LOOSE=1)")
+
+    host = _url_host_slug(seed_url)
+    if host_header:
+        vh = re.sub(r"[^a-zA-Z0-9._-]", "_", host_header.strip())
+        host = f"{host}_{vh}"
+    path_slug = re.sub(
+        r"[^a-zA-Z0-9._-]",
+        "_",
+        (urlparse(seed_url).path or "file").strip("/"),
+    )[:80]
+    slug = _wordlist_slug(wordlist)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    return str(Path(logs) / f"ffuf_ext_{host}_{path_slug}_{slug}_{ts}.json")
+
+
+def build_ext_fuzz_plan(
+    ip: str,
+    raw_path: str,
+    *,
+    wordlist: Optional[str] = None,
+    threads: Optional[int] = None,
+    host_header: Optional[str] = None,
+    dry_run: bool = False,
+    wordlist_from_flag: bool = False,
+    dx: bool = False,
+) -> DirsPlan:
+    from scout_ext_fuzz import build_ffuf_ext_argv
+    from scout_ext_fuzz import resolve_ext_fuzz_urls
+    from wordlists.scout import resolve_ext_fuzz_wordlist
+
+    if wordlist and Path(wordlist).is_file():
+        wl = wordlist
+    else:
+        wl = resolve_ext_fuzz_wordlist(wordlist, from_flag=wordlist_from_flag)
+
+    seed_url, ffuf_url, port = resolve_ext_fuzz_urls(
+        ip, raw_path, dx=dx, host_header=host_header, wordlist=wl
+    )
+    th = threads if threads is not None else DEFAULT_GB_DIR_THREADS
+    if not dry_run and not Path(wl).is_file():
+        raise FileNotFoundError(f"wordlist not found: {wl}")
+
+    json_path = build_ext_fuzz_log_path(
+        seed_url, wl, dry_run=dry_run, host_header=host_header
+    )
+    vhost = (host_header or "").strip() or None
+    argv = build_ffuf_ext_argv(
+        ffuf_url,
+        wl,
+        th,
+        json_path=json_path,
+        host_header=vhost,
+    )
+    command = " ".join(shlex.quote(a) for a in argv)
+    return DirsPlan(
+        url=seed_url,
+        port=port,
+        wordlist=wl,
+        threads=th,
+        extensions=None,
+        command=command,
+        log_path=json_path,
+        exclude_length=None,
+        host_header=vhost,
+    )
+
+
 def _is_gobuster_noise(path_part: str) -> bool:
     if path_part in (".", ""):
         return True
@@ -768,7 +848,12 @@ def reconcile_scout_job(job_id: int) -> None:
         return
 
     log_path = row["log_path"] or ""
-    hits = parse_gobuster_hits(log_path, base_url=row["url"]) if log_path else ""
+    if row["kind"] == "ext-fuzz":
+        from scout_ext_fuzz import parse_ffuf_ext_hits
+
+        hits = parse_ffuf_ext_hits(log_path, base_url=row["url"]) if log_path else ""
+    else:
+        hits = parse_gobuster_hits(log_path, base_url=row["url"]) if log_path else ""
     failed = exit_code not in (None, 0)
     if failed and log_path and Path(log_path).is_file() and hits:
         failed = False
@@ -896,6 +981,159 @@ def _dispatch_dirs_job(
     )
     print(f"    -> job_id={job_id} pid={proc.pid}  scout status")
     return job_id
+
+
+def _dispatch_ext_fuzz_job(
+    ip: str,
+    plan: DirsPlan,
+    *,
+    raw_path: str,
+    dry_run: bool = False,
+    force: bool = False,
+    dx: bool = False,
+) -> Optional[int]:
+    from scout_ext_fuzz import build_ffuf_ext_argv
+    from scout_ext_fuzz import ext_fuzz_display_url
+    from scout_ext_fuzz import ext_fuzz_stem_label
+
+    kind = "ext-fuzz"
+    if force:
+        print("    [i] --force: re-dispatch ext-fuzz")
+
+    if not force:
+        running = find_running_scout_job(
+            ip, kind, plan.url, plan.wordlist, host_header=plan.host_header
+        )
+        if running:
+            where = (
+                f" on lineage {running['ip']}"
+                if running["ip"] != ip
+                else ""
+            )
+            print(
+                f"    -> skip (running{where} job id={running['id']} pid={running['pid']})"
+                " — use --force to start another"
+            )
+            return None
+
+        done = find_done_scout_job(
+            ip, kind, plan.url, plan.wordlist, host_header=plan.host_header
+        )
+        if done:
+            where = f" on lineage {done['ip']}" if done["ip"] != ip else ""
+            print(
+                f"    -> skip (done{where} job id={done['id']})"
+                " — use --force to rerun"
+            )
+            return None
+
+    stem = ext_fuzz_stem_label(raw_path, dx=dx)
+    label = ext_fuzz_display_url(plan.url, plan.host_header)
+    print(f"    -> ext-fuzz {label}")
+    if plan.host_header:
+        print(f"    [i] ffuf -u uses IP; request Host: {plan.host_header}")
+    print(f"    [i] stem {stem} + SecLists extensions (ffuf)")
+    print(f"    $ {plan.command}")
+    print(f"    log: {plan.log_path}")
+
+    if dry_run:
+        return None
+
+    log_path = Path(plan.log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    from scout_ext_fuzz import resolve_ext_fuzz_urls
+
+    _seed, ffuf_url, _port = resolve_ext_fuzz_urls(
+        ip,
+        raw_path,
+        dx=dx,
+        host_header=plan.host_header,
+        wordlist=plan.wordlist,
+    )
+    argv = build_ffuf_ext_argv(
+        ffuf_url,
+        plan.wordlist,
+        plan.threads,
+        json_path=plan.log_path,
+        host_header=plan.host_header,
+    )
+    proc = subprocess.Popen(
+        argv,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+    job_id = insert_scout_job(
+        ip,
+        kind,
+        plan.url,
+        port=plan.port,
+        wordlist=plan.wordlist,
+        command=plan.command,
+        log_path=plan.log_path,
+        status="running",
+        pid=proc.pid,
+    )
+    print(f"    -> job_id={job_id} pid={proc.pid}  scout status")
+    return job_id
+
+
+def _run_ext_fuzz_phase(
+    ip: str,
+    *,
+    urls: list[str],
+    wordlist: Optional[str] = None,
+    threads: Optional[int] = None,
+    host_header: Optional[str] = None,
+    dry_run: bool = False,
+    force: bool = False,
+    dx: bool = False,
+) -> int:
+    if _case_logs_dir() is None and not dry_run:
+        print("[-] case not set — cs <name> first (or export CASE_LOOSE=1)")
+        return 1
+
+    print("")
+    print("[*] phase 3: extension fuzz (ffuf + SecLists, background)")
+    started = 0
+    for raw in urls:
+        try:
+            plan = build_ext_fuzz_plan(
+                ip,
+                raw,
+                wordlist=wordlist,
+                threads=threads,
+                host_header=host_header,
+                dry_run=dry_run,
+                dx=dx,
+            )
+        except FileNotFoundError as e:
+            print(f"[-] {e}")
+            return 1
+        except RuntimeError as e:
+            print(f"[-] {e}")
+            return 1
+        except ValueError as e:
+            print(f"[-] {e}")
+            return 1
+
+        job_id = _dispatch_ext_fuzz_job(
+            ip,
+            plan,
+            raw_path=raw,
+            dry_run=dry_run,
+            force=force,
+            dx=dx,
+        )
+        if job_id is not None or dry_run:
+            started += 1
+
+    if started and not dry_run:
+        print("")
+        print(f"[*] {started} ext-fuzz job(s) started — scout status")
+    print("")
+    return 0
 
 
 def _run_dirs_phase(
@@ -1165,19 +1403,30 @@ def _latest_dirs_jobs(jobs, *, group_by_path: bool = False) -> list:
 def _dirs_findings_for_job(row) -> list[tuple[str, int]]:
     log_path = row["log_path"] or ""
     base_url = row["url"] or ""
-    if log_path:
-        return extract_dir_findings(log_path, base_url=base_url)
     hits = row["hits_summary"] or ""
-    if not hits:
-        return []
-    out = []
-    for line in hits.splitlines():
-        if line.startswith("... "):
-            continue
-        parts = line.rsplit("  ", 1)
-        if len(parts) == 2 and parts[1].isdigit():
-            out.append((parts[0], int(parts[1])))
-    return out
+
+    def _from_hits_summary() -> list[tuple[str, int]]:
+        if not hits:
+            return []
+        out = []
+        for line in hits.splitlines():
+            if line.startswith("... "):
+                continue
+            parts = line.rsplit("  ", 1)
+            if len(parts) == 2 and parts[1].isdigit():
+                out.append((parts[0], int(parts[1])))
+        return out
+
+    if log_path:
+        if row["kind"] == "ext-fuzz":
+            from scout_ext_fuzz import extract_ffuf_ext_findings
+
+            findings = extract_ffuf_ext_findings(log_path, base_url=base_url)
+            if findings:
+                return findings
+            return _from_hits_summary()
+        return extract_dir_findings(log_path, base_url=base_url)
+    return _from_hits_summary()
 
 
 def _merge_job_findings(rows) -> list[tuple[str, int]]:
@@ -1314,9 +1563,11 @@ def _paths_report_groups_case(rows, *, current_ip: str) -> list[tuple[str, list]
 
 
 def _fetch_paths_report_state(ip: str) -> tuple[list, bool]:
-    """All dirs jobs in recon scope (merged per origin in _print_paths_section)."""
+    """All dirs + ext-fuzz jobs in recon scope (merged per origin in _print_paths_section)."""
     reconcile_scout_jobs(ip)
-    jobs = _scout_jobs(ip, kind="dirs", limit=200)
+    jobs: list = []
+    for kind in ("dirs", "ext-fuzz"):
+        jobs.extend(_scout_jobs(ip, kind=kind, limit=200))
     running = any(r["status"] == "running" for r in jobs)
     return jobs, running
 
@@ -1681,6 +1932,8 @@ def run_scout(
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
     no_plan: bool = False,
+    dirs_ext_fuzz: bool = False,
+    ext_fuzz_wordlist: Optional[str] = None,
 ):
     upsert_host(ip, status="up")
 
@@ -1726,6 +1979,76 @@ def run_scout(
         return run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
 
     if dirs_only or dirs_multi:
+        from scout_ext_fuzz import has_ext_wildcard_suffix
+        from scout_ext_fuzz import has_trailing_slash
+        from scout_ext_fuzz import is_ext_fuzz_request
+
+        if dirs_urls:
+            from scout_ext_fuzz import has_ext_fuzz_marker
+
+            for u in dirs_urls:
+                if has_ext_wildcard_suffix(u) and not dirs_ext_fuzz:
+                    print(
+                        f"[!] {u}: path ends with .* — use -dx for extension fuzz"
+                        " (otherwise treated as a literal path)"
+                    )
+                elif (
+                    has_ext_fuzz_marker(u)
+                    and not dirs_ext_fuzz
+                    and not has_trailing_slash(u)
+                ):
+                    print(
+                        f"[!] {u}: .FUZZ marker — use -dx for extension fuzz"
+                        " (append / to enumerate a literal script.FUZZ dir)"
+                    )
+                elif has_ext_fuzz_marker(u) and not dirs_ext_fuzz:
+                    print(
+                        f"[i] {u}: literal directory (trailing / disables .FUZZ marker)"
+                    )
+            ext_urls = [
+                u for u in dirs_urls if is_ext_fuzz_request(u, dx=dirs_ext_fuzz)
+            ]
+            dir_urls = [
+                u for u in dirs_urls if not is_ext_fuzz_request(u, dx=dirs_ext_fuzz)
+            ]
+            if ext_urls and (dirs_multi or extensions is not None):
+                print("[-] file extension fuzz (ffuf) uses -dx only")
+                print("[i] omit -ds / -x — optional: -w <ext-fuzz catalog id>")
+                return 1
+            if ext_urls:
+                if not resolve_dirs_targets(ip, urls=ext_urls, host_header=host_header):
+                    print("[-] no Web targets in DB — run scout first, or pass a URL")
+                    return 1
+                rc = _run_ext_fuzz_phase(
+                    ip,
+                    urls=ext_urls,
+                    wordlist=ext_fuzz_wordlist or wordlist,
+                    threads=threads,
+                    host_header=host_header,
+                    dry_run=dry_run,
+                    force=force_dirs,
+                    dx=dirs_ext_fuzz,
+                )
+                if dir_urls:
+                    rc2 = _run_dirs_phase(
+                        ip,
+                        urls=dir_urls,
+                        wordlist=wordlist,
+                        wordlists=wordlists,
+                        dirs_multi=dirs_multi,
+                        dirs_preset=dirs_preset,
+                        dirs_multi_preset_from_flag=dirs_multi_preset_from_flag,
+                        dirs_multi_preset_is_next=dirs_multi_preset_is_next,
+                        threads=threads,
+                        extensions=extensions,
+                        host_header=host_header,
+                        dry_run=dry_run,
+                        force=force_dirs,
+                    )
+                    rc = max(rc, rc2)
+                wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
+                return max(rc, wait_rc)
+
         if not resolve_dirs_targets(ip, urls=dirs_urls, host_header=host_header):
             print("[-] no Web targets in DB — run scout first, or pass a URL")
             return 1

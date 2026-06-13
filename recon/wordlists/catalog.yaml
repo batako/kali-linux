@@ -17,6 +17,17 @@ selectors:
     - common
     - dirbuster-small
     - dirbuster-medium
+  ext-fuzz:
+    description: Known file stem + SecLists extensions (scout -d file.ext, ffuf)
+    default: ext-fuzz-backup
+    recommended: fuzzing-extensions-skipfish-fuzz
+    entry_ids:
+    - ext-fuzz-backup
+    - fuzzing-extensions-skipfish-fuzz
+    - fuzzing-extensions-most-common-fuzz
+    - fuzzing-file-extensions-lower-case
+    - fuzzing-extensions-compressed-fuzz
+    - fuzzing-extensions-bo0om
 dirs_multi_preset_chain:
 - light
 - standard

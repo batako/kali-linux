@@ -10,6 +10,7 @@ from wordlists.wordlists import WordlistCatalog
 
 SELECTOR_DIRS = "dirs"
 SELECTOR_DIRS_EXT = "dirs-ext"
+SELECTOR_EXT_FUZZ = "ext-fuzz"
 DEFAULT_DIRS_MULTI_PRESET = "standard"
 DEFAULT_DIRS_MULTI_TIER = "standard"
 
@@ -57,6 +58,7 @@ def _interactive_pick(
     *,
     extensions: Optional[str],
     mode: str,
+    selector: Optional[str] = None,
 ) -> str:
     from wordlists.pick import pick_browse_category
     from wordlists.pick import pick_from_selector
@@ -68,7 +70,10 @@ def _interactive_pick(
     if mode == "browse":
         picked = pick_browse_category(catalog)
     else:
-        picked = pick_from_selector(catalog, scout_selector(extensions=extensions))
+        picked = pick_from_selector(
+            catalog,
+            selector or scout_selector(extensions=extensions),
+        )
     if not picked:
         raise ValueError("cancelled")
     return picked
@@ -99,6 +104,38 @@ def resolve_scout_wordlist(
 
     selector = scout_selector(extensions=extensions)
     return get_catalog().resolve(spec, category=selector)
+
+
+def resolve_ext_fuzz_wordlist(
+    value: Optional[str] = None,
+    *,
+    from_flag: bool = False,
+) -> str:
+    """SecLists extension list for scout -d /path/file.ext (ffuf)."""
+    from pathlib import Path
+
+    local_backup = Path(__file__).resolve().parent / "ext-fuzz-backup.txt"
+
+    spec = (value or "").strip()
+    pick_mode = _pick_mode(spec) if spec else None
+
+    if from_flag and (not spec or pick_mode):
+        mode = pick_mode or "context"
+        spec = _interactive_pick(extensions=None, mode=mode, selector=SELECTOR_EXT_FUZZ)
+    elif pick_mode:
+        spec = _interactive_pick(extensions=None, mode=pick_mode, selector=SELECTOR_EXT_FUZZ)
+    elif not spec:
+        spec_obj = get_catalog().selectors.get(SELECTOR_EXT_FUZZ)
+        if spec_obj is None or not spec_obj.default:
+            raise ValueError(f"catalog missing selector: {SELECTOR_EXT_FUZZ}")
+        spec = spec_obj.default
+
+    if spec == "ext-fuzz-backup":
+        if local_backup.is_file():
+            return str(local_backup)
+        raise FileNotFoundError(f"wordlist not found: {local_backup}")
+
+    return get_catalog().resolve(spec, category=SELECTOR_EXT_FUZZ)
 
 
 def _done_wordlist_paths(

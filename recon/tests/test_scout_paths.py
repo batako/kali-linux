@@ -77,7 +77,7 @@ class ScoutPathsReportTest(unittest.TestCase):
             },
             {
                 "url": "http://10.0.0.1/",
-                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:www.example.com -w /tmp/w.txt",
                 "hits_summary": "/login/  200",
                 "status": "done",
             },
@@ -85,7 +85,7 @@ class ScoutPathsReportTest(unittest.TestCase):
         groups = _paths_report_groups(rows)
         self.assertEqual(len(groups), 2)
         self.assertEqual(groups[0][0], "http://10.0.0.1/")
-        self.assertEqual(groups[1][0], "http://team.thm/")
+        self.assertEqual(groups[1][0], "http://www.example.com/")
 
     def test_print_paths_section_shows_ip_and_vhost_separately(self) -> None:
         rows = [
@@ -98,7 +98,7 @@ class ScoutPathsReportTest(unittest.TestCase):
             },
             {
                 "url": "http://10.0.0.1/",
-                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:www.example.com -w /tmp/w.txt",
                 "log_path": "",
                 "hits_summary": "/login/  200",
                 "status": "done",
@@ -109,7 +109,7 @@ class ScoutPathsReportTest(unittest.TestCase):
             _print_paths_section("10.0.0.1", rows)
         out = buf.getvalue()
         self.assertIn("http://10.0.0.1/\n  admin/  301", out)
-        self.assertIn("http://team.thm/\n  login/  200", out)
+        self.assertIn("http://www.example.com/\n  login/  200", out)
 
     def test_paths_report_groups_case_splits_vhost(self) -> None:
         rows = [
@@ -122,7 +122,7 @@ class ScoutPathsReportTest(unittest.TestCase):
             },
             {
                 "url": "http://10.0.0.1/",
-                "command": "gobuster dir -u http://10.0.0.1/ -H Host:team.thm -w /tmp/w.txt",
+                "command": "gobuster dir -u http://10.0.0.1/ -H Host:www.example.com -w /tmp/w.txt",
                 "log_path": "",
                 "hits_summary": "/login/  200",
                 "status": "done",
@@ -131,18 +131,18 @@ class ScoutPathsReportTest(unittest.TestCase):
         groups = _paths_report_groups_case(rows, current_ip="10.0.0.99")
         self.assertEqual(len(groups), 2)
         self.assertEqual(groups[0][0], "http://10.0.0.99/")
-        self.assertEqual(groups[1][0], "http://team.thm/")
+        self.assertEqual(groups[1][0], "http://www.example.com/")
 
     def test_paths_display_label_https_nonstandard_port(self) -> None:
         from scout_run import _paths_display_label
 
         self.assertEqual(
-            _paths_display_label("https://10.0.0.1:10000/", "team.thm"),
-            "https://team.thm:10000/",
+            _paths_display_label("https://10.0.0.1:10000/", "www.example.com"),
+            "https://www.example.com:10000/",
         )
         self.assertEqual(
-            _paths_display_label("https://10.0.0.1/", "team.thm"),
-            "https://team.thm/",
+            _paths_display_label("https://10.0.0.1/", "www.example.com"),
+            "https://www.example.com/",
         )
 
     def test_paths_report_groups_merges_trailing_slash_variants(self) -> None:

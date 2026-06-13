@@ -358,6 +358,7 @@ def main():
         dirs_only = False
         dirs_multi = False
         dirs_only_flag = False
+        dirs_ext_fuzz = False
         dirs_preset = "standard"
         dirs_preset_from_flag = False
         dirs_preset_is_next = False
@@ -409,6 +410,23 @@ def main():
             elif a in ("--watch", "-W"):
                 print("[-] use -ws (or --wait-dirs), not --watch")
                 sys.exit(1)
+            elif a in ("-dx", "--dirs-ext-fuzz"):
+                if dirs_multi:
+                    print("[-] -dx uses -d only, not -ds")
+                    sys.exit(1)
+                dirs_ext_fuzz = True
+                dirs_only = True
+                dirs_only_flag = True
+                args = args[1:]
+                if args and looks_like_vhost_hostname(args[0]):
+                    if host_header:
+                        print("[-] use one vhost hostname (-H or positional FQDN)")
+                        sys.exit(1)
+                    host_header = args[0]
+                    args = args[1:]
+                elif args and is_dirs_path_arg(args[0]):
+                    dirs_urls.append(args[0])
+                    args = args[1:]
             elif a in ("-d", "--dirs"):
                 if dirs_multi:
                     print("[-] use -d or -ds, not both")
@@ -623,8 +641,17 @@ def main():
             print("[-] -fp is port scan only — do not combine with -d, -ds, -s, -ws, or -se")
             sys.exit(1)
 
+        if dirs_ext_fuzz and extensions is not None:
+            print("[-] -dx (ffuf ext fuzz) does not combine with gobuster -x")
+            sys.exit(1)
+
+        if dirs_ext_fuzz and not dirs_urls:
+            print("[-] -dx requires a file stem path (e.g. /scripts/script or /scripts/script.txt)")
+            sys.exit(1)
+
         wordlists: list[str] | None = None
         wordlist: str | None = None
+        ext_fuzz_wordlist: str | None = None
 
         if dirs_multi:
             if not threads_set:
@@ -647,19 +674,41 @@ def main():
                     )
                     sys.exit(1)
         else:
+            from scout_ext_fuzz import is_ext_fuzz_request
+            from wordlists.scout import resolve_ext_fuzz_wordlist
+
+            ext_urls = [
+                u
+                for u in (dirs_urls or [])
+                if is_ext_fuzz_request(u, dx=dirs_ext_fuzz)
+            ]
+            dir_urls = [
+                u
+                for u in (dirs_urls or [])
+                if not is_ext_fuzz_request(u, dx=dirs_ext_fuzz)
+            ]
             try:
-                wordlist = resolve_scout_wordlist(
-                    wordlist_spec if wordlist_from_flag else None,
-                    extensions=extensions,
-                    from_flag=wordlist_from_flag,
-                )
+                if ext_urls:
+                    ext_fuzz_wordlist = resolve_ext_fuzz_wordlist(
+                        wordlist_spec if wordlist_from_flag else None,
+                        from_flag=wordlist_from_flag,
+                    )
+                if dir_urls or not ext_urls:
+                    wordlist = resolve_scout_wordlist(
+                        wordlist_spec if wordlist_from_flag else None,
+                        extensions=extensions,
+                        from_flag=wordlist_from_flag,
+                    )
             except ValueError as exc:
                 print(f"[-] {exc}", file=sys.stderr)
-                print(
-                    "[i] catalog ids: recon.py wordlist list --for dirs"
-                    + ("-ext" if extensions else ""),
-                    file=sys.stderr,
-                )
+                if ext_urls:
+                    print("[i] catalog ids: recon.py wordlist list --for ext-fuzz")
+                else:
+                    print(
+                        "[i] catalog ids: recon.py wordlist list --for dirs"
+                        + ("-ext" if extensions else ""),
+                        file=sys.stderr,
+                    )
                 sys.exit(1)
 
         rc = run_scout(
@@ -682,6 +731,8 @@ def main():
             dirs_multi_preset_is_next=dirs_preset_is_next,
             host_header=host_header,
             no_plan=no_plan,
+            dirs_ext_fuzz=dirs_ext_fuzz,
+            ext_fuzz_wordlist=ext_fuzz_wordlist,
         )
         sys.exit(0 if rc == 0 else 1)
 

@@ -203,7 +203,13 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -fp` / `--full-ports [ip]` | **TCP 1–65535**（`-sC -sV`）のみ。完了後 **自動で `-se`**（`searchsploit -u` 後は手動で `-se`） |
 | `scout -fp -j N` | 上記を N 並列 nmap で実行 |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
-| `scout -d -x <ext> [path]` | 拡張子 fuzz（`-x` のみなら catalog **dirs-ext** の default: `common`） |
+| `scout -d -x <ext> [path]` | gobuster 拡張子 fuzz（`-x` のみなら catalog **dirs-ext** の default: `common`） |
+| `scout -dx /path/stem[.ext]` | **ffuf** + **ext-fuzz** リスト（`-dx` 必須。`script.txt` → `script.FUZZ`） |
+| `scout -dx /path/stem.FUZZ` | 同上（stem に `.` があるときの明示マーカー） |
+| `scout -dx /path/stem.*` | stem 固定で拡張子のみ fuzz |
+| `scout -d /path/stem.FUZZ/` | **リテラル dir** として gobuster（末尾 `/` でマーカー無効） |
+| `scout -d /path/stem.FUZZ` | **リテラル path** として gobuster（`-dx` なしでは ext fuzz しない） |
+| `scout -d /path/file.ext` | **通常 gobuster** |
 | `scout -d -w <id>` | カタログ id（例: `dirbuster-small`）または絶対 path |
 | `scout -d`（`-w` 省略） | catalog default（`common` 等） |
 | `scout -d -w` | 対話ピッカー（`-x` で dirs / dirs-ext） |
@@ -214,8 +220,8 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -ds -p light\|standard\|wide\|deep` | 指定 tier まで累積 |
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
-| `scout -d mafialive.thm` | FQDN（`.` あり）は `-H` と同義（`/mafialive.thm/` にはならない） |
-| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。`s -v lookup.thm` = `Host: FUZZ.lookup.thm`（THM。apex は `hosts` 要。進捗 `n/total`、ヒットは `hosts` 自動追記） |
+| `scout -d <fqdn>` | FQDN（`.` あり）は `-H` と同義（`/app.example/` にはならない） |
+| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。`s -v example.com` = `Host: FUZZ.example.com`（apex は `hosts` 要。進捗 `n/total`、ヒットは `hosts` 自動追記） |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -324,14 +330,17 @@ scout -ws
 scout --dirs -w dirbuster-small -t 20
 scout -d /admin
 scout -d /admin -x bak,old,txt
+scout -d /scripts/script.txt              # ffuf + SecLists ext list (script.old …)
+scout -H www.example.com -d /scripts/script.txt  # vhost + extension fuzz
+scout -d /scripts/script.txt -w fuzzing-file-extensions
 scout -d /assets -x php,bak -t 50 -w dirbuster-small
 scout -d /admin -x ticket
 scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
-scout -d -H mafialive.thm
-scout -ds -H mafialive.thm /admin
+scout -d -H www.example.com
+scout -ds -H www.example.com /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads
@@ -348,22 +357,22 @@ scout --force              # dirs / scan をやり直す
 | ブロック | 内容 |
 |----------|------|
 | **jobs** | id・URL・wordlist 名・状態・pid・ログパス（ヒット本文は出さない） |
-| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ。**IP 直スキャン**（`http://10.x.x.x/`）と **`-H` vhost スキャン**（`http://team.thm/` 等、scheme/port は元 URL から継承）は別ツリー |
+| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ。**IP 直スキャン**（`http://10.x.x.x/`）と **`-H` vhost スキャン**（`http://www.example.com/` 等、scheme/port は元 URL から継承）は別ツリー |
 
 `-s` の jobs は **完了分を古い順**（新しいものが下）、**running は常に末尾**。完了ジョブの表示上限は **`SCOUT_STATUS_SLOTS`**（既定 **4**、並列 dirs 本数に合わせて調整）。超過分はヘッダに `N older hidden`。
 
-`-r` / `-rt` の PATHS は dirs ジョブを **origin + vhost** ごとにマージする（再実行なし・DB のみ）。同一 IP:port でも `s -d` と `s -d -H team.thm` は混ざらない。
+`-r` / `-rt` の PATHS は dirs ジョブを **origin + vhost** ごとにマージする（再実行なし・DB のみ）。同一 IP:port でも `s -d` と `s -d -H www.example.com` は混ざらない。
 
 **PATHS の例**（ルート dirs + `-d /etc/` の結果を統合）:
 
 ```
 --- PATHS ---
-http://10.49.140.183/
+http://10.0.0.1/
   admin/  301
   etc/  301
     squid/  301
 
-http://team.thm/
+http://www.example.com/
   login/  200
   dashboard/  301
 ```
@@ -674,8 +683,8 @@ scout -ds /admin
 scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
-hosts lookup.thm        # apex のみ先に登録
-scout -v lookup.thm   # THM: Host ヘッダ列挙。ヒットは hosts に自動追記
+hosts example.com         # apex のみ先に登録
+scout -v example.com      # Host ヘッダ列挙。ヒットは hosts に自動追記
 scout -v              # IP 直叩き vhost
 gb-dns example.com    # 実 DNS がある環境向け
 ```

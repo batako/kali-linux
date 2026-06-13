@@ -35,7 +35,7 @@ scout() {
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local plan_only="" no_plan=""
   local vhosts_only="" vhosts_target=""
-  local wordlist="" threads="" ext="" host_header=""
+  local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz=""
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
@@ -76,11 +76,12 @@ scout() {
         echo ""
         echo "vhost discovery (THM / IP):"
         echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
-        echo "  s -v lookup.thm                prereq: hosts lookup.thm; hits → cases/<room>/hosts"
-        echo "  s -d -H www.lookup.thm         dir on discovered vhost (not -v)"
+        echo "  s -v example.com                 # vhost discovery (hosts apex first)"
+        echo "  s -d -H www.example.com          # dir on discovered vhost"
         echo ""
         echo "other:"
-        echo "  -d, --dirs [path]              gobuster dir only (single wordlist)"
+        echo "  -d, --dirs [path]              gobuster dir (single wl)"
+        echo "  -dx, --dirs-ext-fuzz [path]    ffuf extension fuzz (requires -dx; .FUZZ / stem.* with -dx)"
         echo "  -ds, --dirs-multi [path]       parallel dirs (see presets below)"
         echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
         echo "  --plan                         auth-quick enqueue only (phase 2.5; no hydra)"
@@ -130,10 +131,14 @@ scout() {
         echo "  s -ds -p wide /uploads        # cumulative through wide"
         echo "  s -ds -x php /backup          # ext fuzz, standard tier"
         echo "  s -ds -x bak -p next /api     # next ext tier"
+        echo "  s -dx /scripts/script.txt       # ffuf ext fuzz (script.FUZZ)"
+        echo "  s -dx /scripts/script.FUZZ      # stem with dots — explicit marker"
+        echo "  s -d /scripts/script.FUZZ/      # literal dir named script.FUZZ"
+        echo "  s -dx /scripts/script.*         # stem.* syntax (requires -dx)"
         echo "  s -d /config -w dirbuster-small"
-        echo "  s -v lookup.thm                    # vhost discovery (THM; hosts apex first)"
-        echo "  s -d -H www.lookup.thm             # dir on discovered vhost"
-        echo "  s -d -H mafialive.thm              # gobuster with Host: mafialive.thm"
+        echo "  s -v example.com                    # vhost discovery (hosts apex first)"
+        echo "  s -d -H www.example.com             # dir on discovered vhost"
+        echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
         echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
         echo "  s -ds :443/hoge                # https://\$IP/hoge/"
         echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
@@ -233,6 +238,22 @@ scout() {
         fi
         ;;
       -d|--dirs)
+        dirs_only="--dirs"
+        shift
+        if [[ -n "${1:-}" ]] && _scout-is-path "$1"; then
+          extra_urls+=("$1")
+          shift
+        elif [[ -n "${1:-}" && "$1" != -* && ! "$1" =~ $(_recon-ip-re) ]]; then
+          if _scout-is-vhost "$1"; then
+            _scout-set-vhost "$1" || return $?
+          else
+            extra_urls+=("$1")
+          fi
+          shift
+        fi
+        ;;
+      -dx|--dirs-ext-fuzz)
+        dirs_ext_fuzz="--dirs-ext-fuzz"
         dirs_only="--dirs"
         shift
         if [[ -n "${1:-}" ]] && _scout-is-path "$1"; then
@@ -406,6 +427,21 @@ scout() {
     return $?
   fi
 
+  if [[ -n "$dirs_ext_fuzz" && -n "$dirs_multi" ]]; then
+    echo "[-] use -dx with -d only, not -ds" >&2
+    return 1
+  fi
+
+  if [[ -n "$dirs_ext_fuzz" && -n "$ext" ]]; then
+    echo "[-] -dx (ffuf ext fuzz) does not combine with gobuster -x" >&2
+    return 1
+  fi
+
+  if [[ -n "$dirs_ext_fuzz" && ${#extra_urls[@]} -eq 0 ]]; then
+    echo "[-] -dx requires a file stem path (e.g. /scripts/script or /scripts/script.txt)" >&2
+    return 1
+  fi
+
   if [[ -n "$dirs_only" && -n "$dirs_multi" ]]; then
     echo "[-] use -d or -ds, not both" >&2
     return 1
@@ -471,6 +507,7 @@ scout() {
   [[ -n "$wait_dirs" ]] && args+=("$wait_dirs")
   [[ -n "$wait_iv" ]] && args+=("$wait_iv")
   [[ -n "$dirs_only" ]] && args+=("$dirs_only")
+  [[ -n "$dirs_ext_fuzz" ]] && args+=("$dirs_ext_fuzz")
   [[ -n "$dirs_multi" ]] && args+=("$dirs_multi")
   [[ -n "$host_header" ]] && args+=(${=host_header})
   [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
