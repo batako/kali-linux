@@ -436,6 +436,7 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 | `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |
 | `ssh-list [ip]` | List creds (same style as `creds-list`) |
 | `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive. alias: `sget`) |
+| `ssh-put` | **scp upload** using creds from `creds-list` (`-r` recursive. alias: `sput`) |
 
 **Note:** `-l` is for **log save**, not OpenSSH login user. Specify user as argument, e.g. `ssh holt`.
 
@@ -443,6 +444,8 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 ssh-get tryhackme.asc credential.pgp
 ssh-get -o workspace/cases/tomghost ~/tryhackme.asc
 ssh-get skyfuck ~/credential.pgp
+ssh-put /workspace/payloads/postex/linpeas.sh /tmp/linpeas.sh
+ssh-put -i id_rsa script.sh /home/user/script.sh
 ```
 
 ---
@@ -781,6 +784,7 @@ If no repair is needed, exits with `[=] ok`. Supports PNG / JPEG / GIF.
 | `hash-add` | `hxa` |
 | `hash-rm` | `hxr` |
 | `ssh-get` | `sget` |
+| `ssh-put` | `sput` |
 | `ftp-revshell` | `ftprsh` |
 | `upload-shell` | `upsh` |
 | `steg-extract` | `stegx` |
@@ -854,7 +858,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `hash-list` (`hlist`) `hash-add` (`hxa`) `hash-rm` (`hxr`) ·
-`ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
+`ssh` `ssh-list` `ssh-get` (`sget`) `ssh-put` (`sput`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·

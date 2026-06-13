@@ -368,7 +368,7 @@ _ssh-get-is-cred-user() {
 
 # Sets _SSH_GET_USER _SSH_GET_IP _SSH_GET_REMOTES[] from positionals.
 _ssh-get-parse() {
-  local -a pos=("${(@)1}")
+  local -a pos=("${(@)@}")
   _SSH_GET_USER=""
   _SSH_GET_IP=""
   _SSH_GET_REMOTES=()
@@ -379,16 +379,16 @@ _ssh-get-parse() {
 
   if [[ "${pos[1]}" =~ $(_recon-ip-re) ]]; then
     _SSH_GET_IP="${pos[1]}"
-    pos=("${pos[@]:2}")
+    pos=("${pos[@]:1}")
   fi
 
   if (( ${#pos[@]} >= 2 )) && [[ "${pos[2]}" =~ $(_recon-ip-re) ]]; then
     _SSH_GET_USER="${pos[1]}"
     _SSH_GET_IP="${pos[2]}"
-    pos=("${pos[@]:3}")
+    pos=("${pos[@]:2}")
   elif (( ${#pos[@]} >= 2 )) && _ssh-get-is-cred-user "${_SSH_GET_IP:-$(_recon-ip-default 2>/dev/null)}" "${pos[1]}"; then
     _SSH_GET_USER="${pos[1]}"
-    pos=("${pos[@]:2}")
+    pos=("${pos[@]:1}")
   fi
 
   _SSH_GET_REMOTES=("${pos[@]}")
@@ -542,3 +542,212 @@ ssh-get() {
 }
 
 alias sget='ssh-get'
+
+_ssh-put-help() {
+  echo "usage: ssh-put [-i key] [-r] [user] [ip] <local> [local...] <remote>"
+  echo "  alias: sput"
+  echo "  upload via scp using creds-list (sshpass)"
+  echo "  -i key   private key (passphrase + user from creds-list)"
+  echo "  -r       scp -r (directory)"
+  echo "  local:   file or directory on this machine"
+  echo "  remote:  destination on target (e.g. /tmp/, /tmp/linpeas.sh, ~/file)"
+  echo "examples:"
+  echo "  ssh-put linpeas.sh /tmp/"
+  echo "  ssh-put /workspace/payloads/postex/linpeas.sh /tmp/linpeas.sh"
+  echo "  ssh-put -i id_rsa dale ./linpeas.sh /tmp/linpeas.sh"
+  echo "  ssh-put -i id_rsa ./linpeas.sh dale /tmp/linpeas.sh"
+  echo "  ssh-put -r ./tools/ /opt/tools/"
+}
+
+# Sets _SSH_PUT_USER _SSH_PUT_IP _SSH_PUT_LOCALS[] _SSH_PUT_REMOTE from positionals.
+_ssh-put-parse() {
+  local -a pos=("${(@)@}")
+  local ip_hint=""
+  _SSH_PUT_USER=""
+  _SSH_PUT_IP=""
+  _SSH_PUT_LOCALS=()
+  _SSH_PUT_REMOTE=""
+
+  if (( ${#pos[@]} < 2 )); then
+    return 1
+  fi
+
+  ip_hint="${_SSH_PUT_IP:-$(_recon-ip-default 2>/dev/null)}"
+
+  # ... local user remote (user immediately before destination)
+  if (( ${#pos[@]} >= 3 )) && _ssh-get-is-cred-user "$ip_hint" "${pos[-2]}"; then
+    _SSH_PUT_USER="${pos[-2]}"
+    _SSH_PUT_REMOTE="${pos[-1]}"
+    _SSH_PUT_LOCALS=("${pos[@]:0:${#pos[@]}-2}")
+    (( ${#_SSH_PUT_LOCALS[@]} > 0 ))
+    return
+  fi
+
+  if [[ "${pos[1]}" =~ $(_recon-ip-re) ]]; then
+    _SSH_PUT_IP="${pos[1]}"
+    pos=("${pos[@]:1}")
+  fi
+
+  if (( ${#pos[@]} >= 2 )) && [[ "${pos[2]}" =~ $(_recon-ip-re) ]]; then
+    _SSH_PUT_USER="${pos[1]}"
+    _SSH_PUT_IP="${pos[2]}"
+    pos=("${pos[@]:2}")
+  elif (( ${#pos[@]} >= 2 )) && _ssh-get-is-cred-user "${_SSH_PUT_IP:-$(_recon-ip-default 2>/dev/null)}" "${pos[1]}"; then
+    _SSH_PUT_USER="${pos[1]}"
+    pos=("${pos[@]:1}")
+  fi
+
+  if (( ${#pos[@]} < 2 )); then
+    return 1
+  fi
+
+  _SSH_PUT_REMOTE="${pos[-1]}"
+  _SSH_PUT_LOCALS=("${pos[@]:0:${#pos[@]}-1}")
+  (( ${#_SSH_PUT_LOCALS[@]} > 0 ))
+}
+
+ssh-put() {
+  local recursive=false identity="" key_abs=""
+  local -a pos=() local_specs=()
+  local ip="" user="" pass="" local_path remote_spec
+  local -a scp_args=() l
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _ssh-put-help
+        return 0
+        ;;
+      -i)
+        identity="$2"
+        shift 2
+        ;;
+      -r)
+        recursive=true
+        shift
+        ;;
+      --)
+        shift
+        pos+=("$@")
+        break
+        ;;
+      -*)
+        echo "[-] ssh-put: unknown option: $1" >&2
+        _ssh-put-help >&2
+        return 1
+        ;;
+      *)
+        pos+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  _ssh-put-parse "${pos[@]}" || {
+    _ssh-put-help >&2
+    return 1
+  }
+
+  ip="${_SSH_PUT_IP:-}"
+  user="${_SSH_PUT_USER:-}"
+  if [[ -z "$ip" ]]; then
+    ip="$(_recon-ip-default 2>/dev/null)" || {
+      echo "[-] no target ip (target-set <ip> or case-set <room> with target file)" >&2
+      return 1
+    }
+  fi
+
+  if [[ -n "$identity" ]]; then
+    if [[ ! -f "$identity" ]]; then
+      echo "[-] key not found: $identity" >&2
+      return 1
+    fi
+    chmod 600 "$identity" 2>/dev/null
+    key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
+    scp_args+=(-i "$key_abs")
+  fi
+
+  if [[ -z "$user" ]]; then
+    if [[ -n "$identity" ]]; then
+      user="$(_recon-user-for-ssh-key "$ip" "$identity")" || {
+        echo "[-] could not resolve user (try: sshkey-crack -u user $identity, or ssh-put -i $identity user ...)" >&2
+        return 1
+      }
+    else
+      local last=""
+      last="$(python3 "$RECON_APP" ssh-last-get "$ip" 2>/dev/null)"
+      if [[ -n "$last" ]] && ! _recon-skip-ssh-user "$last" \
+          && _recon-creds-for-user "$ip" "$last" >/dev/null 2>&1; then
+        user="$last"
+      fi
+    fi
+  fi
+
+  if [[ -z "$user" ]]; then
+    user="$(_recon-pick-user "$ip" 1)" || return 1
+  fi
+
+  if _recon-skip-ssh-user "$user"; then
+    echo "[-] ssh-put: invalid login user: $user (creds-add <user> <pass> first)" >&2
+    return 1
+  fi
+
+  if ! pass="$(_recon-creds-for-user "$ip" "$user")"; then
+    echo "[-] no saved creds for ${user}@${ip} (creds-list empty? run sshkey-crack)" >&2
+    return 1
+  fi
+  if [[ -z "$pass" ]]; then
+    echo "[-] empty password in db for ${user}@${ip}" >&2
+    return 1
+  fi
+
+  if ! command -v sshpass >/dev/null 2>&1; then
+    echo "[-] sshpass not installed" >&2
+    return 1
+  fi
+
+  for l in "${_SSH_PUT_LOCALS[@]}"; do
+    if [[ ! -e "$l" ]]; then
+      echo "[-] local path not found: $l" >&2
+      return 1
+    fi
+    local_path="$(realpath "$l" 2>/dev/null || echo "$l")"
+    local_specs+=("$local_path")
+  done
+
+  remote_spec="${user}@${ip}:${_SSH_PUT_REMOTE}"
+
+  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+
+  $recursive && scp_args+=(-r)
+
+  if [[ -n "$identity" ]]; then
+    echo "[+] put (key): ${key_abs}" >&2
+  fi
+  echo "[+] put: ${user}@${ip} ← ${local_specs[*]}" >&2
+  echo "    → ${_SSH_PUT_REMOTE}" >&2
+
+  if [[ -n "$identity" ]]; then
+    sshpass -P "Enter passphrase for key" -p "$pass" "$(_scp-bin)" \
+      -o StrictHostKeyChecking=accept-new \
+      -o ConnectTimeout=15 \
+      -o PreferredAuthentications=publickey \
+      -o PasswordAuthentication=no \
+      -o KbdInteractiveAuthentication=no \
+      "${scp_args[@]}" \
+      "${local_specs[@]}" \
+      "$remote_spec"
+    return $?
+  fi
+
+  sshpass -p "$pass" "$(_scp-bin)" \
+    -o StrictHostKeyChecking=accept-new \
+    -o ConnectTimeout=15 \
+    -o PreferredAuthentications=password \
+    -o PubkeyAuthentication=no \
+    "${scp_args[@]}" \
+    "${local_specs[@]}" \
+    "$remote_spec"
+}
+
+alias sput='ssh-put'

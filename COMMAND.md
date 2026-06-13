@@ -449,6 +449,7 @@ hint-rm 3         # id=3 を削除
 | `ssh -l` / `ssh --log` | セッションを `cases/.../logs/ssh_*` に記録 |
 | `ssh-list [ip]` | creds 一覧（`creds-list` と同系） |
 | `ssh-get` | `creds-list` の creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰。alias: `sget`） |
+| `ssh-put` | `creds-list` の creds で **scp アップロード**（`-r` 再帰。alias: `sput`） |
 
 **注意:** `-l` は OpenSSH の login user ではなく **ログ保存**。ユーザー指定は `ssh holt` のように引数で。
 
@@ -456,6 +457,8 @@ hint-rm 3         # id=3 を削除
 ssh-get tryhackme.asc credential.pgp
 ssh-get -o workspace/cases/tomghost ~/tryhackme.asc
 ssh-get skyfuck ~/credential.pgp
+ssh-put /workspace/payloads/postex/linpeas.sh /tmp/linpeas.sh
+ssh-put -i id_rsa script.sh /home/user/script.sh
 ```
 
 ---
@@ -809,6 +812,7 @@ upload-shell 63
 | `hash-add` | `hxa` |
 | `hash-rm` | `hxr` |
 | `ssh-get` | `sget` |
+| `ssh-put` | `sput` |
 | `ftp-revshell` | `ftprsh` |
 | `upload-shell` | `upsh` |
 | `steg-extract` | `stegx` |
@@ -882,7 +886,7 @@ hydrabasic -h
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `hash-list`（`hlist`）`hash-add`（`hxa`）`hash-rm`（`hxr`） ·
-`ssh` `ssh-list` `ssh-get`（`sget`）· `ftp` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
+`ssh` `ssh-list` `ssh-get`（`sget`）`ssh-put`（`sput`）· `ftp` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
 `steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` ·
