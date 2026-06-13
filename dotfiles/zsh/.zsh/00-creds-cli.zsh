@@ -34,9 +34,8 @@ _recon-creds-json() {
 
 export RECON_BORG_CREDS_USER="${RECON_BORG_CREDS_USER:-borg}"
 
-# FTP anonymous — stored for cl / ftp; not used for ssh auto-login
+# FTP anonymous — hydraftp default user; not used for ssh auto-login
 export FTP_ANON_USER="${FTP_ANON_USER:-anonymous}"
-export FTP_ANON_PASS="${FTP_ANON_PASS:-anonymous@}"
 
 _recon-creds-json-filter() {
   local exclude_anon="${1:-0}"

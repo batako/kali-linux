@@ -249,7 +249,7 @@ After Phase 2, enqueue **auth-quick** tasks into `tasks` from open port services
 
 | service (examples) | task_type | Action |
 |---------------|-----------|------|
-| `ftp` (excluding `sftp`) | `auth-ftp-anon` | anonymous + empty / same-as-login pass (`hydra -e ns`) |
+| `ftp` (excluding `sftp`) | `auth-ftp-anon` | `ftp-quick-userpass.txt` (anonymous / ftp / guest quick pairs) |
 | `ssh` (excluding `sftp`) | `auth-ssh-quick` | default users × empty / user-as-pass / `toor` (`ssh-quick-userpass.txt`) |
 | `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
 | `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
@@ -423,7 +423,7 @@ hint-rm 3         # delete id=3
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
-Automatic login for `ssh` excludes **anonymous** (FTP anonymous saved by `ftpa`). SSH quick defaults run via **strike `auth-ssh-quick`** (enqueued when scout finds an SSH port).
+Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp-anon` hits go to `cl` for `ftp`). SSH quick defaults run via **strike `auth-ssh-quick`**.
 
 ---
 
@@ -453,9 +453,7 @@ ssh-get skyfuck ~/credential.pgp
 |----------|------|
 | `ftp [user] [ip]` | Connect with DB creds |
 | `ftp -l` | Session log |
-| `ftpa [ip]` | Anonymous FTP — same tries as strike auth-ftp-anon; netrc connect on 230; no password prompt on failure |
-| `ftpa -l` / `ftp -l` | Session log (`cases/.../logs/`) |
-| `ftp -A <host>` | Anonymous mode (`ftpa`-style, different from OpenSSH `-A`) |
+| `ftp -A <host>` | System ftp anonymous mode (not OpenSSH `-A`) |
 
 ---
 
@@ -841,7 +839,6 @@ rot -h
 vig -h
 fixmagic -h
 ftp -h
-ftpa -h
 hydraweb   # shows usage when args are missing
 hydrabasic -h
 ```
@@ -857,7 +854,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `hash-list` (`hlist`) `hash-add` (`hxa`) `hash-rm` (`hxr`) ·
-`ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` `ftpa` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
+`ssh` `ssh-list` `ssh-get` (`sget`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` ·

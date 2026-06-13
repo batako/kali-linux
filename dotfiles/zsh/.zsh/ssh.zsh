@@ -236,7 +236,7 @@ ssh-login() {
   fi
 
   if [[ "$user" == anonymous ]]; then
-    echo "[-] ssh: anonymous is FTP-only (use: ftpa)" >&2
+    echo "[-] ssh: user anonymous is for FTP (use: ftp / creds from strike)" >&2
     return 1
   fi
 

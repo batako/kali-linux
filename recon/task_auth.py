@@ -17,6 +17,10 @@ SSH_QUICK_USERPASS = (
     Path(__file__).resolve().parent / "wordlists" / "ssh-quick-userpass.txt"
 )
 
+FTP_QUICK_USERPASS = (
+    Path(__file__).resolve().parent / "wordlists" / "ftp-quick-userpass.txt"
+)
+
 
 @dataclass(frozen=True)
 class AuthTaskPlan:
@@ -50,8 +54,9 @@ def build_auth_command(
     """Return (command, hydra_service, meta)."""
     pf = _port_flag(port)
     if task_type == "auth-ftp-anon":
-        cmd = f"hydra -l anonymous -e ns -t 4 -f -V {pf}{ip} ftp"
-        return cmd, "ftp", {"mode": "anon-ns"}
+        userpass = str(FTP_QUICK_USERPASS)
+        cmd = f"hydra -C {userpass} -t 4 -f -V {pf}{ip} ftp"
+        return cmd, "ftp", {"userpass": userpass}
 
     if task_type == "auth-pg-quick":
         userpass = str(POSTGRES_USERPASS)

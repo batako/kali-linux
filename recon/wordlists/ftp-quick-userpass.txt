@@ -1,0 +1,11 @@
+anonymous:anything
+anonymous:
+ftp:
+ftp:ftp
+guest:
+guest:guest
+user:
+test:
+admin:
+root:
+www-data:

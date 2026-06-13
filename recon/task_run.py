@@ -30,7 +30,7 @@ AUTH_TASK_TYPES = ("auth-ftp-anon", "auth-pg-quick", "auth-my-quick", "auth-ssh-
 
 # Per-task hydra timeouts (seconds)
 TASK_TIMEOUTS = {
-    "auth-ftp-anon": 90,
+    "auth-ftp-anon": 120,
     "auth-pg-quick": 180,
     "auth-my-quick": 180,
     "auth-ssh-quick": 300,

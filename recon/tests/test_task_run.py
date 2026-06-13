@@ -25,6 +25,7 @@ class TaskAuthTests(unittest.TestCase):
         self.assertEqual(len(ftp), 1)
         self.assertEqual(ftp[0].task_type, "auth-ftp-anon")
         self.assertIn("-s 2121", ftp[0].command)
+        self.assertIn("ftp-quick-userpass", ftp[0].command)
 
         pg = task_auth.match_auth_plans("10.0.0.1", 5432, "postgresql", "9.5")
         self.assertEqual(len(pg), 1)
@@ -154,6 +155,7 @@ class TaskRunTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["task_type"], "auth-ftp-anon")
         self.assertIn("-s 21", rows[0]["command"])
+        self.assertIn("ftp-quick-userpass", rows[0]["command"])
 
     def test_detect_outcome_hit(self) -> None:
         row = {
