@@ -23,12 +23,20 @@ _hosts-valid-line() {
   return 0
 }
 
+_hosts-trim-line() {
+  local line="$1"
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  print -r -- "$line"
+}
+
 _hosts-filter-case-file() {
   local f="$1"
   [[ -f "$f" ]] || return 0
   local line
   while IFS= read -r line || [[ -n "$line" ]]; do
-    _hosts-valid-line "$line" && print -r -- "${line%%#*}" | sed 's/[[:space:]]*$//'
+    _hosts-valid-line "$line" && _hosts-trim-line "$line"
   done <"$f"
 }
 
@@ -36,7 +44,7 @@ _hosts-remove-managed-block() {
   local file="$1"
   [[ -f "$file" ]] || { echo "$file"; return 0; }
   # Prefix match: BEGIN may include case label; END may be missing (legacy stacks).
-  awk -v begin="$RECON_HOSTS_BEGIN" -v end="$RECON_HOSTS_END" '
+  "$(_recon-bin awk)" -v begin="$RECON_HOSTS_BEGIN" -v end="$RECON_HOSTS_END" '
     $0 ~ "^" begin { skip=1; next }
     $0 ~ "^" end { skip=0; next }
     skip==0 { print }
@@ -51,7 +59,9 @@ _hosts-print-sudo-plan() {
       if [[ -f "$case_file" ]] && [[ -s "$case_file" ]]; then
         echo "    action: apply recon block (${CASE:-case})"
         echo "    source: $case_file"
-        _hosts-filter-case-file "$case_file" | sed 's/^/      /'
+        _hosts-filter-case-file "$case_file" | while IFS= read -r line; do
+          echo "      $line"
+        done
       else
         echo "    action: clear recon block (no entries in case hosts)"
       fi
@@ -66,7 +76,7 @@ _recon-hosts-apply() {
   local case_file etc tmp label
   case_file="$(_hosts-case-file)" || return 0
   etc="/etc/hosts"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
+  tmp="$("$(_recon-bin mktemp)" "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
 
   _hosts-remove-managed-block "$etc" >"$tmp"
 
@@ -77,22 +87,24 @@ _recon-hosts-apply() {
     print -r -- "$RECON_HOSTS_END" >>"$tmp"
   fi
 
-  if cmp -s "$tmp" "$etc" 2>/dev/null; then
-    rm -f "$tmp"
+  if "$(_recon-bin cmp)" -s "$tmp" "$etc" 2>/dev/null; then
+    "$(_recon-bin rm)" -f "$tmp"
     return 0
   fi
 
   _hosts-print-sudo-plan apply "$case_file"
-  if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
-    rm -f "$tmp"
+  if ! "$(_recon-bin sudo)" "$(_recon-bin cp)" "$tmp" "$etc" 2>/dev/null; then
+    "$(_recon-bin rm)" -f "$tmp"
     echo "[-] failed to update $etc (sudo?)" >&2
     return 1
   fi
-  rm -f "$tmp"
+  "$(_recon-bin rm)" -f "$tmp"
 
   if [[ -f "$case_file" ]] && [[ -s "$case_file" ]]; then
     echo "[+] hosts: applied $case_file"
-    _hosts-filter-case-file "$case_file" | sed 's/^/    /'
+    _hosts-filter-case-file "$case_file" | while IFS= read -r line; do
+      echo "    $line"
+    done
   else
     echo "[+] hosts: cleared recon block"
   fi
@@ -101,19 +113,19 @@ _recon-hosts-apply() {
 _recon-hosts-off() {
   local etc tmp
   etc="/etc/hosts"
-  tmp="$(mktemp "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
+  tmp="$("$(_recon-bin mktemp)" "${TMPDIR:-/tmp}/recon-hosts.XXXXXX")"
   _hosts-remove-managed-block "$etc" >"$tmp"
-  if cmp -s "$tmp" "$etc" 2>/dev/null; then
-    rm -f "$tmp"
+  if "$(_recon-bin cmp)" -s "$tmp" "$etc" 2>/dev/null; then
+    "$(_recon-bin rm)" -f "$tmp"
     return 0
   fi
   _hosts-print-sudo-plan off
-  if ! sudo cp "$tmp" "$etc" 2>/dev/null; then
-    rm -f "$tmp"
+  if ! "$(_recon-bin sudo)" "$(_recon-bin cp)" "$tmp" "$etc" 2>/dev/null; then
+    "$(_recon-bin rm)" -f "$tmp"
     echo "[-] failed to update $etc" >&2
     return 1
   fi
-  rm -f "$tmp"
+  "$(_recon-bin rm)" -f "$tmp"
   echo "[+] hosts: recon block removed from $etc"
 }
 
@@ -139,7 +151,7 @@ _hosts-usage() {
   echo "       hosts --apply | --off | -e|--edit"
   echo
   echo "  (no args)              show case file + /etc/hosts recon block"
-  echo "  <host> [names]         append to cases/<room>/hosts (IP = \$IP / target)"
+  echo "  <host> [names]         upsert cases/<room>/hosts (same name replaces line)"
   echo "  <ip> <host> [names]    append with explicit IP"
   echo "  -r, --replace          replace case hosts file with one line, then apply"
   echo "  --apply                apply cases/<room>/hosts to /etc/hosts"
@@ -156,19 +168,21 @@ _hosts-usage() {
 }
 
 _hosts-show() {
-  local f etc
+  local f etc line
   f="$(_hosts-case-file 2>/dev/null)"
   echo "case file: ${f:-"(no case)"}"
   if [[ -n "$f" && -f "$f" ]]; then
-    sed 's/^/  /' "$f"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      echo "  $line"
+    done <"$f"
   else
     echo "  (none)"
   fi
   echo ""
   echo "/etc/hosts (recon block):"
   etc="/etc/hosts"
-  if [[ -f "$etc" ]] && grep -qF "$RECON_HOSTS_BEGIN" "$etc" 2>/dev/null; then
-    awk -v begin="$RECON_HOSTS_BEGIN" -v end="$RECON_HOSTS_END" '
+  if [[ -f "$etc" ]] && "$(_recon-bin grep)" -qF "$RECON_HOSTS_BEGIN" "$etc" 2>/dev/null; then
+    "$(_recon-bin awk)" -v begin="$RECON_HOSTS_BEGIN" -v end="$RECON_HOSTS_END" '
       $0 ~ begin { show=1; next }
       $0 ~ end { show=0; next }
       show==1 { print "  " $0 }
@@ -176,6 +190,22 @@ _hosts-show() {
   else
     echo "  (none)"
   fi
+}
+
+_hosts-line-has-name() {
+  local line="$1" name="$2"
+  local -a fields
+  line="${line%%#*}"
+  line="${line#"${line%%[![:space:]]*}"}"
+  line="${line%"${line##*[![:space:]]}"}"
+  fields=(${=line})
+  (( ${#fields[@]} >= 2 )) || return 1
+  fields=("${fields[@]:1}")
+  local f
+  for f in "${fields[@]}"; do
+    [[ "$f" == "$name" ]] && return 0
+  done
+  return 1
 }
 
 _hosts-resolve-register-args() {
@@ -241,25 +271,65 @@ _hosts-register-line() {
   if [[ "$mode" == replace ]]; then
     print -r -- "$line" >"$f"
   else
-    touch "$f"
-    if grep -qFx "$line" "$f" 2>/dev/null; then
+    "$(_recon-bin touch)" "$f"
+    if "$(_recon-bin grep)" -qFx "$line" "$f" 2>/dev/null; then
       echo "[=] hosts: already registered — $line"
       _recon-hosts-apply
       return 0
     fi
-    print -r -- "$line" >>"$f"
+
+    local -a names=("$host" "${rest[@]}") out=()
+    local existing replaced=false l skip name
+
+    while IFS= read -r l || [[ -n "$l" ]]; do
+      skip=false
+      if _hosts-valid-line "$l"; then
+        for name in "${names[@]}"; do
+          if _hosts-line-has-name "$l" "$name"; then
+            skip=true
+            replaced=true
+            break
+          fi
+        done
+      fi
+      if $skip; then
+        continue
+      fi
+      out+=("$l")
+    done <"$f"
+
+    out+=("$line")
+
+    {
+      for l in "${out[@]}"; do
+        print -r -- "$l"
+      done
+    } >"$f"
+
+    if $replaced; then
+      echo "[~] hosts: updated — $line"
+    fi
   fi
   _recon-hosts-apply
 }
 
-_hosts-edit() {
+_hosts-editor() {
   local ed="${EDITOR:-vi}"
-  local path
+  if [[ "$ed" == */* ]]; then
+    print -r -- "$ed"
+  else
+    _recon-bin "$ed"
+  fi
+}
+
+_hosts-edit() {
+  local ed path
+  ed="$(_hosts-editor)"
   path="$(_hosts-case-file)" || {
     echo "[-] case not set — case-set <room> first" >&2
     return 1
   }
-  touch "$path"
+  "$(_recon-bin touch)" "$path"
   "$ed" "$path"
   _recon-hosts-apply
 }

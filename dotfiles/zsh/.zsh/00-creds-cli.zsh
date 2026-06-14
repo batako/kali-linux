@@ -2,6 +2,16 @@
 # shared recon creds (cl / ssh / ftp)
 # ========================
 
+# Resolve external command when PATH is unset (e.g. nested `zsh` in container).
+_recon-bin() {
+  local p
+  p="$(whence -p -- "$1" 2>/dev/null)" && { print -r -- "$p"; return 0; }
+  for p in "/usr/bin/$1" "/bin/$1"; do
+    [[ -x "$p" ]] && { print -r -- "$p"; return 0; }
+  done
+  print -r -- "$1"
+}
+
 _recon-ip-re() {
   echo '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 }

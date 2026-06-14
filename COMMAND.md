@@ -156,7 +156,7 @@ exploit -u https://target/
 | `target-show` | 現在のターゲット IP（RHOST） |
 | `lhost` | 攻撃マシン側 IP のみ出力（LHOST: tun0 → eth0） |
 | `target-clear` | クリア |
-| `hosts <host> [aliases...]` | `cases/<room>/hosts` に追記（IP は `$IP` / `target`）して `/etc/hosts` に適用 |
+| `hosts <host> [aliases...]` | `cases/<room>/hosts` に upsert（同一 hostname は行を上書き。IP は `$IP` / `target`）して `/etc/hosts` に適用 |
 | `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
 | `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |

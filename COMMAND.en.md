@@ -156,7 +156,7 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 | `target-show` | Current target IP (RHOST) |
 | `lhost` | Print attacker IP only (LHOST: tun0 → eth0) |
 | `target-clear` | Clear IP |
-| `hosts <host> [aliases...]` | Append to `cases/<room>/hosts` using `$IP` / `target`, apply `/etc/hosts` |
+| `hosts <host> [aliases...]` | Upsert `cases/<room>/hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
 | `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
 | `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (auto on `case-set`) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
