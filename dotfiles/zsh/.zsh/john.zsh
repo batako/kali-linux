@@ -673,55 +673,9 @@ _gpg_crack_credential_default() {
   return 1
 }
 
-_gpg_crack_parse_creds() {
-  local text="$1"
-  print -r -- "$text" | python3 -c "
-import sys
-for line in sys.stdin:
-    line = line.strip()
-    if not line or line.startswith('-----'):
-        continue
-    if ':' not in line:
-        continue
-    user, _, passwd = line.partition(':')
-    user, passwd = user.strip(), passwd.strip()
-    if user and passwd:
-        print(user)
-        print(passwd)
-        break
-"
-}
-
-_gpg_crack_import_creds() {
-  local user="$1" pass="$2"
-  local ip="${IP:-}"
-  local creds_status
-
-  if [[ -z "$ip" ]]; then
-    echo "[-] creds not saved: target-set <ip> first, or case-set <room> (cases/<room>/target)" >&2
-    return 1
-  fi
-  if [[ -z "$user" || -z "$pass" ]]; then
-    return 1
-  fi
-
-  creds_status="$(python3 "$RECON_APP" creds-add "$ip" "$user" "$pass" --comment "gpg credential" 2>&1)" || return 1
-
-  echo ""
-  echo "----- recon -----"
-  case "$creds_status" in
-    unchanged) echo "[=] creds unchanged: ${user}@${ip}" ;;
-    updated)   echo "[~] creds updated: ${user}@${ip}" ;;
-    *)         echo "[+] creds saved: ${user}@${ip}" ;;
-  esac
-  echo "    login:    $user"
-  echo "    password: $pass"
-  echo "[i] connect: ssh $user  (or: su $user)"
-}
-
 _gpg_crack_decrypt() {
   local key="$1" cred="$2" gpg_pass="$3"
-  local gnupg plain user pass
+  local gnupg plain
 
   if [[ ! -f "$cred" ]]; then
     echo "[-] credential file not found: $cred" >&2
@@ -749,25 +703,14 @@ _gpg_crack_decrypt() {
   echo ""
   echo "[+] decrypted:"
   print -r -- "$plain"
-
-  local -a parsed
-  parsed=("${(@f)$(_gpg_crack_parse_creds "$plain")}")
-  user="${parsed[1]}"
-  pass="${parsed[2]}"
-  if [[ -n "$user" && -n "$pass" ]]; then
-    _gpg_crack_import_creds "$user" "$pass"
-    return 0
-  fi
-
-  echo "[-] could not parse user:pass from decrypted text (use: creds-add <user> <pass>)" >&2
-  return 1
+  return 0
 }
 
-# gpg2john + john; optional gpg decrypt + creds-add from credential.pgp
+# gpg2john + john; optional gpg decrypt + plaintext dump from credential.pgp
 # usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]
 #   x "gpg-crack tryhackme.asc"
 # -f: force re-crack (ignore pot)
-# -n: crack only (no gpg --decrypt / creds-add)
+# -n: crack only (no gpg --decrypt)
 # -c: credential file (default: credential.pgp beside key.asc)
 gpg-crack() {
   local force=0
@@ -783,7 +726,7 @@ gpg-crack() {
         echo "usage: gpg-crack [-f] [-n] [-c credential.pgp] <key.asc> [wordlist]"
         echo "  default wordlist: \$RECON_PASSLIST"
         echo "  default credential: credential.pgp beside <key.asc>"
-        echo "  on success: gpg --decrypt → creds-add when user:pass in plaintext"
+        echo "  on success: gpg --decrypt and print plaintext"
         return 0
         ;;
       *)

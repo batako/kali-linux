@@ -705,7 +705,7 @@ gb-dns example.com    # 実 DNS がある環境向け
 | コマンド | 説明 |
 |----------|------|
 | `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john → 成功時 `creds-add` |
-| `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john → `credential.pgp` 復号 → 平文の `user:pass` を `creds-add` |
+| `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john → `credential.pgp` 復号 → 平文を表示 |
 | `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | 1行/ファイル/URL を john。引数なし（または `-a`）で `hlist` 全件バッチ → 成功時 `cl`。`-b` で creds を `borg@$IP` に保存 |
 | `zip-crack <zip> [wordlist]` | zip ハッシュ |
 | `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | フォルダ内の Borg リポジトリを検出 → 全アーカイブを `borg extract` |
