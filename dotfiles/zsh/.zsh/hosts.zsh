@@ -144,6 +144,52 @@ _hosts-default-ip() {
   return 1
 }
 
+_hosts-remap-ip() {
+  local from_ip="$1" to_ip="$2"
+  local f line ip rest trimmed
+  local -a out=()
+  local changed=false count=0
+
+  [[ "$from_ip" =~ $(_recon-ip-re) && "$to_ip" =~ $(_recon-ip-re) ]] || return 0
+  [[ "$from_ip" == "$to_ip" ]] && return 0
+
+  f="$(_hosts-case-file)" || return 0
+  [[ -f "$f" ]] || return 0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if _hosts-valid-line "$line"; then
+      trimmed="$(_hosts-trim-line "$line")"
+      ip="${trimmed%% *}"
+      if [[ "$ip" == "$from_ip" ]]; then
+        rest="${trimmed#* }"
+        line="$to_ip $rest"
+        changed=true
+        (( count++ ))
+      else
+        line="$trimmed"
+      fi
+    fi
+    out+=("$line")
+  done <"$f"
+
+  if ! $changed; then
+    return 0
+  fi
+
+  {
+    for line in "${out[@]}"; do
+      print -r -- "$line"
+    done
+  } >"$f"
+
+  if (( count == 1 )); then
+    echo "[~] hosts: ${from_ip} → ${to_ip} (1 entry)"
+  else
+    echo "[~] hosts: ${from_ip} → ${to_ip} (${count} entries)"
+  fi
+  _recon-hosts-apply
+}
+
 _hosts-usage() {
   echo "usage: hosts [-h] [<hostname> [aliases...]]"
   echo "       hosts [<ip>] <hostname> [aliases...]"
@@ -159,6 +205,7 @@ _hosts-usage() {
   echo "  -e, --edit             edit cases/<room>/hosts, then apply"
   echo
   echo "  case-set switches rooms → hosts auto-applies when cases/<room>/hosts exists"
+  echo "  target-set <new-ip>      rewrites lines with the previous target IP to the new IP"
   echo
   echo "examples:"
   echo "  hosts smag.thm                    # uses \$IP"

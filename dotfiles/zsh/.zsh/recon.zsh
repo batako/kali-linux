@@ -83,6 +83,7 @@ target-set() {
     echo "  alias: ts (= target-set)"
     echo "  set \$IP (+ save to cases/<room>/target)"
     echo "  IP change: auto-inherit previous target when it has recon data"
+    echo "  hosts:     previous IP in cases/<room>/hosts → new IP on target-set (not --new)"
     echo "  lineage: prior IPs of same VM accumulate in cases/<room>/lineage"
     echo "  --new   pivot (clear lineage)    --pick   numbered load_from picker"
     echo "  no args: reload from target file"
@@ -134,6 +135,9 @@ target-set() {
       fi
       python3 "$RECON_APP" "${set_args[@]}" || return $?
       export IP="$new_ip"
+      if [[ "$mode" != new && -n "$previous_ip" && "$previous_ip" != "$new_ip" ]]; then
+        (( $+functions[_hosts-remap-ip] )) && _hosts-remap-ip "$previous_ip" "$new_ip"
+      fi
       return 0
     fi
 

@@ -74,7 +74,7 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 **Not auto-created** (place manually if needed): `target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
 Those can be placed directly under `CASE_HOME`.
 
-**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). Lines in `cases/<room>/hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
 
 ```bash
 case-set startup
@@ -152,9 +152,9 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 
 | Command | Description |
 |----------|------|
-| `target-set <ip>` | Save to `cases/<room>/target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target (alias: `ts`) |
+| `target-set <ip>` | Save to `cases/<room>/target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target; **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
 | `target-set` | Reload `$IP` from `target` (can infer room if cwd is under `cases/<room>/`) |
-| `target-set <ip> --new` | Pivot - no load_from (do not inherit old IP scan/dirs) |
+| `target-set <ip> --new` | Pivot — no load_from, no hosts IP rewrite (do not inherit old IP scan/dirs) |
 | `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |
 | `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
 | `target-show` | Current target IP (RHOST) |
@@ -162,7 +162,7 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 | `target-clear` | Clear IP |
 | `hosts <host> [aliases...]` | Upsert `cases/<room>/hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
 | `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
-| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (auto on `case-set`) |
+| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (`case-set` auto-applies; `target-set` rewrites old IP lines) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
 | `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
 | `scan -f` / `scan --full` | **TCP 1-65535 automatically to completion** (single command end-to-end) |
