@@ -2,6 +2,7 @@ import fcntl
 import os
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -35,7 +36,46 @@ def _default_db_path() -> str:
 
 DB_PATH = _default_db_path()
 
-SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("RECON_SQLITE_BUSY_TIMEOUT_MS", "5000"))
+SQLITE_BUSY_TIMEOUT_MS = int(os.environ.get("RECON_SQLITE_BUSY_TIMEOUT_MS", "15000"))
+SQLITE_WRITE_RETRIES = int(os.environ.get("RECON_SQLITE_WRITE_RETRIES", "10"))
+SQLITE_WRITE_RETRY_BASE_SEC = float(
+    os.environ.get("RECON_SQLITE_WRITE_RETRY_BASE_SEC", "0.05")
+)
+_SCHEMA_INITIALIZED: set[str] = set()
+
+
+def _sqlite_busy(exc: sqlite3.OperationalError) -> bool:
+    msg = str(exc).lower()
+    return "locked" in msg or "busy" in msg
+
+
+def db_write(fn, /, *args, **kwargs):
+    """Run *fn(conn, *args, **kwargs) under file lock with retry on busy/locked."""
+    delay = SQLITE_WRITE_RETRY_BASE_SEC
+    last_err = None
+    for attempt in range(SQLITE_WRITE_RETRIES):
+        try:
+            with db_file_lock():
+                conn = connect()
+                try:
+                    result = fn(conn, *args, **kwargs)
+                    conn.commit()
+                    return result
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    conn.close()
+        except sqlite3.OperationalError as exc:
+            if not _sqlite_busy(exc):
+                raise
+            last_err = exc
+            if attempt + 1 >= SQLITE_WRITE_RETRIES:
+                raise
+            time.sleep(delay)
+            delay = min(delay * 2, 1.0)
+    if last_err:
+        raise last_err
 
 
 @contextmanager
@@ -80,6 +120,10 @@ def init_db():
 # =========================
 
 def ensure_schema(conn):
+    db_key = str(Path(DB_PATH).expanduser().resolve())
+    if db_key in _SCHEMA_INITIALIZED:
+        return
+
     cur = conn.cursor()
 
     cur.execute("""
@@ -200,6 +244,7 @@ def ensure_schema(conn):
     _migrate_case_scope_columns(cur)
 
     conn.commit()
+    _SCHEMA_INITIALIZED.add(db_key)
 
 def _table_columns(cur, table_name: str):
     rows = cur.execute(f"PRAGMA table_info({table_name})").fetchall()
@@ -956,39 +1001,34 @@ def show_scan_report(ip):
 def add_execution(task_id, ip, task_type, command, cwd="/", status="running"):
     case_name = _current_case_name()
     _touch_case_ip(ip)
-    conn = connect()
-    cur = conn.cursor()
 
-    cur.execute("""
-    INSERT INTO executions (
-        task_id, ip, task_type, command, cwd, status, started_at, case_name
-    ) VALUES (
-        ?, ?, ?, ?, ?, ?, datetime('now'), ?
-    )
-    """, (task_id, ip, task_type, command, cwd, status, case_name))
+    def _write(conn):
+        cur = conn.cursor()
+        cur.execute("""
+        INSERT INTO executions (
+            task_id, ip, task_type, command, cwd, status, started_at, case_name
+        ) VALUES (
+            ?, ?, ?, ?, ?, ?, datetime('now'), ?
+        )
+        """, (task_id, ip, task_type, command, cwd, status, case_name))
+        return cur.lastrowid
 
-    exec_id = cur.lastrowid
-    conn.commit()
-    conn.close()
-    return exec_id
+    return db_write(_write)
 
 
 def finish_execution(execution_id, status, exit_code=None, stdout="", stderr=""):
-    conn = connect()
-    cur = conn.cursor()
+    def _write(conn):
+        conn.execute("""
+        UPDATE executions
+        SET status = ?,
+            exit_code = ?,
+            stdout = ?,
+            stderr = ?,
+            ended_at = datetime('now')
+        WHERE id = ?
+        """, (status, exit_code, stdout, stderr, execution_id))
 
-    cur.execute("""
-    UPDATE executions
-    SET status = ?,
-        exit_code = ?,
-        stdout = ?,
-        stderr = ?,
-        ended_at = datetime('now')
-    WHERE id = ?
-    """, (status, exit_code, stdout, stderr, execution_id))
-
-    conn.commit()
-    conn.close()
+    db_write(_write)
 
 
 def find_done_execution(ip: str, command: str):
@@ -1179,92 +1219,112 @@ def creds_upsert(
     comment: when set, stored as usage hint (e.g. SSH, HTTP Basic); None leaves comment unchanged.
     Returns: saved | updated | unchanged
     """
-    if not ip or not username or not password:
+    if not ip or not username or password is None:
         raise ValueError("ip, username, and password required")
 
     case_name = _current_case_name()
     _touch_case_ip(ip)
 
-    existing = _get_password_artifact(ip, username)
-    existing_comment_row = _get_creds_comment_artifact(ip, username)
-    existing_comment = (existing_comment_row["value"] or "") if existing_comment_row else ""
+    def _write(conn):
+        cur = conn.cursor()
 
-    password_same = existing and (existing["value"] or "") == password
-    comment_same = comment is None or comment == existing_comment
-    if password_same and comment_same:
-        return "unchanged"
-
-    conn = connect()
-    cur = conn.cursor()
-
-    if existing:
-        if not password_same:
-            cur.execute(
-                """
-                UPDATE artifacts
-                SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
-                    created_at = datetime('now')
-                WHERE id = ?
-                """,
-                (password, execution_id, case_name, int(existing["id"])),
-            )
-        status = "updated"
-    else:
-        cur.execute(
+        existing = cur.execute(
             """
-            INSERT INTO artifacts (
-                ip, kind, key, value, execution_id, created_at, case_name
-            ) VALUES (?, 'password', ?, ?, ?, datetime('now'), ?)
+            SELECT id, value
+            FROM artifacts
+            WHERE ip = ? AND kind = 'password' AND key = ?
+            ORDER BY id DESC
+            LIMIT 1
             """,
-            (ip, username, password, execution_id, case_name),
+            (ip, username),
+        ).fetchone()
+        existing_comment_row = cur.execute(
+            """
+            SELECT id, value
+            FROM artifacts
+            WHERE ip = ? AND kind = 'creds_comment' AND key = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (ip, username),
+        ).fetchone()
+        existing_comment = (
+            (existing_comment_row["value"] or "") if existing_comment_row else ""
         )
-        status = "saved"
 
-    if comment is not None and not comment_same:
-        if existing_comment_row:
-            cur.execute(
-                """
-                UPDATE artifacts
-                SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
-                    created_at = datetime('now')
-                WHERE id = ?
-                """,
-                (comment, execution_id, case_name, int(existing_comment_row["id"])),
-            )
+        password_same = existing and (existing["value"] or "") == password
+        comment_same = comment is None or comment == existing_comment
+        if password_same and comment_same:
+            return "unchanged"
+
+        if existing:
+            if not password_same:
+                cur.execute(
+                    """
+                    UPDATE artifacts
+                    SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                        created_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (password, execution_id, case_name, int(existing["id"])),
+                )
+            status = "updated"
         else:
             cur.execute(
                 """
                 INSERT INTO artifacts (
                     ip, kind, key, value, execution_id, created_at, case_name
-                ) VALUES (?, 'creds_comment', ?, ?, ?, datetime('now'), ?)
+                ) VALUES (?, 'password', ?, ?, ?, datetime('now'), ?)
                 """,
-                (ip, username, comment, execution_id, case_name),
+                (ip, username, password, execution_id, case_name),
             )
-        if password_same:
-            status = "updated"
+            status = "saved"
 
-    has_user = cur.execute(
-        """
-        SELECT 1 FROM artifacts
-        WHERE ip = ? AND kind = 'username' AND value = ?
-        LIMIT 1
-        """,
-        (ip, username),
-    ).fetchone()
+        if comment is not None and not comment_same:
+            if existing_comment_row:
+                cur.execute(
+                    """
+                    UPDATE artifacts
+                    SET value = ?, execution_id = ?, case_name = COALESCE(?, case_name),
+                        created_at = datetime('now')
+                    WHERE id = ?
+                    """,
+                    (comment, execution_id, case_name, int(existing_comment_row["id"])),
+                )
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO artifacts (
+                        ip, kind, key, value, execution_id, created_at, case_name
+                    ) VALUES (?, 'creds_comment', ?, ?, ?, datetime('now'), ?)
+                    """,
+                    (ip, username, comment, execution_id, case_name),
+                )
+            if password_same:
+                status = "updated"
 
-    if not has_user:
-        cur.execute(
+        has_user = cur.execute(
             """
-            INSERT INTO artifacts (
-                ip, kind, key, value, execution_id, created_at, case_name
-            ) VALUES (?, 'username', '', ?, ?, datetime('now'), ?)
+            SELECT 1 FROM artifacts
+            WHERE ip = ? AND kind = 'username' AND value = ?
+            LIMIT 1
             """,
-            (ip, username, execution_id, case_name),
-        )
+            (ip, username),
+        ).fetchone()
 
-    conn.commit()
-    conn.close()
-    return status
+        if not has_user:
+            cur.execute(
+                """
+                INSERT INTO artifacts (
+                    ip, kind, key, value, execution_id, created_at, case_name
+                ) VALUES (?, 'username', '', ?, ?, datetime('now'), ?)
+                """,
+                (ip, username, execution_id, case_name),
+            )
+
+        return status
+
+    return db_write(_write)
 
 
 def creds_delete(ip: str, username: str = None) -> int:
@@ -1937,19 +1997,19 @@ def list_tasks(
 
 
 def mark_task_running(task_id: int) -> None:
-    conn = connect()
-    conn.execute(
-        """
-        UPDATE tasks
-        SET status = 'running',
-            started_at = datetime('now'),
-            updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (int(task_id),),
-    )
-    conn.commit()
-    conn.close()
+    def _write(conn):
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'running',
+                started_at = datetime('now'),
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (int(task_id),),
+        )
+
+    db_write(_write)
 
 
 def finish_task(
@@ -1960,46 +2020,45 @@ def finish_task(
     execution_id: int | None = None,
     result_summary: str | None = None,
 ) -> None:
-    conn = connect()
-    conn.execute(
-        """
-        UPDATE tasks
-        SET status = ?,
-            outcome = ?,
-            execution_id = ?,
-            result_summary = ?,
-            ended_at = datetime('now'),
-            updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (
-            status,
-            outcome,
-            execution_id,
-            (result_summary or "")[:500] if result_summary else None,
-            int(task_id),
-        ),
-    )
-    conn.commit()
-    conn.close()
+    def _write(conn):
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = ?,
+                outcome = ?,
+                execution_id = ?,
+                result_summary = ?,
+                ended_at = datetime('now'),
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (
+                status,
+                outcome,
+                execution_id,
+                (result_summary or "")[:500] if result_summary else None,
+                int(task_id),
+            ),
+        )
+
+    db_write(_write)
 
 
 def reset_task_pending(task_id: int) -> None:
-    conn = connect()
-    conn.execute(
-        """
-        UPDATE tasks
-        SET status = 'pending',
-            outcome = NULL,
-            execution_id = NULL,
-            result_summary = NULL,
-            started_at = NULL,
-            ended_at = NULL,
-            updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (int(task_id),),
-    )
-    conn.commit()
-    conn.close()
+    def _write(conn):
+        conn.execute(
+            """
+            UPDATE tasks
+            SET status = 'pending',
+                outcome = NULL,
+                execution_id = NULL,
+                result_summary = NULL,
+                started_at = NULL,
+                ended_at = NULL,
+                updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (int(task_id),),
+        )
 
+    db_write(_write)

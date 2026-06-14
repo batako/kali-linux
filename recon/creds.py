@@ -6,31 +6,31 @@ from db import creds_upsert
 
 # hydra success: host/login/password with optional fields (e.g. misc: (null))
 HYDRA_SSH_FOUND = re.compile(
-    r"\[\d+\]\[ssh\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[ssh\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_FTP_FOUND = re.compile(
-    r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[ftp\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_POSTGRES_FOUND = re.compile(
-    r"\[\d+\]\[postgres\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[postgres\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_MYSQL_FOUND = re.compile(
-    r"\[\d+\]\[mysql\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[mysql\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_POP3_FOUND = re.compile(
-    r"\[\d+\]\[pop3\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[pop3\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_HTTP_FORM_FOUND = re.compile(
-    r"\[\d+\]\[(?:https?-(?:post|get)-form)\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[(?:https?-(?:post|get)-form)\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 HYDRA_HTTP_BASIC_FOUND = re.compile(
-    r"\[\d+\]\[https?-get\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)\s+password:\s*(\S*)",
+    r"\[\d+\]\[https?-get\]\s+host:\s+(\S+).*?\blogin:\s+(\S+)(?:\s+password:\s*(\S*))?",
     re.IGNORECASE,
 )
 
@@ -93,8 +93,17 @@ MSFR_DB_EXCLUDE_COMMENT_HINTS = {
 # backward-compatible alias
 MSFR_POSTGRES_EXCLUDE_COMMENT_HINTS = MSFR_DB_EXCLUDE_COMMENT_HINTS["postgres"]
 
+_ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _strip_ansi(text: str) -> str:
+    if not text:
+        return ""
+    return _ANSI_RE.sub("", text)
+
 
 def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None, comment: str = ""):
+    text = _strip_ansi(text)
     if not text:
         return []
 
@@ -102,7 +111,7 @@ def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None,
     seen = set()
 
     for m in pattern.finditer(text):
-        host, username, password = m.group(1), m.group(2), m.group(3)
+        host, username, password = m.group(1), m.group(2), m.group(3) or ""
         if not username:
             continue
         target_ip = ip or host
@@ -129,6 +138,10 @@ def _import_hydra_matches(text: str, pattern, ip: str = None, execution_id=None,
         )
 
     return results
+
+
+def _display_password(password: str | None) -> str:
+    return password if password not in (None, "") else "<blank>"
 
 
 def import_hydra_ssh(text: str, ip: str = None, execution_id=None):
@@ -414,6 +427,6 @@ def emit_import_results(results, stream=None):
     for r in results:
         print(_status_line(r), file=stream)
         print(f"    login:    {r['username']}", file=stream)
-        print(f"    password: {r['password']}", file=stream)
+        print(f"    password: {_display_password(r['password'])}", file=stream)
         if r.get("comment"):
             print(f"    comment:  {r['comment']}", file=stream)

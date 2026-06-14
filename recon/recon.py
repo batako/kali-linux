@@ -1436,7 +1436,8 @@ def main():
                     print(f"(no ssh creds for {ip})")
                 else:
                     for r in rows:
-                        print(f"{r['username']}\t{r['password']}\t{r.get('comment', '')}")
+                        password = r["password"] or "<blank>"
+                        print(f"{r['username']}\t{password}\t{r.get('comment', '')}")
         elif case:
             rows = list_ssh_creds_for_case(case, all_case=all_case)
             if as_json:
@@ -1446,8 +1447,9 @@ def main():
                     print(f"(no ssh creds for case {case})")
                 else:
                     for r in rows:
+                        password = r["password"] or "<blank>"
                         print(
-                            f"{r['ip']}\t{r['username']}\t{r['password']}\t{r.get('comment', '')}"
+                            f"{r['ip']}\t{r['username']}\t{password}\t{r.get('comment', '')}"
                         )
         else:
             print("usage: recon.py creds-list [--json] [ip]")

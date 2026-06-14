@@ -71,14 +71,6 @@ _recon-has-ssh-creds() {
   [[ -n "$json" && "$json" != "[]" ]]
 }
 
-# Not SSH login accounts (case dirs / FTP-only); skip in ssh/sget user pickers
-_recon-skip-ssh-user() {
-  case "$1" in
-    exports|logs|anonymous|"") return 0 ;;
-  esac
-  return 1
-}
-
 _recon-pick-user() {
   local ip="$1"
   local exclude_anon="${2:-0}"
@@ -97,7 +89,14 @@ for r in json.load(sys.stdin):
 ")}")
 
   for u in "${users[@]}"; do
-    _recon-skip-ssh-user "$u" && continue
+    case "$u" in
+      exports|logs|"")
+        continue
+        ;;
+      anonymous)
+        [[ "$exclude_anon" == 1 ]] && continue
+        ;;
+    esac
     filtered+=("$u")
   done
   users=("${filtered[@]}")
@@ -139,6 +138,15 @@ for r in json.load(sys.stdin):
   fi
 
   echo "[-] invalid choice" >&2
+  return 1
+}
+
+# Backward-compatible wrapper for ssh-specific callers.
+_recon-skip-ssh-user() {
+  local user="$1"
+  case "$user" in
+    exports|logs|anonymous|"") return 0 ;;
+  esac
   return 1
 }
 

@@ -68,8 +68,10 @@ _ftp-connect-creds() {
   echo "[+] connecting: ftp://${user}@${ip}" >&2
 
   local netrc="" homedir=""
-  netrc="$(mktemp "${TMPDIR:-/tmp}/ftp-netrc.XXXXXX")"
   homedir="$(mktemp -d "${TMPDIR:-/tmp}/ftp-home.XXXXXX")"
+  netrc="$homedir/.netrc"
+  chmod 700 "$homedir"
+  touch "$netrc"
   chmod 600 "$netrc"
   _ftp-write-netrc "$ip" "$user" "$pass" "$netrc"
 
@@ -79,13 +81,12 @@ _ftp-connect-creds() {
 
   if [[ -n "$logfile" ]]; then
     echo "[+] logging: $logfile"
-    NETRC="$netrc" HOME="$homedir" script -q -f "$logfile" -c "${(q)cmd}"
+    HOME="$homedir" script -q -f "$logfile" -c "${(q)cmd}"
     echo "[+] session log saved: $logfile"
   else
-    NETRC="$netrc" HOME="$homedir" "${cmd[@]}"
+    HOME="$homedir" "${cmd[@]}"
   fi
 
-  rm -f "$netrc"
   rm -rf "$homedir"
 }
 

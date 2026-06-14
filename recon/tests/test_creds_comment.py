@@ -59,6 +59,14 @@ class CredsCommentTest(unittest.TestCase):
         db_mod.creds_delete("10.0.0.1", "barry")
         self.assertEqual(db_mod.list_ssh_creds("10.0.0.1"), [])
 
+    def test_upsert_allows_blank_password(self) -> None:
+        status = db_mod.creds_upsert("10.0.0.1", "anonymous", "")
+        self.assertEqual(status, "saved")
+        rows = db_mod.list_ssh_creds("10.0.0.1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["username"], "anonymous")
+        self.assertEqual(rows[0]["password"], "")
+
 
 if __name__ == "__main__":
     unittest.main()

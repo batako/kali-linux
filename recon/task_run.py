@@ -184,6 +184,16 @@ def run_strike(
     case = case_name_from_env()
     scope = _scope_ips(ip)
 
+    # Recover tasks left "running" after a crash (e.g. sqlite lock on finish_task).
+    for row in list_tasks(
+        scope_ips=scope,
+        case_name=case,
+        status="running",
+        task_type_prefix=task_type_prefix or None,
+        limit=100,
+    ):
+        reset_task_pending(int(row["id"]))
+
     pending = list_tasks(
         scope_ips=scope,
         case_name=case,

@@ -41,6 +41,25 @@ class CredsHydraImportTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["username"], "admin")
 
+    @patch("creds.creds_upsert", return_value="saved")
+    def test_import_ftp_without_password(self, mock_upsert) -> None:
+        text = (
+            "[\x1b[1;32m21\x1b[0m][\x1b[1;32mftp\x1b[0m] host: "
+            "\x1b[1;32m10.0.0.1\x1b[0m   login: \x1b[1;32manonymous\x1b[0m\n"
+            "1 of 1 target successfully completed, 1 valid password found\n"
+        )
+        rows = import_hydra(text, ip="10.0.0.1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["username"], "anonymous")
+        self.assertEqual(rows[0]["password"], "")
+        mock_upsert.assert_called_once_with(
+            ip="10.0.0.1",
+            username="anonymous",
+            password="",
+            execution_id=None,
+            comment="FTP (hydra)",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
