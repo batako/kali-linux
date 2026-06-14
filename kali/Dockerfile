@@ -8,6 +8,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     # === core ===
     base58 \
     binutils \
+    bsdextrautils \
     file \
     htop \
     less \
