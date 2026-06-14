@@ -21,8 +21,8 @@ target-load() {
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   export IP="$ip"
   if [[ -n "${CASE:-}" ]]; then
-    python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
-    python3 "$RECON_APP" case-sync-ips 2>/dev/null
+    python3 "$RECON_APP" case-register-ip "$ip" >/dev/null
+    python3 "$RECON_APP" case-sync-ips >/dev/null
   fi
   return 0
 }
@@ -35,8 +35,8 @@ target-save() {
   f="$(_case-target-file)" || return 1
   print -r -- "$ip" >"$f"
   if [[ -n "${CASE:-}" ]]; then
-    python3 "$RECON_APP" case-register-ip "$ip" 2>/dev/null
-    python3 "$RECON_APP" case-sync-ips 2>/dev/null
+    python3 "$RECON_APP" case-register-ip "$ip" >/dev/null
+    python3 "$RECON_APP" case-sync-ips >/dev/null
   fi
   return 0
 }

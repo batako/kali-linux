@@ -34,7 +34,7 @@ scout() {
 
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local plan_only="" no_plan=""
-  local vhosts_only="" vhosts_target=""
+  local vhosts_only="" vhosts_target="" vhost_scheme=""
   local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz=""
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
@@ -76,7 +76,8 @@ scout() {
         echo ""
         echo "vhost discovery (THM / IP):"
         echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
-        echo "  s -v example.com                 # vhost discovery (hosts apex first)"
+        echo "  s -v example.com                 # vhost (https → http; auto from nmap)"
+        echo "  s -v --https example.com         # HTTPS only"
         echo "  s -d -H www.example.com          # dir on discovered vhost"
         echo ""
         echo "other:"
@@ -136,7 +137,8 @@ scout() {
         echo "  s -d /scripts/script.FUZZ/      # literal dir named script.FUZZ"
         echo "  s -dx /scripts/script.*         # stem.* syntax (requires -dx)"
         echo "  s -d /config -w dirbuster-small"
-        echo "  s -v example.com                    # vhost discovery (hosts apex first)"
+        echo "  s -v example.com                    # vhost (https → http)"
+        echo "  s -v --https example.com            # HTTPS only"
         echo "  s -d -H www.example.com             # dir on discovered vhost"
         echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
         echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
@@ -228,14 +230,50 @@ scout() {
       -v|--vhosts)
         vhosts_only=1
         shift
-        if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-          _scout-vhosts-help
-          return 0
-        fi
-        if [[ -n "${1:-}" && "$1" != -* ]]; then
-          vhosts_target="$1"
-          shift
-        fi
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -h|--help)
+              _scout-vhosts-help
+              return 0
+              ;;
+            --http)
+              if [[ -n "$vhost_scheme" && "$vhost_scheme" != http ]]; then
+                echo "[-] scout -v: use one of --http, --https, --both" >&2
+                return 1
+              fi
+              vhost_scheme=http
+              shift
+              ;;
+            --https)
+              if [[ -n "$vhost_scheme" && "$vhost_scheme" != https ]]; then
+                echo "[-] scout -v: use one of --http, --https, --both" >&2
+                return 1
+              fi
+              vhost_scheme=https
+              shift
+              ;;
+            --both)
+              if [[ -n "$vhost_scheme" && "$vhost_scheme" != both ]]; then
+                echo "[-] scout -v: use one of --http, --https, --both" >&2
+                return 1
+              fi
+              vhost_scheme=both
+              shift
+              ;;
+            -*)
+              echo "[-] scout -v: unknown option: $1" >&2
+              return 1
+              ;;
+            *)
+              if [[ -n "$vhosts_target" ]]; then
+                echo "[-] scout -v: unexpected argument: $1" >&2
+                return 1
+              fi
+              vhosts_target="$1"
+              shift
+              ;;
+          esac
+        done
         ;;
       -d|--dirs)
         dirs_only="--dirs"
@@ -423,7 +461,7 @@ scout() {
 
   if [[ -n "$vhosts_only" ]]; then
     (( $+functions[_case-resolve-from-pwd] )) && _case-resolve-from-pwd 2>/dev/null
-    _scout-vhosts ${vhosts_target:+"$vhosts_target"}
+    _scout-vhosts ${vhost_scheme:+--$vhost_scheme} ${vhosts_target:+"$vhosts_target"}
     return $?
   fi
 

@@ -70,6 +70,11 @@ from scout_run import looks_like_vhost_hostname
 from scout_run import looks_like_ipv4
 from scout_run import DEFAULT_GB_THREADS
 from scout_run import DEFAULT_DIRS_MULTI_THREADS
+from scout_run import plan_vhost_schemes
+from scout_run import probe_vhost_wildcard_length
+from scout_run import probe_vhost_wildcard_profile
+from scout_run import probe_vhost_http_redirect_wildcard
+from scout_run import assess_http_vhost_value
 from wordlists.scout import resolve_scout_wordlist
 from wordlists.scout import resolve_dirs_multi_wordlists
 from executor import run_command
@@ -870,7 +875,7 @@ def main():
             print("usage: recon.py case-register-ip <ip>  (requires CASE)")
             sys.exit(1)
         register_case_ip(case, ip)
-        print(f"[+] case {case}: registered ip {ip}")
+        print(f"[+] case {case}: registered ip {ip}", file=sys.stderr)
 
     elif cmd == "case-sync-ips":
         case = case_name_from_env()
@@ -881,7 +886,7 @@ def main():
             case,
             extra=[read_load_from(), read_target_ip(), *read_lineage()],
         )
-        print(f"[+] case {case}: {len(ips)} ip(s) — {', '.join(ips) or '(none)'}")
+        print(f"[+] case {case}: {len(ips)} ip(s) — {', '.join(ips) or '(none)'}", file=sys.stderr)
 
     elif cmd == "case-reset":
         args = sys.argv[2:]
@@ -1853,6 +1858,134 @@ def main():
         if port is None:
             sys.exit(1)
         print(port)
+
+    elif cmd == "vhost-schemes":
+        args = sys.argv[2:]
+        override = None
+        ip = None
+        while args:
+            a = args[0]
+            if a == "--http":
+                override = "http"
+                args = args[1:]
+            elif a == "--https":
+                override = "https"
+                args = args[1:]
+            elif a == "--both":
+                override = "both"
+                args = args[1:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py vhost-schemes [--http|--https|--both] [ip]")
+                sys.exit(1)
+            else:
+                ip = a
+                args = args[1:]
+        if not ip:
+            ip = os.environ.get("IP")
+        if not ip:
+            print("usage: recon.py vhost-schemes [--http|--https|--both] [ip]")
+            sys.exit(1)
+        for scheme in plan_vhost_schemes(ip, override=override):
+            print(scheme)
+
+    elif cmd == "vhost-wildcard-fs":
+        args = sys.argv[2:]
+        scheme = "https"
+        domain = None
+        while args:
+            a = args[0]
+            if a == "--http":
+                scheme = "http"
+                args = args[1:]
+            elif a == "--https":
+                scheme = "https"
+                args = args[1:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py vhost-wildcard-fs [--http|--https] <domain>")
+                sys.exit(1)
+            else:
+                domain = a
+                args = args[1:]
+        if not domain:
+            print("usage: recon.py vhost-wildcard-fs [--http|--https] <domain>")
+            sys.exit(1)
+        manual = os.environ.get("GB_VHOST_EXCLUDE_LENGTH")
+        if manual not in (None, ""):
+            print(manual)
+            sys.exit(0)
+        profile = probe_vhost_wildcard_profile(domain, scheme=scheme)
+        if profile.suspicion == "strong" and profile.exclude_sizes:
+            print(",".join(str(s) for s in profile.exclude_sizes))
+
+    elif cmd == "vhost-wildcard-profile":
+        args = sys.argv[2:]
+        scheme = "https"
+        domain = None
+        while args:
+            a = args[0]
+            if a == "--http":
+                scheme = "http"
+                args = args[1:]
+            elif a == "--https":
+                scheme = "https"
+                args = args[1:]
+            elif a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py vhost-wildcard-profile [--http|--https] <domain>")
+                sys.exit(1)
+            else:
+                domain = a
+                args = args[1:]
+        if not domain:
+            print("usage: recon.py vhost-wildcard-profile [--http|--https] <domain>")
+            sys.exit(1)
+        manual = os.environ.get("GB_VHOST_EXCLUDE_LENGTH")
+        if manual not in (None, ""):
+            print(json.dumps({
+                "suspicion": "manual",
+                "filter_mode": "fs",
+                "exclude_sizes": [int(manual)] if manual.isdigit() else [],
+                "status_code": None,
+                "redirect_url": "",
+                "sample_count": 0,
+            }))
+            sys.exit(0)
+        print(json.dumps(probe_vhost_wildcard_profile(domain, scheme=scheme).to_dict()))
+
+    elif cmd == "vhost-http-assessment":
+        args = sys.argv[2:]
+        domain = None
+        while args:
+            a = args[0]
+            if a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py vhost-http-assessment <domain>")
+                sys.exit(1)
+            domain = a
+            args = args[1:]
+        if not domain:
+            print("usage: recon.py vhost-http-assessment <domain>")
+            sys.exit(1)
+        print(json.dumps(assess_http_vhost_value(domain)))
+
+    elif cmd == "vhost-http-redirect-wildcard":
+        args = sys.argv[2:]
+        domain = None
+        while args:
+            a = args[0]
+            if a.startswith("-"):
+                print(f"unknown option: {a}")
+                print("usage: recon.py vhost-http-redirect-wildcard <domain>")
+                sys.exit(1)
+            domain = a
+            args = args[1:]
+        if not domain:
+            print("usage: recon.py vhost-http-redirect-wildcard <domain>")
+            sys.exit(1)
+        if probe_vhost_http_redirect_wildcard(domain):
+            print("advisory")
 
     elif cmd == "ssh-last-get":
         if len(sys.argv) < 3:

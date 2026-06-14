@@ -4,6 +4,8 @@ Scout: port scan (scan basic) + service-based probes + background gobuster dirs.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shlex
@@ -11,6 +13,7 @@ import subprocess
 import sys
 import time
 import uuid
+from dataclasses import asdict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -283,6 +286,35 @@ def discover_web_targets(ip: str) -> list[tuple[int, str]]:
     return targets
 
 
+def plan_vhost_schemes(ip: str, *, override: str | None = None) -> list[str]:
+    """
+    Schemes for scout -v, in execution order (HTTPS before HTTP when both).
+    override: None (auto from nmap), 'both', 'http', 'https'.
+    """
+    mode = (override or "").strip().lower()
+    if mode == "http":
+        return ["http"]
+    if mode == "https":
+        return ["https"]
+    if mode == "both":
+        return ["https", "http"]
+
+    has_80 = False
+    has_443 = False
+    for row in fetch_merged_open_ports(ip):
+        port = int(row[0])
+        if port == 80:
+            has_80 = True
+        elif port == 443:
+            has_443 = True
+
+    if has_443 and not has_80:
+        return ["https"]
+    if has_80 and not has_443:
+        return ["http"]
+    return ["https", "http"]
+
+
 def resolve_dirs_targets(
     ip: str,
     *,
@@ -394,6 +426,219 @@ def build_dirs_log_path(
 # Gobuster treats these as hits; identical body on random paths → wildcard soft-404.
 _GOBUSTER_WILDCARD_STATUS = frozenset({200, 204, 301, 302, 307, 401, 403})
 
+_VHOST_REDIRECT_STATUS = frozenset({301, 302, 303, 307, 308})
+_VHOST_PROBE_SAMPLE_COUNT = 3
+
+
+@dataclass(frozen=True)
+class VhostProbeResponse:
+    status_code: int
+    body_size: int
+    redirect_url: str
+    body_hash: str
+    server: str
+    set_cookie: str
+
+
+@dataclass
+class VhostWildcardProfile:
+    suspicion: str  # strong | weak | none
+    filter_mode: str  # fs | ac
+    exclude_sizes: list[int]
+    status_code: Optional[int]
+    redirect_url: str
+    sample_count: int
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+def _parse_curl_response_headers(header_text: str) -> tuple[str, str]:
+    server = ""
+    set_cookie = ""
+    for line in (header_text or "").splitlines():
+        if not line or line.startswith("HTTP/"):
+            continue
+        if ":" not in line:
+            continue
+        name, _, value = line.partition(":")
+        key = name.strip().lower()
+        val = value.strip()
+        if key == "server" and not server:
+            server = val
+        elif key == "set-cookie" and not set_cookie:
+            set_cookie = val
+    return server, set_cookie
+
+
+def _probe_vhost_host(
+    domain: str,
+    host: str,
+    *,
+    scheme: str = "https",
+    timeout_sec: Optional[int] = None,
+) -> Optional[VhostProbeResponse]:
+    if timeout_sec is None:
+        timeout_sec = DEFAULT_GB_TIMEOUT_SEC
+    domain = (domain or "").strip().lower().rstrip(".")
+    host = (host or "").strip()
+    if not domain or not host:
+        return None
+    scheme = (scheme or "https").strip().lower()
+    if scheme not in ("http", "https"):
+        scheme = "https"
+    url = f"{scheme}://{domain}/"
+    body_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"vhost-probe-{uuid.uuid4().hex}.body"
+    header_path = Path(os.environ.get("TMPDIR", "/tmp")) / f"vhost-probe-{uuid.uuid4().hex}.hdr"
+    curl_args = [
+        "curl",
+        "-sS",
+        "-m",
+        str(timeout_sec),
+        "-D",
+        str(header_path),
+        "-o",
+        str(body_path),
+        "-w",
+        "%{http_code}\n%{size_download}\n%{redirect_url}",
+        "-H",
+        f"Host: {host}",
+    ]
+    if scheme == "https":
+        curl_args.append("-k")
+    curl_args.append(url)
+    try:
+        result = subprocess.run(
+            curl_args,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec + 5,
+            check=False,
+        )
+        lines = (result.stdout or "").strip().splitlines()
+        if len(lines) < 3:
+            return None
+        status_code = int(lines[0])
+        body_size = int(lines[1])
+        redirect_url = (lines[2] or "").strip()
+        if body_size < 0:
+            return None
+        body_bytes = body_path.read_bytes() if body_path.is_file() else b""
+        body_hash = hashlib.sha256(body_bytes).hexdigest()[:16]
+        header_text = header_path.read_text(encoding="utf-8", errors="replace") if header_path.is_file() else ""
+        server, set_cookie = _parse_curl_response_headers(header_text)
+        return VhostProbeResponse(
+            status_code=status_code,
+            body_size=body_size,
+            redirect_url=redirect_url,
+            body_hash=body_hash,
+            server=server,
+            set_cookie=set_cookie,
+        )
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    finally:
+        body_path.unlink(missing_ok=True)
+        header_path.unlink(missing_ok=True)
+
+
+def _vhost_probe_fingerprint(response: VhostProbeResponse) -> tuple:
+    redirect = (response.redirect_url or "").strip().lower().rstrip("/")
+    return (
+        response.status_code,
+        response.body_size,
+        redirect,
+        response.body_hash,
+        response.server,
+        response.set_cookie,
+    )
+
+
+def probe_vhost_wildcard_profile(
+    domain: str,
+    *,
+    scheme: str = "https",
+    timeout_sec: Optional[int] = None,
+    sample_count: int = _VHOST_PROBE_SAMPLE_COUNT,
+) -> VhostWildcardProfile:
+    """
+    Probe several random Host values and compare status, size, redirect, body hash,
+    Server, and Set-Cookie. Strong suspicion → ffuf -fs; otherwise ffuf -ac.
+    """
+    domain = (domain or "").strip().lower().rstrip(".")
+    if not domain:
+        return VhostWildcardProfile("none", "ac", [], None, "", 0)
+    sample_count = max(2, int(sample_count))
+    samples: list[VhostProbeResponse] = []
+    for _ in range(sample_count):
+        random_host = f"{uuid.uuid4().hex[:12]}.{domain}"
+        sample = _probe_vhost_host(domain, random_host, scheme=scheme, timeout_sec=timeout_sec)
+        if sample is not None:
+            samples.append(sample)
+    if len(samples) < 2:
+        return VhostWildcardProfile("none", "ac", [], None, "", len(samples))
+
+    fingerprints = [_vhost_probe_fingerprint(s) for s in samples]
+    if len(set(fingerprints)) == 1:
+        suspicion = "strong"
+    elif len({(s.status_code, s.body_size) for s in samples}) == 1:
+        suspicion = "weak"
+    else:
+        return VhostWildcardProfile("none", "ac", [], None, "", len(samples))
+
+    first = samples[0]
+    if first.status_code not in _GOBUSTER_WILDCARD_STATUS and first.status_code not in _VHOST_REDIRECT_STATUS:
+        return VhostWildcardProfile("none", "ac", [], None, "", len(samples))
+    if first.body_size == 0 and first.status_code not in _VHOST_REDIRECT_STATUS:
+        return VhostWildcardProfile("none", "ac", [], None, "", len(samples))
+
+    exclude_sizes = sorted({s.body_size for s in samples})
+    filter_mode = "fs" if suspicion == "strong" else "ac"
+    return VhostWildcardProfile(
+        suspicion=suspicion,
+        filter_mode=filter_mode,
+        exclude_sizes=exclude_sizes,
+        status_code=first.status_code,
+        redirect_url=first.redirect_url,
+        sample_count=len(samples),
+    )
+
+
+def assess_http_vhost_value(
+    domain: str,
+    *,
+    timeout_sec: Optional[int] = None,
+) -> dict:
+    """
+    HTTP port 80 is often uninformative for vhost discovery (redirect-only).
+    Returns advisory metadata; does not skip ffuf unless caller opts in.
+    """
+    profile = probe_vhost_wildcard_profile(domain, scheme="http", timeout_sec=timeout_sec)
+    out: dict = {
+        "advisory": None,
+        "message": "",
+        "run_ffuf": True,
+        "profile": profile.to_dict(),
+    }
+    if profile.suspicion != "strong":
+        return out
+    if profile.status_code not in _VHOST_REDIRECT_STATUS or not profile.exclude_sizes or profile.exclude_sizes != [0]:
+        return out
+    redirect = (profile.redirect_url or "").strip().lower()
+    if not redirect.startswith("https://"):
+        return out
+    parsed = urlparse(redirect)
+    host = (parsed.hostname or "").lower().rstrip(".")
+    domain_norm = (domain or "").strip().lower().rstrip(".")
+    if host != domain_norm and not host.endswith(f".{domain_norm}"):
+        return out
+    out["advisory"] = "strong_redirect_suspicion"
+    out["message"] = (
+        "HTTP probes consistent: redirect to HTTPS with empty body "
+        "(port 80 unlikely to discriminate vhosts — verify on HTTPS pass)"
+    )
+    return out
+
 
 def probe_wildcard_exclude_length(
     url: str,
@@ -441,6 +686,32 @@ def probe_wildcard_exclude_length(
         return size
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
+
+
+def probe_vhost_wildcard_length(
+    domain: str,
+    *,
+    scheme: str = "https",
+    timeout_sec: Optional[int] = None,
+) -> Optional[int]:
+    """Backward-compatible helper: first exclude size when suspicion is strong."""
+    profile = probe_vhost_wildcard_profile(domain, scheme=scheme, timeout_sec=timeout_sec)
+    if profile.suspicion == "strong" and profile.exclude_sizes:
+        return profile.exclude_sizes[0]
+    return None
+
+
+def probe_vhost_http_redirect_wildcard(
+    domain: str,
+    *,
+    timeout_sec: Optional[int] = None,
+) -> bool:
+    """
+    Deprecated boolean helper. True only on strong redirect suspicion (advisory).
+    scout -v no longer skips HTTP ffuf based on this alone.
+    """
+    assessment = assess_http_vhost_value(domain, timeout_sec=timeout_sec)
+    return assessment.get("advisory") == "strong_redirect_suspicion"
 
 
 def parse_wildcard_exclude_length(log_path: str) -> Optional[int]:

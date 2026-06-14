@@ -5,6 +5,7 @@
 # vhost discovery: scout -v (s -v); dir scans use scout -d / scout -ds
 GB_VHOST_WORDLIST="/usr/share/seclists/Discovery/Web-Content/raft-small-words.txt"
 GB_DNS_WORDLIST="/usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt"
+GB_VHOST_MATCH_CODES="${GB_VHOST_MATCH_CODES:-200-299,301,302,307,401,403,405,421,422,500}"
 GB_THREADS=15
 
 gb-normalize-url() {
@@ -119,14 +120,15 @@ _gb-vhost-run() {
 
 # THM domain mode: ffuf Host FUZZ.domain (gobuster vhost は応答差分検出が不安定)
 _gb-vhost-print-summary() {
-  local json="$1" domain="$2"
+  local json="$1" domain="$2" scheme="${3:-}"
   [[ -f "$json" ]] || {
     echo "[i] no results file"
     return 0
   }
   python3 -c "
 import json, sys
-path, domain = sys.argv[1], sys.argv[2]
+path, domain, scheme = sys.argv[1], sys.argv[2], sys.argv[3]
+tag = f' ({scheme})' if scheme else ''
 try:
     with open(path, encoding='utf-8') as f:
         data = json.load(f)
@@ -135,13 +137,13 @@ except (OSError, json.JSONDecodeError):
     sys.exit(0)
 rows = data.get('results') or []
 if not rows:
-    print('[-] no vhosts found')
+    print('[-] no vhosts found' + tag)
     sys.exit(0)
 for r in rows:
     fuzz = (r.get('input') or {}).get('FUZZ', '?')
     host = f'{fuzz}.{domain}' if fuzz != '?' else domain
-    print(f\"[+] {host}\tstatus={r.get('status', '?')}\tsize={r.get('length', '?')}\")
-" "$json" "$domain"
+    print(f\"[+] {host}\tstatus={r.get('status', '?')}\tsize={r.get('length', '?')}{tag}\")
+" "$json" "$domain" "$scheme"
 }
 
 _gb-vhost-hostnames-from-json() {
@@ -167,13 +169,122 @@ for r in data.get('results') or []:
 " "$json" "$domain"
 }
 
+_gb-vhost-hostnames-from-jsons() {
+  local domain="$1"
+  shift
+  local json
+  [[ $# -gt 0 ]] || return 0
+  for json in "$@"; do
+    _gb-vhost-hostnames-from-json "$json" "$domain"
+  done | sort -u
+}
+
+_gb-vhost-print-merged-summary() {
+  local domain="$1"
+  shift
+  local -a specs=("$@")
+  [[ ${#specs[@]} -gt 0 ]] || {
+    echo "[-] no vhosts found"
+    return 0
+  }
+  python3 -c "
+import json, sys
+
+domain = sys.argv[1]
+specs = sys.argv[2:]
+merged = {}
+for spec in specs:
+    scheme, path = spec.split(':', 1)
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        continue
+    for r in data.get('results') or []:
+        fuzz = (r.get('input') or {}).get('FUZZ')
+        if not fuzz:
+            continue
+        host = f'{fuzz}.{domain}'
+        row = {
+            'host': host,
+            'status': r.get('status', '?'),
+            'size': r.get('length', '?'),
+            'scheme': scheme,
+        }
+        prev = merged.get(host)
+        if prev is None or (scheme == 'https' and prev['scheme'] != 'https'):
+            merged[host] = row
+if not merged:
+    print('[-] no vhosts found')
+    sys.exit(0)
+for host in sorted(merged):
+    row = merged[host]
+    print(f\"[+] {row['host']}\tstatus={row['status']}\tsize={row['size']} ({row['scheme']})\")
+" "$domain" "${specs[@]}"
+}
+
+_gb-vhost-plan-schemes() {
+  local override="${1:-}" ip
+  local -a py_args=(vhost-schemes) schemes=()
+
+  if (( $+functions[target-load] )); then
+    target-load 2>/dev/null
+  fi
+  ip="${IP:-}"
+
+  [[ -n "$override" ]] && py_args+=("--$override")
+  [[ -n "$ip" ]] && py_args+=("$ip")
+
+  if [[ -n "${RECON_APP:-}" && -f "$RECON_APP" ]]; then
+    while IFS= read -r line; do
+      [[ "$line" == http || "$line" == https ]] && schemes+=("$line")
+    done < <(python3 "$RECON_APP" "${py_args[@]}" 2>/dev/null)
+  fi
+
+  if (( ! ${#schemes[@]} )); then
+    case "$override" in
+      http)  schemes=(http) ;;
+      https) schemes=(https) ;;
+      *)     schemes=(https http) ;;
+    esac
+  fi
+
+  local s
+  for s in "${schemes[@]}"; do
+    echo "$s"
+  done
+}
+
+_gb-vhost-scheme-plan-label() {
+  local override="${1:-}" ip="${IP:-}"
+  local -a schemes
+  schemes=("${(@f)$(_gb-vhost-plan-schemes "$override")}")
+  if [[ "$override" == both ]]; then
+    echo "both (https → http)"
+    return 0
+  fi
+  if [[ -n "$override" ]]; then
+    echo "$override"
+    return 0
+  fi
+  if (( ${#schemes[@]} == 2 )); then
+    echo "auto: https → http (80+443 or unknown)"
+  elif [[ "${schemes[1]}" == https ]]; then
+    echo "auto: https only (443 open)"
+  else
+    echo "auto: http only (80 open)"
+  fi
+}
+
 _gb-vhost-ffuf-filter() {
-  local domain="$1" total="${2:-0}"
+  local domain="$1" total="${2:-0}" scheme="${3:-}"
   python3 -u -c "
 import re, sys
 
 domain = sys.argv[1]
 total_hint = int(sys.argv[2] or 0)
+scheme = sys.argv[3]
+scheme_tag = f' ({scheme})' if scheme else ''
 progress_re = re.compile(r'Progress:\s*\[(\d+)/(\d+)\]')
 errors_re = re.compile(r'Errors:\s*(\d+)')
 hit_re = re.compile(r'(\S+)\s+\[Status:\s*(\d+),\s*Size:\s*(\d+)')
@@ -226,7 +337,7 @@ def add_hit(host, status, size):
     global progress_active, last_drawn
     ensure_header()
     clear_progress()
-    sys.stderr.write(f'[+] {host}\tstatus={status}\tsize={size}\n')
+    sys.stderr.write(f'[+] {host}\tstatus={status}\tsize={size}{scheme_tag}\n')
     sys.stderr.flush()
     last_drawn = -1
     show_progress(force=True)
@@ -235,7 +346,7 @@ def finish():
     ensure_header()
     clear_progress()
     if not seen_hosts:
-        sys.stderr.write('[-] no vhosts found\n')
+        sys.stderr.write('[-] no vhosts found' + scheme_tag + '\n')
     else:
         sys.stderr.write('\n')
     sys.stderr.flush()
@@ -289,20 +400,22 @@ if buf.strip():
     scan_buf(buf)
 
 finish()
-" "$domain" "$total"
+" "$domain" "$total" "$scheme"
 }
 
 _gb-vhost-register-hosts() {
-  local json="$1" domain="$2"
-  local f ip name
+  local domain="$1"
+  shift
+  local -a json_files=("$@")
+  local f ip name json
   local -a names new_names
 
-  [[ -f "$json" ]] || return 1
+  (( ${#json_files[@]} )) || return 1
   (( $+functions[_hosts-register-line] )) || return 1
 
   while IFS= read -r name; do
     [[ -n "$name" ]] && names+=("$name")
-  done < <(_gb-vhost-hostnames-from-json "$json" "$domain")
+  done < <(_gb-vhost-hostnames-from-jsons "$domain" "${json_files[@]}")
   (( ${#names[@]} )) || return 1
 
   f="$(_hosts-case-file 2>/dev/null)" || {
@@ -334,17 +447,80 @@ _gb-vhost-register-hosts() {
   fi
 }
 
-_gb-vhost-domain-ffuf() {
-  local domain="$1" wordlist="$2"
-  local fs="${GB_VHOST_EXCLUDE_LENGTH:-0}"
-  local ts base logs_dir rc wl_total
-  local -a args
+_gb-vhost-fetch-profile() {
+  local domain="$1" scheme="$2"
+  [[ -n "${RECON_APP:-}" && -f "$RECON_APP" ]] || return 1
+  python3 "$RECON_APP" vhost-wildcard-profile --"$scheme" "$domain" 2>/dev/null
+}
 
-  ts="$(date +%Y%m%d-%H%M%S)"
-  if logs_dir="$(case-logs-dir 2>/dev/null)"; then
-    base="${logs_dir}/vhost_${domain//\./_}_${ts}"
+_gb-vhost-resolve-filter() {
+  local domain="$1" scheme="$2"
+  local profile filter_mode sizes suspicion label
+
+  if [[ -n "${GB_VHOST_EXCLUDE_LENGTH:-}" ]]; then
+    print -r -- "fs|${GB_VHOST_EXCLUDE_LENGTH}|manual|${GB_VHOST_EXCLUDE_LENGTH} (GB_VHOST_EXCLUDE_LENGTH)"
+    return 0
+  fi
+
+  profile="$(_gb-vhost-fetch-profile "$domain" "$scheme")"
+  [[ -n "$profile" ]] || return 1
+
+  filter_mode="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("filter_mode","ac"))' <<< "$profile")"
+  suspicion="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("suspicion","none"))' <<< "$profile")"
+  sizes="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(",".join(str(x) for x in (d.get("exclude_sizes") or [])))' <<< "$profile")"
+
+  if [[ "$filter_mode" == fs && -n "$sizes" ]]; then
+    label="${suspicion} wildcard suspicion → -fs ${sizes//,/ }"
+  elif [[ "$suspicion" == weak ]]; then
+    label="weak wildcard suspicion → ffuf -ac (status/size match; hash/headers differ)"
   else
-    base="${TMPDIR:-/tmp}/vhost_${domain//\./_}_${ts}"
+    label="${suspicion} → ffuf -ac (response diff)"
+  fi
+  print -r -- "${filter_mode}|${sizes}|${suspicion}|${label}"
+}
+
+_gb-vhost-http-assessment-note() {
+  local domain="$1"
+  local assessment advisory msg
+
+  [[ -n "${RECON_APP:-}" && -f "$RECON_APP" ]] || return 0
+  assessment="$(python3 "$RECON_APP" vhost-http-assessment "$domain" 2>/dev/null)"
+  [[ -n "$assessment" ]] || return 0
+
+  advisory="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("advisory") or "")' <<< "$assessment")"
+  msg="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("message") or "")' <<< "$assessment")"
+  [[ "$advisory" == strong_redirect_suspicion ]] || return 0
+
+  echo "[i] http: ${msg}"
+  if [[ -n "${GB_VHOST_SKIP_HTTP_REDIRECT:-}" ]]; then
+    echo "[i] http: GB_VHOST_SKIP_HTTP_REDIRECT set — skipping HTTP ffuf (HTTPS pass is authoritative)"
+    return 1
+  fi
+  return 0
+}
+
+_gb-vhost-domain-ffuf() {
+  local domain="$1" wordlist="$2" scheme="$3" ts="$4"
+  local filter_line filter_mode sizes suspicion fs_label size
+  local base logs_dir rc wl_total
+  local -a args parts
+
+  filter_line="$(_gb-vhost-resolve-filter "$domain" "$scheme")"
+  if [[ -n "$filter_line" ]]; then
+    parts=("${(@s:|:)filter_line}")
+    filter_mode="${parts[1]}"
+    sizes="${parts[2]}"
+    suspicion="${parts[3]}"
+    fs_label="${parts[4]}"
+  else
+    filter_mode="ac"
+    fs_label="probe failed → ffuf -ac (may get catch-all noise)"
+  fi
+
+  if logs_dir="$(case-logs-dir 2>/dev/null)"; then
+    base="${logs_dir}/vhost_${domain//\./_}_${scheme}_${ts}"
+  else
+    base="${TMPDIR:-/tmp}/vhost_${domain//\./_}_${scheme}_${ts}"
     echo "[i] case not set — log under $base.*" >&2
   fi
 
@@ -352,20 +528,32 @@ _gb-vhost-domain-ffuf() {
     ffuf
     -w "$wordlist"
     -H "Host: FUZZ.${domain}"
-    -u "http://${domain}/"
+    -u "${scheme}://${domain}/"
     -t "$GB_THREADS"
     -o "${base}.json"
     -of json
   )
-  if [[ -n "$fs" ]]; then
-    args+=(-fs "$fs")
+  [[ "$scheme" == https ]] && args+=(-k)
+
+  if [[ "$filter_mode" == fs && -n "$sizes" ]]; then
+    for size in ${(s:,:)sizes}; do
+      [[ "$size" == <-> ]] && args+=(-fs "$size")
+    done
+  else
+    args+=(-ac)
+  fi
+
+  if [[ -z "${GB_VHOST_NO_MC:-}" ]]; then
+    args+=(-mc "$GB_VHOST_MATCH_CODES")
   fi
 
   wl_total="$(wc -l <"$wordlist" | tr -d '[:space:]')"
 
   echo "[*] log:  ${base}.log"
   echo "[*] json: ${base}.json"
-  echo "[*] scan: ${wl_total:-?} names × Host: FUZZ.${domain}"
+  echo "[*] filter: ${fs_label}"
+  echo "[*] match:  ${GB_VHOST_NO_MC:+off (GB_VHOST_NO_MC)}${GB_VHOST_NO_MC:-ffuf -mc ${GB_VHOST_MATCH_CODES} (auxiliary)}"
+  echo "[*] scan: ${wl_total:-?} names × Host: FUZZ.${domain} (${scheme})"
   echo ""
 
   local cmd
@@ -379,22 +567,18 @@ _gb-vhost-domain-ffuf() {
 
   if command -v script >/dev/null 2>&1; then
     # -f: flush PTY capture each write (progress uses \r, not \n)
-    script -q -e -f -c "$cmd" /dev/null 2>&1 | _gb-vhost-ffuf-filter "$domain" "$wl_total"
+    script -q -e -f -c "$cmd" /dev/null 2>&1 | _gb-vhost-ffuf-filter "$domain" "$wl_total" "$scheme"
   else
-    "${run_cmd[@]}" 2>&1 | _gb-vhost-ffuf-filter "$domain" "$wl_total"
+    "${run_cmd[@]}" 2>&1 | _gb-vhost-ffuf-filter "$domain" "$wl_total" "$scheme"
   fi
   rc=${pipestatus[1]:-$?}
 
   {
     echo "===== results ====="
-    _gb-vhost-print-summary "${base}.json" "$domain"
+    _gb-vhost-print-summary "${base}.json" "$domain" "$scheme"
   } >"${base}.log"
 
-  if _gb-vhost-hostnames-from-json "${base}.json" "$domain" | grep -q .; then
-    echo "===== hosts ====="
-    _gb-vhost-register-hosts "${base}.json" "$domain"
-  fi
-
+  print -r -- "${base}.json"
   return $rc
 }
 
@@ -437,48 +621,83 @@ gb-dns() {
 }
 
 _scout-vhosts-help() {
-  echo "usage: scout -v [domain|ip]   (alias: s -v)"
-  echo "  s -v lookup.thm   # THM: ffuf -H 'Host: FUZZ.lookup.thm' -u http://lookup.thm"
-  echo "  s -v              # IP 直叩き gobuster (raft-small-words)"
+  echo "usage: scout -v [--http|--https|--both] [domain|ip]   (alias: s -v)"
+  echo "  s -v lookup.thm           # THM: ffuf Host: FUZZ.lookup.thm (https → http)"
+  echo "  s -v --https lookup.thm   # HTTPS only (ffuf -k)"
+  echo "  s -v --both lookup.thm    # force both schemes (ignore nmap)"
+  echo "  s -v                      # IP 直叩き gobuster (raft-small-words)"
   echo ""
   echo "  prereq (THM): hosts lookup.thm  (apex のみ。サブドメインは終了後に自動登録)"
+  echo "  schemes:  default auto from nmap (443→https, 80→http, both→https then http)"
   echo "  wordlist: GB_DNS_WORDLIST (gb-set-dns で変更可)"
-  echo "  filter:   GB_VHOST_EXCLUDE_LENGTH (domain 既定 0 = ffuf -fs 0)"
-  echo "  hosts:    ヒットを cases/<room>/hosts に自動追記"
+  echo "  filter:   3× probe (status/size/redirect/hash/headers) → -fs or -ac (GB_VHOST_EXCLUDE_LENGTH overrides)"
+  echo "  match:    ffuf -mc auxiliary (default: ${GB_VHOST_MATCH_CODES}; GB_VHOST_NO_MC=1 to omit)"
+  echo "  http:     always runs ffuf; redirect-only port 80 → advisory (GB_VHOST_SKIP_HTTP_REDIRECT=1 to skip)"
+  echo "  logs:     cases/<room>/logs/vhost_<domain>_<scheme>_<ts>.json"
+  echo "  hosts:    ヒットを cases/<room>/hosts に自動追記（http/https マージ）"
   echo ""
   echo "  見つけた vhost で dir: s -d -H www.lookup.thm"
 }
 
 _scout-vhosts() {
-  local target="" wordlist=""
+  local target="" wordlist="" scheme_override=""
+  local -a schemes json_files merge_specs
+  local scheme ts rc=0 json_path
 
-  if [[ "${1:-}" == "-h" || "${1:-}" == --help ]]; then
-    _scout-vhosts-help
-    return 0
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _scout-vhosts-help
+        return 0
+        ;;
+      --http)
+        scheme_override=http
+        shift
+        ;;
+      --https)
+        scheme_override=https
+        shift
+        ;;
+      --both)
+        scheme_override=both
+        shift
+        ;;
+      -*)
+        echo "[-] scout -v: unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        if [[ -n "$target" ]]; then
+          echo "[-] scout -v: unexpected argument: $1" >&2
+          return 1
+        fi
+        target="$1"
+        shift
+        ;;
+    esac
+  done
 
-  if [[ $# -ge 1 ]]; then
-    target="$1"
-  else
+  if [[ -z "$target" ]]; then
     target="$(gb-resolve-target)" || return 1
   fi
 
   if _gb-is-ip "$target"; then
     wordlist="$GB_VHOST_WORDLIST"
+    schemes=("${(@f)$(_gb-vhost-plan-schemes "$scheme_override")}")
     echo "=============================="
     echo "[VHOST] IP mode"
     echo "[*] TARGET: $target"
+    echo "[*] SCHEMES: $(_gb-vhost-scheme-plan-label "$scheme_override")"
     echo "[*] WORDLIST: $wordlist"
     echo "[*] THREADS: $GB_THREADS"
     echo "=============================="
 
-    echo "[HTTP] http://$target"
-    echo "------------------------------"
-    _gb-vhost-run http "$target" "$wordlist" ""
-    echo "------------------------------"
-    echo "[HTTPS] https://$target"
-    echo "------------------------------"
-    _gb-vhost-run https "$target" "$wordlist" ""
+    for scheme in "${schemes[@]}"; do
+      echo "[${(U)scheme}] ${scheme}://${target}"
+      echo "------------------------------"
+      _gb-vhost-run "$scheme" "$target" "$wordlist" ""
+      echo "------------------------------"
+    done
     return 0
   fi
 
@@ -493,15 +712,53 @@ _scout-vhosts() {
     return 1
   fi
 
+  schemes=("${(@f)$(_gb-vhost-plan-schemes "$scheme_override")}")
+  ts="$(date +%Y%m%d-%H%M%S)"
+
   echo "=============================="
   echo "[VHOST] domain mode (ffuf Host: FUZZ.$target)"
-  echo "[*] URL: http://$target/"
+  echo "[*] SCHEMES: $(_gb-vhost-scheme-plan-label "$scheme_override")"
   echo "[*] WORDLIST: $wordlist"
   echo "[*] THREADS: $GB_THREADS"
-  echo "[*] FILTER SIZE (-fs): ${GB_VHOST_EXCLUDE_LENGTH:-0}"
+  echo "[*] FILTER: 3× probe → -fs (strong) or -ac (weak/none); GB_VHOST_EXCLUDE_LENGTH overrides"
   echo "=============================="
 
-  _gb-vhost-domain-ffuf "$target" "$wordlist"
+  merge_specs=()
+  json_files=()
+  for scheme in "${schemes[@]}"; do
+    [[ "$scheme" == http || "$scheme" == https ]] || continue
+    if [[ "$scheme" == http ]]; then
+      echo "[HTTP] http://${target}/"
+      echo "------------------------------"
+      if ! _gb-vhost-http-assessment-note "$target"; then
+        echo "------------------------------"
+        continue
+      fi
+    else
+      echo "[${(U)scheme}] ${scheme}://${target}/"
+      echo "------------------------------"
+    fi
+    json_path="$(_gb-vhost-domain-ffuf "$target" "$wordlist" "$scheme" "$ts")" || rc=$?
+    if [[ -n "$json_path" && -f "$json_path" ]]; then
+      json_files+=("$json_path")
+      merge_specs+=("${scheme}:${json_path}")
+    fi
+    echo "------------------------------"
+  done
+
+  echo "===== results (merged) ====="
+  if (( ${#merge_specs[@]} )); then
+    _gb-vhost-print-merged-summary "$target" "${merge_specs[@]}"
+  else
+    echo "[-] no vhosts found"
+  fi
+
+  if (( ${#json_files[@]} )) && _gb-vhost-hostnames-from-jsons "$target" "${json_files[@]}" | grep -q .; then
+    echo "===== hosts ====="
+    _gb-vhost-register-hosts "$target" "${json_files[@]}"
+  fi
+
+  return $rc
 }
 
 gb-vhost() {

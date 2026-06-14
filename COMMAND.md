@@ -20,6 +20,10 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 | `GB_VHOST_WORDLIST` | `scout -v` IP モード用（既定: raft-small-words） |
 | `GB_DNS_WORDLIST` | `gb-dns` 用（`gb-set-dns`） |
 | `GB_THREADS` | `gb-dns` / `scout -v` のスレッド（既定 40） |
+| `GB_VHOST_EXCLUDE_LENGTH` | `scout -v` domain の ffuf `-fs` 手動上書き（未設定時は 3× probe → `-fs` または `-ac`） |
+| `GB_VHOST_MATCH_CODES` | `scout -v` domain の ffuf `-mc` 補助（既定: `200-299,301,302,307,401,403,405,421,422,500`） |
+| `GB_VHOST_NO_MC` | 非空なら `-mc` を付けず差分フィルタ（`-fs`/`-ac`）のみ |
+| `GB_VHOST_SKIP_HTTP_REDIRECT` | 非空なら HTTP が redirect-only と判断されたとき ffuf をスキップ（既定は advisory のみ） |
 | `SCOUT_STATUS_SLOTS` | `scout -s` / `-ws` で表示する **完了 dirs ジョブ**の上限（既定 **4**） |
 | `CASE_LOOSE=1` | ルーム未設定時に `cases/_unscoped/` へフォールバック |
 | `CASE_ROOT` | `/workspace/cases`（`CASE_HOME` の親） |
@@ -221,7 +225,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
 | `scout -d <fqdn>` | FQDN（`.` あり）は `-H` と同義（`/app.example/` にはならない） |
-| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。`s -v example.com` = `Host: FUZZ.example.com`（apex は `hosts` 要。進捗 `n/total`、ヒットは `hosts` 自動追記） |
+| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。Domain: ffuf **HTTPS→HTTP**；3× probe（status/size/redirect/hash/headers）→ **`-fs` または `-ac`**；HTTP redirect-only は advisory（スキップは `GB_VHOST_SKIP_HTTP_REDIRECT`）；ヒットは `hosts` 自動追記 |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
 | `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
 | `scout -n` | 実行せずコマンド計画を表示 |
@@ -688,7 +692,8 @@ scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
 hosts example.com         # apex のみ先に登録
-scout -v example.com      # Host ヘッダ列挙。ヒットは hosts に自動追記
+scout -v example.com      # HTTPS→HTTP。ヒットは hosts に自動追記
+scout -v --https example.com
 scout -v              # IP 直叩き vhost
 gb-dns example.com    # 実 DNS がある環境向け
 ```
