@@ -419,6 +419,10 @@ param-fuzz() {
   reqfuzz "$@"
 }
 
+svcguess() {
+  python3 "$REQFUZZ_SCRIPT_DIR/svcguess.py" "$@"
+}
+
 _ffufweb-filters-summary() {
   local -a extra=("$@")
   if (( ${#extra[@]} )); then

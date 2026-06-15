@@ -468,6 +468,14 @@ ssh-put -i id_rsa script.sh /home/user/script.sh
 
 ---
 
+## svcguess
+
+| Command | Description |
+|----------|------|
+| `svcguess <host> <port>` | Probe TCP banner, HTTP, HTTPS, and cert info; print a service guess |
+
+---
+
 ## Metasploit (msfr)
 
 | Command | Description |
