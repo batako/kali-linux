@@ -2,6 +2,120 @@
 # fixmagic — check magic bytes; repair only when needed
 # ========================
 
+_magic-help() {
+  echo "usage: magic <file>"
+  echo "  guess a file type from magic bytes"
+  echo ""
+  echo "supported:"
+  echo "  PNG, JPEG, GIF, BMP, WEBP, ICO"
+  echo "  ZIP, RAR, 7Z, GZIP, PDF, ELF"
+}
+
+_magic-analyze() {
+  local file="$1"
+  python3 -c '
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+data = path.read_bytes()
+
+def hexbytes(buf, count=16):
+    return " ".join(f"{b:02x}" for b in buf[:count])
+
+def emit(kind, detail):
+    print("status\tok\t{}".format(kind))
+    print("detail\t{}".format(detail))
+    print("magic\t{}".format(hexbytes(data)))
+    sys.exit(0)
+
+if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+    emit("PNG", "PNG signature")
+
+if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+    emit("JPEG", "JPEG signature")
+
+if len(data) >= 6 and data[:6] in (b"GIF87a", b"GIF89a"):
+    emit("GIF", "{} signature".format(data[:6].decode("ascii")))
+
+if len(data) >= 2 and data[:2] == b"BM":
+    emit("BMP", "BMP signature")
+
+if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+    emit("WEBP", "RIFF....WEBP container")
+
+if len(data) >= 4 and data[:4] == b"\x00\x00\x01\x00":
+    emit("ICO", "ICO signature")
+
+if len(data) >= 4 and data[:4] == b"PK\x03\x04":
+    emit("ZIP", "ZIP local file header")
+
+if len(data) >= 8 and data[:8] in (b"Rar!\x1a\x07\x00", b"Rar!\x1a\x07\x01\x00"):
+    emit("RAR", "RAR signature")
+
+if len(data) >= 6 and data[:6] == b"7z\xbc\xaf\x27\x1c":
+    emit("7Z", "7-Zip signature")
+
+if len(data) >= 2 and data[:2] == b"\x1f\x8b":
+    emit("GZIP", "gzip signature")
+
+if len(data) >= 5 and data[:5] == b"%PDF-":
+    emit("PDF", "PDF signature")
+
+if len(data) >= 4 and data[:4] == b"\x7fELF":
+    emit("ELF", "ELF signature")
+
+print("status\tunknown\tunknown")
+print("detail\tno known file magic byte matched")
+print("magic\t{}".format(hexbytes(data)))
+sys.exit(1)
+' "$file"
+}
+
+magic() {
+  local file=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _magic-help
+        return 0
+        ;;
+      -*)
+        echo "magic: unknown option: $1" >&2
+        return 1
+        ;;
+      *)
+        file="$1"
+        shift
+        ;;
+    esac
+  done
+
+  [[ -n "$file" && -f "$file" ]] || {
+    echo "usage: magic <file>" >&2
+    return 1
+  }
+
+  file="${file:A}"
+  local analyze guess_status kind detail magic
+  local -a lines
+  analyze="$(_magic-analyze "$file" 2>/dev/null)" || true
+
+  lines=("${(@f)analyze}")
+  IFS=$'\t' read -r _ guess_status kind <<< "${lines[1]}"
+  detail="${lines[2]#detail	}"
+  magic="${lines[3]#magic	}"
+
+  echo "[*] file:   $(file -b "$file")"
+  if [[ "$guess_status" == "ok" ]]; then
+    echo "[+] guess:  ${kind} (${detail})"
+  else
+    echo "[?] guess:  unknown"
+    echo "[i] detail: ${detail}"
+  fi
+  echo "[i] magic:  ${magic}"
+}
+
 _fixmagic-out-path() {
   local file="$1" out="${2:-}"
   if [[ -n "$out" ]]; then
