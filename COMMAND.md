@@ -436,9 +436,12 @@ hint-rm 3         # id=3 を削除
 | `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
+| `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`param-fuzz` 互換、`--deep` で詳細、`-s` で差分のみ） |
 | `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
+
+`reqfuzz` のデフォルト出力は `VALUE / STATUS / BYTES`。`--deep` で `WORDS / LINES / HASH / NOTE` を追加する。
 
 `ssh` の自動ログインは **anonymous を除外**（FTP 用。strike `auth-ftp-anon` 成功分は `cl` に入り `ftp` で利用）。SSH 定番は **strike `auth-ssh-quick`**。
 
