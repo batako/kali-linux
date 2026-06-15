@@ -423,7 +423,7 @@ hint-rm 3         # delete id=3
 | `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP (target: IP or FQDN; default user: anonymous, `hydraftp -h`) |
-| `reqfuzz [options] <url> <param> <start> <end>` | Simple Intruder-like request fuzzing for GET/POST (`param-fuzz` alias, `--deep` for details, `-s` shows only diffs) |
+| `reqfuzz [options] <url> <param> <start> <end>` | Simple Intruder-like request fuzzing for GET/POST (`--deep` for details, `-s` shows only diffs) |
 | `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (`-U` for username spray) |
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |

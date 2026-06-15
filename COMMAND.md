@@ -436,7 +436,7 @@ hint-rm 3         # id=3 を削除
 | `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
-| `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`param-fuzz` 互換、`--deep` で詳細、`-s` で差分のみ） |
+| `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`--deep` で詳細、`-s` で差分のみ） |
 | `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
@@ -478,6 +478,14 @@ ssh-put -i id_rsa script.sh /home/user/script.sh
 | `ftp [user] [ip]` | DB creds で接続 |
 | `ftp -l` | セッションログ |
 | `ftp -A <host>` | システム ftp の匿名モード（OpenSSH の `-A` とは別） |
+
+---
+
+## svcguess
+
+| コマンド | 説明 |
+|----------|------|
+| `svcguess <host> <port>` | TCP バナー / HTTP / HTTPS / 証明書を確認してサービス候補を推定する |
 
 ---
 
