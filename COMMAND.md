@@ -787,10 +787,12 @@ upload-shell 63
 | `fixmagic -n <file>` | チェックのみ（修復しない） |
 | `fixmagic -i <file>` | 必要時のみ上書き（`.bak` を残す） |
 | `magic <file>` | magic byte からファイル種別を推定 |
+| `magic -r TYPE [-o out] <file>` | 修復して保存（`-o` 省略時は自動で `<name>_<type>.<ext>`） |
 
 修復不要なら `[=] ok` で終了。PNG / JPEG / GIF に対応。
 `fixmagic broken.png` — 壊れていれば `broken_fixed.png`、正常なら何も書かない。`fixmagic -h`
 `magic broken.png` — `PNG` / `JPEG` / `GIF` / `BMP` / `WEBP` / `ICO` / `ZIP` / `RAR` / `7Z` / `GZIP` / `PDF` / `ELF` を推定。`magic -h`
+`magic -r PNG broken.bin` — `broken_png.bin` のように自動保存。`-o` で別名保存。`magic -h`
 
 ---
 

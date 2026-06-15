@@ -3,15 +3,44 @@
 # ========================
 
 _magic-help() {
-  echo "usage: magic <file>"
-  echo "  guess a file type from magic bytes"
+  echo "usage:"
+  echo "  magic <file>"
+  echo "  magic -r TYPE [-o out] <file>"
   echo ""
-  echo "supported:"
+  echo "  guess a file type from magic bytes"
+  echo "  repair by trimming fake prefixes and restoring the target header"
+  echo "  -r always writes a repaired file; -o changes the output path"
+  echo "  default output: <name>_<type>.<ext>"
+  echo ""
+  echo "flags:"
+  echo "  -r TYPE   choose the target format to repair to"
+  echo "  -o out    save the repaired file under another name"
+  echo "  -h        show this help"
+  echo ""
+  echo "TYPE (case-insensitive):"
   echo "  PNG, JPEG, GIF, BMP, WEBP, ICO"
   echo "  ZIP, RAR, 7Z, GZIP, PDF, ELF"
+  echo ""
+  echo "repair behavior:"
+  echo "  PNG   uses IHDR to infer the real start; prepends PNG signature when needed"
+  echo "  JPEG  uses FF DB / FF C0 / FF C2 / FF DA / FF D9 markers"
+  echo "  others trim to the first target signature found in the file"
 }
 
-_magic-analyze() {
+_magic-out-path() {
+  local file="$1" out="${2:-}" kind="${3:-}"
+  if [[ -n "$out" ]]; then
+    echo "$out"
+    return 0
+  fi
+  if [[ -n "$kind" ]]; then
+    echo "${file:h}/${file:t:r}_${kind}.${file:t:e}"
+    return 0
+  fi
+  echo "${file:h}/${file:t:r}_magic.${file:t:e}"
+}
+
+_magic-guess() {
   local file="$1"
   python3 -c '
 import sys
@@ -32,7 +61,7 @@ def emit(kind, detail):
 if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
     emit("PNG", "PNG signature")
 
-if len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+if len(data) >= 2 and data[:2] == b"\xff\xd8":
     emit("JPEG", "JPEG signature")
 
 if len(data) >= 6 and data[:6] in (b"GIF87a", b"GIF89a"):
@@ -72,10 +101,160 @@ sys.exit(1)
 ' "$file"
 }
 
+_magic-repair-plan() {
+  local file="$1" kind="$2"
+  python3 - "$file" "$kind" <<'PY'
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+kind = sys.argv[2].upper()
+data = bytearray(src.read_bytes())
+scan_limit = min(len(data), 1024 * 1024)
+
+signatures = {
+    "PNG": b"\x89PNG\r\n\x1a\n",
+    "JPEG": b"\xff\xd8\xff",
+    "GIF": b"GIF89a",
+    "BMP": b"BM",
+    "WEBP": b"RIFF\x00\x00\x00\x00WEBP",
+    "ICO": b"\x00\x00\x01\x00",
+    "ZIP": b"PK\x03\x04",
+    "RAR": b"Rar!\x1a\x07\x00",
+    "7Z": b"7z\xbc\xaf\x27\x1c",
+    "GZIP": b"\x1f\x8b",
+    "PDF": b"%PDF-",
+    "ELF": b"\x7fELF",
+}
+
+def emit(mode, skip, prefix=b"", notes=None, detail=""):
+    print("status\tok\t{}".format(kind))
+    print("mode\t{}".format(mode))
+    print("skip\t{}".format(skip))
+    print("prefix\t{}".format(prefix.hex()))
+    print("detail\t{}".format(detail))
+    if notes:
+        for label, pos in notes:
+            print("found\t{}\t{}".format(label, pos))
+    sys.exit(0)
+
+def unknown(detail):
+    print("status\tunknown\t{}".format(kind))
+    print("detail\t{}".format(detail))
+    sys.exit(1)
+
+def search(pat):
+    return data.find(pat, 0, scan_limit)
+
+sig = signatures.get(kind)
+if sig is None:
+    unknown("unsupported type")
+
+if kind == "PNG":
+    sig_pos = search(sig)
+    ihdr_pos = search(b"IHDR")
+    notes = []
+    if sig_pos != -1:
+        notes.append(("PNG signature", sig_pos))
+        if ihdr_pos != -1:
+            notes.append(("IHDR", ihdr_pos))
+        emit("trim", sig_pos, b"", notes, "PNG signature already present; trimming fake prefix only")
+    if ihdr_pos != -1 and ihdr_pos >= 12:
+        skip = ihdr_pos - 12
+        emit("prepend", skip, sig, [("IHDR", ihdr_pos)], "IHDR suggests PNG starts before it; restoring signature")
+    emit("prepend", 0, sig, [], "fallback: PNG signature prepended")
+
+if kind == "JPEG":
+    soi = search(b"\xff\xd8")
+    markers = []
+    for label, pat in (("FF DB", b"\xff\xdb"), ("FF C0", b"\xff\xc0"), ("FF C2", b"\xff\xc2"), ("FF DA", b"\xff\xda"), ("FF D9", b"\xff\xd9")):
+        pos = search(pat)
+        if pos != -1:
+            markers.append((label, pos))
+    if soi != -1:
+        notes = [("SOI", soi)] + markers
+        emit("trim", soi, b"", notes, "JPEG SOI found; trimming to it")
+    if markers:
+        markers.sort(key=lambda item: item[1])
+        emit("prepend", markers[0][1], b"\xff\xd8", markers, "JPEG markers suggest the real structure starts here")
+    emit("prepend", 0, b"\xff\xd8", [], "fallback: JPEG signature prepended")
+
+for label, pat in (
+    ("GIF", b"GIF89a"),
+    ("GIF", b"GIF87a"),
+    ("BMP", b"BM"),
+    ("WEBP", b"RIFF"),
+    ("ICO", b"\x00\x00\x01\x00"),
+    ("ZIP", b"PK\x03\x04"),
+    ("RAR", b"Rar!\x1a\x07\x00"),
+    ("RAR", b"Rar!\x1a\x07\x01\x00"),
+    ("7Z", b"7z\xbc\xaf\x27\x1c"),
+    ("GZIP", b"\x1f\x8b"),
+    ("PDF", b"%PDF-"),
+    ("ELF", b"\x7fELF"),
+):
+    pos = search(pat)
+    if kind == "WEBP" and pos != -1:
+        if pos + 12 <= len(data) and data[pos + 8:pos + 12] == b"WEBP":
+            emit("trim", pos, b"", [(label, pos)], "WEBP signature found")
+    elif pos != -1:
+        emit("trim", pos, b"", [(label, pos)], "{} signature found".format(label))
+
+emit("prepend", 0, sig, [], "fallback: target signature prepended")
+PY
+}
+
+_magic-repair-apply() {
+  local file="$1" kind="$2" dest="$3" mode="$4" skip="$5" prefix_hex="${6:-}"
+  python3 - "$file" "$kind" "$dest" "$mode" "$skip" "$prefix_hex" <<'PY'
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+kind = sys.argv[2].upper()
+dest = Path(sys.argv[3])
+mode = sys.argv[4]
+skip = int(sys.argv[5])
+prefix_hex = sys.argv[6]
+data = src.read_bytes()
+
+if skip < 0 or skip > len(data):
+    print("magic: invalid skip offset", file=sys.stderr)
+    sys.exit(1)
+
+prefix = bytes.fromhex(prefix_hex) if prefix_hex else b""
+body = data[skip:]
+
+if mode == "trim":
+    output = body
+elif mode == "prepend":
+    output = prefix + body
+else:
+    print("magic: unsupported repair mode: {}".format(mode), file=sys.stderr)
+    sys.exit(1)
+
+dest.parent.mkdir(parents=True, exist_ok=True)
+dest.write_bytes(output)
+PY
+}
+
+_magic-analyze() {
+  local file="$1"
+  _magic-guess "$file"
+}
+
 magic() {
-  local file=""
+  local file="" replace_kind="" out=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -r|--replace)
+        replace_kind="${2:-}"
+        shift 2
+        ;;
+      -o)
+        out="$2"
+        shift 2
+        ;;
       -h|--help)
         _magic-help
         return 0
@@ -97,8 +276,70 @@ magic() {
   }
 
   file="${file:A}"
-  local analyze guess_status kind detail magic
-  local -a lines
+  local analyze guess_status kind detail magic dest mode skip prefix_hex line
+  local -a lines found_lines
+  if [[ -n "$replace_kind" ]]; then
+    replace_kind="${replace_kind:u}"
+    case "$replace_kind" in
+      PNG|JPEG|GIF|BMP|WEBP|ICO|ZIP|RAR|7Z|GZIP|PDF|ELF)
+        ;;
+      *)
+        echo "magic: unsupported replace type: $replace_kind" >&2
+        return 1
+        ;;
+    esac
+    analyze="$(_magic-repair-plan "$file" "$replace_kind" 2>/dev/null)" || true
+    lines=("${(@f)analyze}")
+    IFS=$'\t' read -r _ guess_status kind <<< "${lines[1]}"
+    mode=""
+    skip=""
+    prefix_hex=""
+    detail=""
+    found_lines=()
+    for line in "${lines[@]:1}"; do
+      case "$line" in
+        mode$'\t'*) mode="${line#mode$'\t'}" ;;
+        skip$'\t'*) skip="${line#skip$'\t'}" ;;
+        prefix$'\t'*) prefix_hex="${line#prefix$'\t'}" ;;
+        detail$'\t'*) detail="${line#detail$'\t'}" ;;
+        found$'\t'*) found_lines+=("${line#found$'\t'}") ;;
+      esac
+    done
+
+    echo "[*] file:   $(file -b "$file")"
+    if [[ "$guess_status" != "ok" ]]; then
+      echo "[?] repair target: $replace_kind"
+      echo "[i] detail: ${detail:-no repair plan}"
+      return 1
+    fi
+
+    echo "[+] repair target: ${kind}"
+    echo "[i] mode:    ${mode}"
+    echo "[i] skip:    ${skip}"
+    if [[ -n "$prefix_hex" ]]; then
+      echo "[i] prefix:  ${prefix_hex}"
+    fi
+    for line in "${found_lines[@]}"; do
+      echo "[i] found:   ${line}"
+    done
+
+    dest="$(_magic-out-path "$file" "$out" "${replace_kind:l}")"
+    if [[ "$dest" == "$file" ]]; then
+      cp -p "$file" "${file}.bak"
+      echo "[*] backup: ${file}.bak"
+    fi
+
+    if [[ "$mode" != "trim" && "$mode" != "prepend" ]]; then
+      echo "magic: unsupported repair mode: $mode" >&2
+      return 1
+    fi
+
+    _magic-repair-apply "$file" "$kind" "$dest" "$mode" "$skip" "$prefix_hex" || return 1
+    echo "[+] wrote:  $dest"
+    echo "[i] after:  $(file -b "$dest")"
+    return 0
+  fi
+
   analyze="$(_magic-analyze "$file" 2>/dev/null)" || true
 
   lines=("${(@f)analyze}")

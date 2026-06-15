@@ -759,10 +759,12 @@ Supports `-f` / pipes. Legacy `vigd` `vige` `vigall` `vigkey` are aliases. `vig 
 | `fixmagic -n <file>` | Check only (no repair) |
 | `fixmagic -i <file>` | In-place only when needed (keeps `.bak`) |
 | `magic <file>` | Guess file type from magic bytes |
+| `magic -r TYPE [-o out] <file>` | Repair and save (`-o` omitted => auto `<name>_<type>.<ext>`) |
 
 If no repair is needed, exits with `[=] ok`. Supports PNG / JPEG / GIF.
 `fixmagic broken.png` - if broken, writes `broken_fixed.png`; if valid, writes nothing. `fixmagic -h`
 `magic broken.png` - guesses `PNG` / `JPEG` / `GIF` / `BMP` / `WEBP` / `ICO` / `ZIP` / `RAR` / `7Z` / `GZIP` / `PDF` / `ELF`. `magic -h`
+`magic -r PNG broken.bin` - saves as `broken_png.bin` by default; `-o` writes elsewhere. `magic -h`
 
 ---
 
