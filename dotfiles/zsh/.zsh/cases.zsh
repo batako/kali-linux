@@ -51,13 +51,19 @@ case-show() {
     if (( $+functions[target-current] )) && target-current >/dev/null 2>&1; then
       echo "target: $IP"
     fi
-    if [[ -f "${CASE_HOME}/load_from" ]]; then
+    if [[ -f "${CASE_HOME}/.load_from" ]]; then
+      echo "load_from: $(head -1 "${CASE_HOME}/.load_from" | tr -d '[:space:]')"
+    elif [[ -f "${CASE_HOME}/load_from" ]]; then
       echo "load_from: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')"
     else
       echo "load_from: (none)"
     fi
-    if [[ -f "${CASE_HOME}/lineage" ]]; then
+    if [[ -f "${CASE_HOME}/.lineage" ]]; then
+      echo "lineage: $(grep -E '^[0-9]+\.' "${CASE_HOME}/.lineage" | paste -sd, -)"
+    elif [[ -f "${CASE_HOME}/lineage" ]]; then
       echo "lineage: $(grep -E '^[0-9]+\.' "${CASE_HOME}/lineage" | paste -sd, -)"
+    elif [[ -f "${CASE_HOME}/.load_from" ]]; then
+      echo "lineage: $(head -1 "${CASE_HOME}/.load_from" | tr -d '[:space:]')  (migrated from load_from)"
     elif [[ -f "${CASE_HOME}/load_from" ]]; then
       echo "lineage: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')  (migrated from load_from)"
     else

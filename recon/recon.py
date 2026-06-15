@@ -37,6 +37,7 @@ from case_scope import read_lineage
 from case_scope import update_lineage_on_target_set
 from case_scope import update_lineage_on_load_from
 from case_scope import read_target_ip
+from case_scope import write_target_ip
 from case_scope import resolve_load_from
 from case_scope import list_case_ip_candidates
 from case_scope import format_candidate_line
@@ -988,11 +989,7 @@ def main():
         else:
             clear_load_from()
         register_case_ip(case, new_ip)
-        home = os.environ.get("CASE_HOME", "").strip()
-        if home:
-            target = Path(home) / "target"
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(new_ip + "\n", encoding="utf-8")
+        write_target_ip(new_ip)
         scope = recon_scope_ips(new_ip)
         if load_from:
             print(f"[+] target: {new_ip}  (load_from: {load_from})")

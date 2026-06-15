@@ -25,7 +25,7 @@ _recon-looks-like-host() {
   return 1
 }
 
-# $IP → cases/<room>/target (lazy load when CASE is set)
+# $IP → cases/<room>/.target (lazy load when CASE is set)
 _recon-ip-default() {
   if [[ -n "${IP:-}" ]]; then
     echo "$IP"

@@ -68,7 +68,7 @@ _sshkey_import_creds() {
   fi
 
   if [[ -z "$ip" ]]; then
-    echo "[-] creds not saved: target-set <ip> first, or case-set <room> (cases/<room>/target)" >&2
+    echo "[-] creds not saved: target-set <ip> first, or case-set <room> (cases/<room>/.target)" >&2
     return 1
   fi
   if [[ -z "$user" || -z "$pass" ]]; then

@@ -9,14 +9,21 @@ export RECON_DB_PATH="$RECON_DB"
 export RECON_APP="/opt/recon/recon.py"
 
 _case-target-file() {
+  [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/.target"
+}
+
+_case-target-file-legacy() {
   [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/target"
 }
 
-# Load IP from cases/<room>/target into $IP
+# Load IP from cases/<room>/.target into $IP
 target-load() {
   local f ip
   f="$(_case-target-file)" || return 1
-  [[ -f "$f" ]] || return 1
+  if [[ ! -f "$f" ]]; then
+    f="$(_case-target-file-legacy)" || return 1
+    [[ -f "$f" ]] || return 1
+  fi
   ip="$(head -1 "$f" | tr -d '[:space:]')"
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   export IP="$ip"
@@ -30,10 +37,12 @@ target-load() {
 # Persist $IP for current case
 target-save() {
   local ip="${1:-${IP:-}}"
-  local f
+  local f legacy
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   f="$(_case-target-file)" || return 1
   print -r -- "$ip" >"$f"
+  legacy="$(_case-target-file-legacy)" || true
+  [[ -n "$legacy" && -f "$legacy" ]] && rm -f "$legacy"
   if [[ -n "${CASE:-}" ]]; then
     python3 "$RECON_APP" case-register-ip "$ip" >/dev/null
     python3 "$RECON_APP" case-sync-ips >/dev/null
@@ -41,7 +50,7 @@ target-save() {
   return 0
 }
 
-# Resolve target IP: $IP, else cases/<room>/target
+# Resolve target IP: $IP, else cases/<room>/.target
 target-current() {
   if [[ -n "${IP:-}" ]]; then
     echo "$IP"
@@ -55,7 +64,7 @@ _case-on-enter() {
     _ftp-shell-reset-case
   fi
   if target-load; then
-    echo "[+] target: $IP  ($CASE_HOME/target)"
+    echo "[+] target: $IP  ($CASE_HOME/.target)"
   fi
   if [[ -f "${CASE_HOME:-}/ftp-shell" ]]; then
     echo "[+] ftp-shell: $CASE_HOME/ftp-shell"
@@ -75,18 +84,18 @@ _target-set-session() {
   echo "[+] target set: $ip  (session only — case-set <room> to persist)"
 }
 
-# Set or reload investigation target ($IP + cases/<room>/target + load_from)
+# Set or reload investigation target ($IP + cases/<room>/.target + load_from)
 # usage: target-set <ip> [--new|--pick]  |  target-set
 target-set() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
     echo "usage: target-set <ip> [--new|--pick]  |  target-set"
     echo "  alias: ts (= target-set)"
-    echo "  set \$IP (+ save to cases/<room>/target)"
+    echo "  set \$IP (+ save to cases/<room>/.target)"
     echo "  IP change: auto-inherit previous target when it has recon data"
     echo "  hosts:     previous IP in cases/<room>/hosts → new IP on target-set (not --new)"
-    echo "  lineage: prior IPs of same VM accumulate in cases/<room>/lineage"
+    echo "  lineage: prior IPs of same VM accumulate in cases/<room>/.lineage"
     echo "  --new   pivot (clear lineage)    --pick   numbered load_from picker"
-    echo "  no args: reload from target file"
+    echo "  no args: reload from .target file"
     return 0
   fi
 
@@ -146,7 +155,7 @@ target-set() {
   fi
 
   if target-load; then
-    echo "[+] target: $IP  ($CASE_HOME/target)"
+    echo "[+] target: $IP  ($CASE_HOME/.target)"
     return 0
   fi
 
@@ -162,7 +171,7 @@ target-show() {
     [[ -n "$f" && -f "$f" ]] && echo "[*] file: $f"
     return 0
   fi
-  echo "(no target — target-set <ip> or case-set <room> with cases/<room>/target)"
+  echo "(no target — target-set <ip> or case-set <room> with cases/<room>/.target)"
   return 1
 }
 
@@ -170,6 +179,8 @@ target-clear() {
   local f
   unset IP
   f="$(_case-target-file 2>/dev/null)"
+  [[ -n "$f" && -f "$f" ]] && rm -f "$f"
+  f="$(_case-target-file-legacy 2>/dev/null)"
   [[ -n "$f" && -f "$f" ]] && rm -f "$f"
   echo "[+] target cleared"
 }
