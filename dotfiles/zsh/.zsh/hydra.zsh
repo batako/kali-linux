@@ -409,6 +409,12 @@ reqfuzz() {
   trap - EXIT INT TERM
 }
 
+typeset -g REQFUZZ_SCRIPT_DIR="${${(%):-%N}:A:h}"
+
+reqfuzz() {
+  python3 "$REQFUZZ_SCRIPT_DIR/reqfuzz.py" "$@"
+}
+
 param-fuzz() {
   reqfuzz "$@"
 }
