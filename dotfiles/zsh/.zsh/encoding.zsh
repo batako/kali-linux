@@ -1867,29 +1867,29 @@ _rot_cipher_mode() {
   fi
 }
 
-# rot -a: Caesar 0-25 (A-Za-z). -n >25 switches to printable ASCII (ROT47 etc.)
+# rot: Caesar 0-25 (A-Za-z). -n >25 switches to printable ASCII (ROT47 etc.)
 rot() {
-  local mode="" file="" data="" rot_range="" cipher=caesar
+  local file="" data="" rot_range="" cipher=caesar
   local rot_start=0 rot_end=25 rot_max=25
   local -a positional=() range
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: rot -a <string>              # Caesar: shifts 0-25"
-        echo "       rot -a -n 13 <string>          # Caesar: ROT13"
-        echo "       rot -a -n 47 <string>          # ROT47 (printable !..~, shift 47)"
-        echo "       rot -a -n 0-93 <string>        # printable: all shifts"
-        echo "       rot -a -f <file>  |  ... | rot -a"
+        echo "usage: rot <string>                  # Caesar: shifts 0-25"
+        echo "       rot -n 13 <string>            # Caesar: ROT13"
+        echo "       rot -n 47 <string>            # ROT47 (printable !..~, shift 47)"
+        echo "       rot -n 0-93 <string>          # printable: all shifts"
+        echo "       rot -f <file>  |  ... | rot"
         echo ""
         echo "  -n 0-25     Caesar (A-Za-z only)"
         echo "  -n 26-93    printable ASCII !..~ (ROT47 = -n 47)"
-        echo "  default -a  Caesar 0-25"
+        echo "  default     Caesar 0-25"
         echo ""
-        echo "alias: rotall (= rot -a)"
+        echo "alias: rotall (= rot)"
         return 0
         ;;
-      -a) mode=all; shift ;;
+      -a) shift ;;
       -n)
         rot_range="$2"
         shift 2
@@ -1913,12 +1913,6 @@ rot() {
         ;;
     esac
   done
-
-  [[ "$mode" == all ]] || {
-    echo "rot: pick a mode: -a" >&2
-    echo "rot: try rot -h" >&2
-    return 1
-  }
 
   cipher="$(_rot_cipher_mode "$rot_range")" || return 1
   if [[ "$cipher" == printable ]]; then
@@ -2295,12 +2289,12 @@ b58e() {
 rotall() {
   [[ "${1:-}" == -h || "${1:-}" == --help ]] && { rot -h; return; }
   case "${1:-}" in
-    -f) rot -a -f "$2" ;;
+    -f) rot -f "$2" ;;
     "")
-      [[ -t 0 ]] && { echo "usage: rotall <string>  (see: rot -a ...)" >&2; return 1; }
-      rot -a
+      [[ -t 0 ]] && { echo "usage: rotall <string>  (see: rot ...)" >&2; return 1; }
+      rot
       ;;
-    *) rot -a "$@" ;;
+    *) rot "$@" ;;
   esac
 }
 

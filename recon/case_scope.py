@@ -15,9 +15,6 @@ _CASE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 TARGET_FILE = ".target"
 LOAD_FROM_FILE = ".load_from"
 LINEAGE_FILE = ".lineage"
-LEGACY_TARGET_FILE = "target"
-LEGACY_LOAD_FROM_FILE = "load_from"
-LEGACY_LINEAGE_FILE = "lineage"
 RESERVED_CASE_NAME = "_unscoped"
 
 
@@ -59,32 +56,26 @@ def read_load_from() -> str | None:
     home = case_home_from_env()
     if home is None:
         return None
-    for path in (home / LOAD_FROM_FILE, home / LEGACY_LOAD_FROM_FILE):
-        if not path.is_file():
-            continue
-        ip = path.read_text(encoding="utf-8").strip()
-        return ip if looks_like_ipv4(ip) else None
-    return None
+    path = home / LOAD_FROM_FILE
+    if not path.is_file():
+        return None
+    ip = path.read_text(encoding="utf-8").strip()
+    return ip if looks_like_ipv4(ip) else None
 
 
 def write_load_from(ip: str | None) -> None:
     path = load_from_path()
     if path is None:
         raise ValueError("CASE_HOME not set — case-set <room> first")
-    legacy = path.parent / LEGACY_LOAD_FROM_FILE
     ip = (ip or "").strip()
     if not ip:
         if path.is_file():
             path.unlink()
-        if legacy.is_file():
-            legacy.unlink()
         return
     if not looks_like_ipv4(ip):
         raise ValueError(f"invalid ip: {ip!r}")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(ip + "\n", encoding="utf-8")
-    if legacy.is_file():
-        legacy.unlink()
 
 
 def clear_load_from() -> None:
@@ -102,25 +93,21 @@ def read_lineage() -> list[str]:
     """Same-VM IP history for recon scope (excludes current target)."""
     home = case_home_from_env()
     if home is not None:
-        for path in (home / LINEAGE_FILE, home / LEGACY_LINEAGE_FILE):
-            if not path.is_file():
-                continue
+        path = home / LINEAGE_FILE
+        if path.is_file():
             ips: list[str] = []
             for line in path.read_text(encoding="utf-8").splitlines():
                 ip = line.strip()
                 if looks_like_ipv4(ip) and ip not in ips:
                     ips.append(ip)
             return ips
-    # Migration: pre-lineage cases only had load_from (single IP).
-    lf = read_load_from()
-    return [lf] if lf else []
+    return []
 
 
 def write_lineage(ips: list[str]) -> None:
     path = lineage_path()
     if path is None:
         raise ValueError("CASE_HOME not set — case-set <room> first")
-    legacy = path.parent / LEGACY_LINEAGE_FILE
     deduped: list[str] = []
     seen: set[str] = set()
     for raw in ips:
@@ -131,25 +118,17 @@ def write_lineage(ips: list[str]) -> None:
     if not deduped:
         if path.is_file():
             path.unlink()
-        if legacy.is_file():
-            legacy.unlink()
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(deduped) + "\n", encoding="utf-8")
-    if legacy.is_file():
-        legacy.unlink()
 
 
 def clear_lineage() -> None:
-    """Explicit empty lineage (file exists → skip auto-bootstrap on pivot --new)."""
     path = lineage_path()
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("", encoding="utf-8")
-    legacy = path.parent / LEGACY_LINEAGE_FILE
-    if legacy.is_file():
-        legacy.unlink()
 
 
 def append_lineage(ip: str) -> None:
@@ -215,12 +194,11 @@ def read_target_ip() -> str | None:
     path = case_home_from_env()
     if path is None:
         return None
-    for target in (path / TARGET_FILE, path / LEGACY_TARGET_FILE):
-        if not target.is_file():
-            continue
-        ip = target.read_text(encoding="utf-8").strip().splitlines()[0].strip()
-        return ip if looks_like_ipv4(ip) else None
-    return None
+    target = path / TARGET_FILE
+    if not target.is_file():
+        return None
+    ip = target.read_text(encoding="utf-8").strip().splitlines()[0].strip()
+    return ip if looks_like_ipv4(ip) else None
 
 
 def write_target_ip(ip: str | None) -> None:
@@ -228,20 +206,15 @@ def write_target_ip(ip: str | None) -> None:
     if path is None:
         raise ValueError("CASE_HOME not set — case-set <room> first")
     target = path / TARGET_FILE
-    legacy = path / LEGACY_TARGET_FILE
     ip = (ip or "").strip()
     if not ip:
         if target.is_file():
             target.unlink()
-        if legacy.is_file():
-            legacy.unlink()
         return
     if not looks_like_ipv4(ip):
         raise ValueError(f"invalid ip: {ip!r}")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(ip + "\n", encoding="utf-8")
-    if legacy.is_file():
-        legacy.unlink()
 
 
 def register_case_ip(case_name: str, ip: str) -> None:
@@ -298,10 +271,10 @@ def _ips_from_case_files(case_name: str) -> list[str]:
             seen.add(ip)
             out.append(ip)
 
-    for name in (TARGET_FILE, LOAD_FROM_FILE, LINEAGE_FILE, LEGACY_TARGET_FILE, LEGACY_LOAD_FROM_FILE, LEGACY_LINEAGE_FILE):
+    for name in (TARGET_FILE, LOAD_FROM_FILE, LINEAGE_FILE):
         path = home / name
         if path.is_file():
-            if name in (LINEAGE_FILE, LEGACY_LINEAGE_FILE):
+            if name == LINEAGE_FILE:
                 for line in path.read_text(encoding="utf-8").splitlines():
                     add(line)
             else:

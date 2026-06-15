@@ -12,18 +12,11 @@ _case-target-file() {
   [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/.target"
 }
 
-_case-target-file-legacy() {
-  [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/target"
-}
-
 # Load IP from cases/<room>/.target into $IP
 target-load() {
   local f ip
   f="$(_case-target-file)" || return 1
-  if [[ ! -f "$f" ]]; then
-    f="$(_case-target-file-legacy)" || return 1
-    [[ -f "$f" ]] || return 1
-  fi
+  [[ -f "$f" ]] || return 1
   ip="$(head -1 "$f" | tr -d '[:space:]')"
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   export IP="$ip"
@@ -37,12 +30,10 @@ target-load() {
 # Persist $IP for current case
 target-save() {
   local ip="${1:-${IP:-}}"
-  local f legacy
+  local f
   [[ "$ip" =~ $(_recon-ip-re) ]] || return 1
   f="$(_case-target-file)" || return 1
   print -r -- "$ip" >"$f"
-  legacy="$(_case-target-file-legacy)" || true
-  [[ -n "$legacy" && -f "$legacy" ]] && rm -f "$legacy"
   if [[ -n "${CASE:-}" ]]; then
     python3 "$RECON_APP" case-register-ip "$ip" >/dev/null
     python3 "$RECON_APP" case-sync-ips >/dev/null

@@ -53,19 +53,11 @@ case-show() {
     fi
     if [[ -f "${CASE_HOME}/.load_from" ]]; then
       echo "load_from: $(head -1 "${CASE_HOME}/.load_from" | tr -d '[:space:]')"
-    elif [[ -f "${CASE_HOME}/load_from" ]]; then
-      echo "load_from: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')"
     else
       echo "load_from: (none)"
     fi
     if [[ -f "${CASE_HOME}/.lineage" ]]; then
       echo "lineage: $(grep -E '^[0-9]+\.' "${CASE_HOME}/.lineage" | paste -sd, -)"
-    elif [[ -f "${CASE_HOME}/lineage" ]]; then
-      echo "lineage: $(grep -E '^[0-9]+\.' "${CASE_HOME}/lineage" | paste -sd, -)"
-    elif [[ -f "${CASE_HOME}/.load_from" ]]; then
-      echo "lineage: $(head -1 "${CASE_HOME}/.load_from" | tr -d '[:space:]')  (migrated from load_from)"
-    elif [[ -f "${CASE_HOME}/load_from" ]]; then
-      echo "lineage: $(head -1 "${CASE_HOME}/load_from" | tr -d '[:space:]')  (migrated from load_from)"
     else
       echo "lineage: (none)"
     fi
@@ -146,7 +138,7 @@ case-reset() {
     mkdir -p "$CASE_ROOT/$room"/{logs,exports}
     export CASE_HOME="$CASE_ROOT/$room"
     cd "$CASE_HOME" || return 1
-    echo "[+] cwd: $CASE_HOME  (target/lineage cleared — target-set <ip>)"
+    echo "[+] cwd: $CASE_HOME  (.target/.lineage cleared — target-set <ip>)"
   fi
 }
 

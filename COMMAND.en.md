@@ -735,9 +735,9 @@ Legacy names `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` are aliases
 
 | Command | Description |
 |----------|------|
-| `rot -a <str>` / `rot -a -f <file>` / `... \| rot -a` | Show all shifts 0-25 |
+| `rot <str>` / `rot -f <file>` / `... \| rot` | Show all shifts 0-25 |
 
-`rot -a 'MAF{...}'` -> find the line with `THM{` (shift 7). Legacy name `rotall`. `rot -h`
+`rot 'MAF{...}'` -> find the line with `THM{` (shift 7). Legacy name `rotall`. `rot -h`
 
 ## vig (Vigenere)
 
