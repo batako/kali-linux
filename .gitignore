@@ -15,7 +15,6 @@ __pycache__/
 
 # workspace: exploits/recon gitignored; payloads = self-authored, tracked
 workspace/exploits/**
-!workspace/exploits/**/
 !workspace/exploits/**/.keep
 
 # Recon CLI runtime DB (recon/data/ also holds tracked nmap-top-1000-tcp.txt)
