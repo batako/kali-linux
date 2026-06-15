@@ -56,9 +56,7 @@ compinit
 # ========================
 # modules
 # ========================
-for f in ~/.zsh/*.zsh; do
-  source "$f"
-done
+source ~/.zsh/load.zsh
 
 # Created by `pipx` on 2026-06-02 09:49:32
 export PATH="$PATH:/home/kali/.local/bin"
