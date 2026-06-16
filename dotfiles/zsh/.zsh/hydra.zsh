@@ -400,7 +400,7 @@ _hydraweb-usage() {
 }
 
 hydraweb() {
-  local target path user mode text userfield passfield extra_post cookie form host_header
+  local target path user mode text userfield passfield extra_post cookie form host_header port=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -414,33 +414,80 @@ hydraweb() {
     esac
   done
 
-  if [[ $# -ge 1 && "$1" =~ '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' ]]; then
-    if [[ $# -lt 6 ]]; then
-      _hydraweb-usage
-      return 1
-    fi
-    target="$1"
-    shift
-  else
-    if [[ $# -lt 5 ]]; then
-      _hydraweb-usage
-      return 1
-    fi
-    target="${IP:-}"
-    if [[ -z "$target" ]]; then
-      echo "no target: target-set <ip> or pass IP as first arg" >&2
-      return 1
-    fi
+  if [[ $# -lt 5 ]]; then
+    _hydraweb-usage
+    return 1
   fi
 
-  path="$1"
-  user="$2"
-  mode="$3"
-  text="$4"
-  userfield="$5"
-  passfield="${6:-password}"
-  extra_post="${7:-sub=Login}"
-  cookie="${8:-}"
+  if [[ "$1" == http://* || "$1" == https://* ]]; then
+    local spec="${1#*://}" target_spec=""
+    shift
+    if [[ "$spec" == */* ]]; then
+      target_spec="${spec%%/*}"
+      path="/${spec#*/}"
+    else
+      target_spec="$spec"
+      path="${1:-}"
+      shift
+    fi
+    target_spec="${target_spec%%\?*}"
+    if [[ "$target_spec" == *:* ]]; then
+      target="${target_spec%%:*}"
+      port="${target_spec#*:}"
+      [[ "$port" =~ '^[0-9]+$' ]] || port=""
+    else
+      target="$target_spec"
+    fi
+  elif [[ "$1" == /* ]]; then
+    target="${IP:-}"
+    if [[ -z "$target" ]]; then
+      echo "no target: target-set <ip> or pass IP/URL as first arg" >&2
+      return 1
+    fi
+    path="$1"
+    shift
+  elif [[ "$1" == *"/"* ]]; then
+    local spec="$1" target_spec=""
+    if [[ "$spec" == *://* ]]; then
+      spec="${spec#*://}"
+    fi
+    target_spec="${spec%%/*}"
+    path="/${spec#*/}"
+    shift
+    if [[ "$target_spec" == *:* ]]; then
+      target="${target_spec%%:*}"
+      port="${target_spec#*:}"
+      [[ "$port" =~ '^[0-9]+$' ]] || port=""
+    else
+      target="$target_spec"
+    fi
+  else
+    target="$1"
+    path="${2:-}"
+    shift 2
+  fi
+
+  if [[ -z "$target" ]]; then
+    target="${IP:-}"
+  fi
+  if [[ -z "$target" ]]; then
+    echo "no target: target-set <ip> or pass IP/URL as first arg" >&2
+    return 1
+  fi
+
+  if [[ -z "$path" ]]; then
+    _hydraweb-usage
+    return 1
+  fi
+  [[ "$path" == /* ]] || path="/$path"
+
+  user="$1"
+  mode="$2"
+  text="$3"
+  userfield="$4"
+  passfield="${5:-password}"
+  extra_post="${6:-sub=Login}"
+  cookie="${7:-}"
 
   form="${path}:${userfield}=^USER^&${passfield}=^PASS^"
   if [[ -n "$extra_post" ]]; then
@@ -457,18 +504,18 @@ hydraweb() {
   echo "[*] hydra form: ${form}"
   [[ -n "$host_header" ]] && echo "[*] vhost: ${host_header}"
   [[ -n "$cookie" ]] && echo "[*] cookie: ${cookie}"
-  echo "[*] target: http://${host_header:-$target}${path}  user: $user"
+  echo "[*] target: http://${host_header:-$target}${port:+:$port}${path}  user: $user"
   echo "[*] wordlist: $RECON_PASSLIST"
 
   local log rc
   log="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/hydraweb.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
-  /usr/bin/hydra -l "$user" \
-    -P "$RECON_PASSLIST" \
-    -t 32 -f -V \
-    "$target" http-post-form \
-    "$form" 2>&1 | /usr/bin/tee "$log"
+  local -a hydra_cmd=(/usr/bin/hydra -l "$user" -P "$RECON_PASSLIST" -t 32 -f -V)
+  [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
+  hydra_cmd+=("$target" http-post-form "$form")
+
+  "${hydra_cmd[@]}" 2>&1 | /usr/bin/tee "$log"
   rc=${pipestatus[1]:-$?}
 
   /usr/bin/python3 "${RECON_APP:-/opt/recon/recon.py}" creds-import-hydra "$target" --file "$log"
