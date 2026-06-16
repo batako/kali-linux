@@ -257,11 +257,6 @@ ssh-login() {
     user="$(_recon-pick-user "$ip" 1)" || return 1
   fi
 
-  if [[ "$user" == anonymous ]]; then
-    echo "[-] ssh: user anonymous is for FTP (use: ftp / creds from strike)" >&2
-    return 1
-  fi
-
   if [[ -z "${_SSH_ARGS[(r)-i]}" ]]; then
     local -a _ssh_saved_args=("${_SSH_ARGS[@]}")
     if _ssh-try-saved-key-login "$ip" "$user"; then
@@ -281,7 +276,7 @@ ssh-login() {
     else
       command ssh "${_SSH_REST[@]}" "${user}@${ip}"
     fi
-    return 1
+    return $?
   fi
   if [[ -z "$pass" ]]; then
     echo "[-] empty password in db for ${user}@${ip}" >&2
@@ -315,6 +310,9 @@ ssh() {
   _ssh-consume-flags "$@"
   $_SSH_HELP && return 0
 
+  _ssh-parse-args "${_SSH_ARGS[@]}"
+  ip="$_SSH_IP"
+
   if [[ ${#_SSH_ARGS[@]} -eq 0 && "$_SSH_LOG" == false ]]; then
     ip="$(target-current 2>/dev/null)"
     if [[ -n "$ip" ]] && _recon-has-ssh-creds "$ip"; then
@@ -330,17 +328,26 @@ ssh() {
     return $?
   fi
 
-  for a in "${_SSH_ARGS[@]}"; do
-    if [[ "$a" != -* && "$a" == *@* ]]; then
-      ip="${a#*@}"
-      break
-    fi
-    if [[ "$a" != -* && "$a" =~ $(_recon-ip-re) ]]; then
-      ip="$a"
-      break
-    fi
-  done
   [[ -z "$ip" ]] && ip="$(target-current 2>/dev/null)"
+
+  if [[ -n "${_SSH_USER:-}" ]]; then
+    if [[ -z "$ip" ]]; then
+      echo "[-] ssh: no target ip (target-set <ip> or case-set <room>)" >&2
+      return 1
+    fi
+    if _recon-creds-for-user "$ip" "${_SSH_USER}" >/dev/null 2>&1; then
+      ssh-login
+      return $?
+    fi
+    if $_SSH_LOG; then
+      local logfile
+      logfile="$(_ssh-log-path "$ip" "$_SSH_USER")" || return 1
+      _ssh-run-session "$logfile" command ssh "${_SSH_REST[@]}" -tt "${_SSH_USER}@${ip}"
+      return $?
+    fi
+    command ssh "${_SSH_REST[@]}" -tt "${_SSH_USER}@${ip}"
+    return $?
+  fi
 
   if [[ -n "$ip" ]] && _recon-has-ssh-creds "$ip"; then
     ssh-login
