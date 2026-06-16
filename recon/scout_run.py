@@ -114,6 +114,7 @@ class DirsPlan:
     log_path: str
     exclude_length: Optional[int] = None
     host_header: Optional[str] = None
+    user_agent: Optional[str] = None
 
 
 def _normalize_service(service: str) -> str:
@@ -645,6 +646,7 @@ def probe_wildcard_exclude_length(
     *,
     timeout_sec: Optional[int] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
 ) -> Optional[int]:
     """Probe a random path; if the server soft-404s with a fixed body, return its length."""
     if timeout_sec is None:
@@ -666,6 +668,8 @@ def probe_wildcard_exclude_length(
         curl_args.append("-k")
     if host_header:
         curl_args.extend(["-H", f"Host: {host_header.strip()}"])
+    if user_agent:
+        curl_args.extend(["-A", user_agent.strip()])
     curl_args.append(probe)
     try:
         result = subprocess.run(
@@ -783,6 +787,7 @@ def build_gobuster_dir_argv(
     extensions: Optional[str] = None,
     exclude_length: Optional[int] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
 ) -> list[str]:
     args = [
         "gobuster",
@@ -801,6 +806,8 @@ def build_gobuster_dir_argv(
         args.append("-k")
     if host_header:
         args.extend(["-H", f"Host:{host_header.strip()}"])
+    if user_agent:
+        args.extend(["-a", user_agent.strip()])
     if exclude_length is not None:
         args.extend(["--exclude-length", str(exclude_length)])
     if extensions:
@@ -819,6 +826,7 @@ def build_dirs_plan(
     dry_run: bool = False,
     exclude_length_override: Optional[int] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
 ) -> DirsPlan:
     from wordlists.scout import resolve_scout_wordlist
 
@@ -838,7 +846,11 @@ def build_dirs_plan(
     if exclude_length_override is not None:
         exclude_length = exclude_length_override
     else:
-        exclude_length = probe_wildcard_exclude_length(url, host_header=vhost)
+        exclude_length = probe_wildcard_exclude_length(
+            url,
+            host_header=vhost,
+            user_agent=user_agent,
+        )
         if exclude_length is None and target_ip:
             exclude_length = _known_exclude_length_from_scope(target_ip, url)
             if exclude_length is not None:
@@ -860,6 +872,7 @@ def build_dirs_plan(
         extensions,
         exclude_length=exclude_length,
         host_header=vhost,
+        user_agent=user_agent,
     )
     log_path = build_dirs_log_path(url, wl, dry_run=dry_run, host_header=vhost)
     command = " ".join(shlex.quote(a) for a in argv)
@@ -873,6 +886,7 @@ def build_dirs_plan(
         log_path=log_path,
         exclude_length=exclude_length,
         host_header=vhost,
+        user_agent=user_agent,
     )
 
 
@@ -911,6 +925,7 @@ def build_ext_fuzz_plan(
     wordlist: Optional[str] = None,
     threads: Optional[int] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
     dry_run: bool = False,
     wordlist_from_flag: bool = False,
     dx: bool = False,
@@ -941,6 +956,7 @@ def build_ext_fuzz_plan(
         th,
         json_path=json_path,
         host_header=vhost,
+        user_agent=user_agent,
     )
     command = " ".join(shlex.quote(a) for a in argv)
     return DirsPlan(
@@ -953,6 +969,7 @@ def build_ext_fuzz_plan(
         log_path=json_path,
         exclude_length=None,
         host_header=vhost,
+        user_agent=user_agent,
     )
 
 
@@ -1233,6 +1250,7 @@ def _dispatch_dirs_job(
                 plan.extensions,
                 exclude_length=plan.exclude_length,
                 host_header=plan.host_header,
+                user_agent=plan.user_agent,
             ),
             stdout=logf,
             stderr=subprocess.STDOUT,
@@ -1327,6 +1345,7 @@ def _dispatch_ext_fuzz_job(
         plan.threads,
         json_path=plan.log_path,
         host_header=plan.host_header,
+        user_agent=plan.user_agent,
     )
     proc = subprocess.Popen(
         argv,
@@ -1357,6 +1376,7 @@ def _run_ext_fuzz_phase(
     wordlist: Optional[str] = None,
     threads: Optional[int] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
     dx: bool = False,
@@ -1376,6 +1396,7 @@ def _run_ext_fuzz_phase(
                 wordlist=wordlist,
                 threads=threads,
                 host_header=host_header,
+                user_agent=user_agent,
                 dry_run=dry_run,
                 dx=dx,
             )
@@ -1420,6 +1441,7 @@ def _run_dirs_phase(
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> int:
@@ -1517,6 +1539,7 @@ def _run_dirs_phase(
                     extensions=extensions,
                     dry_run=dry_run,
                     host_header=host_header,
+                    user_agent=user_agent,
                 )
             except FileNotFoundError as e:
                 print(f"[-] {e}")
@@ -2202,6 +2225,7 @@ def run_scout(
     threads: Optional[int] = None,
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
     no_plan: bool = False,
     dirs_ext_fuzz: bool = False,
     ext_fuzz_wordlist: Optional[str] = None,
@@ -2296,6 +2320,7 @@ def run_scout(
                     wordlist=ext_fuzz_wordlist or wordlist,
                     threads=threads,
                     host_header=host_header,
+                    user_agent=user_agent,
                     dry_run=dry_run,
                     force=force_dirs,
                     dx=dirs_ext_fuzz,
@@ -2310,12 +2335,13 @@ def run_scout(
                         dirs_preset=dirs_preset,
                         dirs_multi_preset_from_flag=dirs_multi_preset_from_flag,
                         dirs_multi_preset_is_next=dirs_multi_preset_is_next,
-                        threads=threads,
-                        extensions=extensions,
-                        host_header=host_header,
-                        dry_run=dry_run,
-                        force=force_dirs,
-                    )
+                    threads=threads,
+                    extensions=extensions,
+                    host_header=host_header,
+                    user_agent=user_agent,
+                    dry_run=dry_run,
+                    force=force_dirs,
+                )
                     rc = max(rc, rc2)
                 wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
                 return max(rc, wait_rc)
@@ -2335,6 +2361,7 @@ def run_scout(
             threads=threads,
             extensions=extensions,
             host_header=host_header,
+            user_agent=user_agent,
             dry_run=dry_run,
             force=force_dirs,
         )

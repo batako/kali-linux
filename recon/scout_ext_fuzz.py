@@ -203,6 +203,7 @@ def build_ffuf_ext_argv(
     *,
     json_path: str,
     host_header: Optional[str] = None,
+    user_agent: Optional[str] = None,
     exclude_length: Optional[int] = None,
 ) -> list[str]:
     args = [
@@ -223,6 +224,8 @@ def build_ffuf_ext_argv(
     ]
     if host_header:
         args.extend(["-H", f"Host: {host_header.strip()}"])
+    if user_agent:
+        args.extend(["-H", f"User-Agent: {user_agent.strip()}"])
     if exclude_length is not None:
         args.extend(["-fs", str(exclude_length)])
     return args

@@ -375,10 +375,11 @@ ssh-list() {
 }
 
 _ssh-get-help() {
-  echo "usage: ssh-get [-i key] [-o dir] [-r] [user] [ip] <remote> [remote...]"
+  echo "usage: ssh-get [-i key] [-p port] [-o dir] [-r] [user] [ip] <remote> [remote...]"
   echo "  alias: sget"
   echo "  download via scp using creds-list (sshpass)"
   echo "  -i key   private key (passphrase + user from creds-list)"
+  echo "  -p port  ssh/scp port (passed to scp -P)"
   echo "  remote: path on target (e.g. ~/file, tryhackme.asc, /etc/passwd)"
   echo "  -o dir   local destination (default: cases/<room>/exports/scp/)"
   echo "  -r       scp -r (directory)"
@@ -436,7 +437,7 @@ _ssh-get-parse() {
 }
 
 ssh-get() {
-  local dest="" dest_explicit=false recursive=false identity="" key_abs=""
+  local dest="" dest_explicit=false recursive=false identity="" key_abs="" port=""
   local -a pos=() a
   local ip="" user="" pass=""
   local -a scp_args=() remote_specs=() r
@@ -449,6 +450,10 @@ ssh-get() {
         ;;
       -i)
         identity="$2"
+        shift 2
+        ;;
+      -p)
+        port="$2"
         shift 2
         ;;
       -o)
@@ -499,6 +504,13 @@ ssh-get() {
     chmod 600 "$identity" 2>/dev/null
     key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
     scp_args+=(-i "$key_abs")
+  fi
+  if [[ -n "$port" ]]; then
+    if [[ ! "$port" =~ '^[0-9]+$' ]]; then
+      echo "[-] ssh-get: invalid port: $port" >&2
+      return 1
+    fi
+    scp_args+=(-P "$port")
   fi
 
   if [[ -z "$user" ]]; then
@@ -584,7 +596,11 @@ ssh-get() {
       "${scp_args[@]}" \
       "${remote_specs[@]}" \
       "$dest/"
-    return $?
+    local status=$?
+    if (( status == 0 )); then
+      echo "[+] saved to: $dest/"
+    fi
+    return $status
   fi
 
   sshpass -p "$pass" "$(_scp-bin)" \
@@ -595,15 +611,21 @@ ssh-get() {
     "${scp_args[@]}" \
     "${remote_specs[@]}" \
     "$dest/"
+  local status=$?
+  if (( status == 0 )); then
+    echo "[+] saved to: $dest/"
+  fi
+  return $status
 }
 
 alias sget='ssh-get'
 
 _ssh-put-help() {
-  echo "usage: ssh-put [-i key] [-r] [user] [ip] <local> [local...] <remote>"
+  echo "usage: ssh-put [-i key] [-p port] [-r] [user] [ip] <local> [local...] <remote>"
   echo "  alias: sput"
   echo "  upload via scp using creds-list (sshpass)"
   echo "  -i key   private key (passphrase + user from creds-list)"
+  echo "  -p port  ssh/scp port (passed to scp -P)"
   echo "  -r       scp -r (directory)"
   echo "  local:   file or directory on this machine"
   echo "  remote:  destination on target (e.g. /tmp/, /tmp/linpeas.sh, ~/file)"
@@ -663,7 +685,7 @@ _ssh-put-parse() {
 }
 
 ssh-put() {
-  local recursive=false identity="" key_abs=""
+  local recursive=false identity="" key_abs="" port=""
   local -a pos=() local_specs=()
   local ip="" user="" pass="" local_path remote_spec
   local -a scp_args=() l
@@ -676,6 +698,10 @@ ssh-put() {
         ;;
       -i)
         identity="$2"
+        shift 2
+        ;;
+      -p)
+        port="$2"
         shift 2
         ;;
       -r)
@@ -721,6 +747,13 @@ ssh-put() {
     chmod 600 "$identity" 2>/dev/null
     key_abs="$(realpath "$identity" 2>/dev/null || echo "$identity")"
     scp_args+=(-i "$key_abs")
+  fi
+  if [[ -n "$port" ]]; then
+    if [[ ! "$port" =~ '^[0-9]+$' ]]; then
+      echo "[-] ssh-put: invalid port: $port" >&2
+      return 1
+    fi
+    scp_args+=(-P "$port")
   fi
 
   if [[ -z "$user" ]]; then

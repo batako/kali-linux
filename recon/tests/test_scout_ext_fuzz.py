@@ -125,6 +125,16 @@ class ScoutExtFuzzTest(unittest.TestCase):
         self.assertIn("-H", argv)
         self.assertIn("Host: www.example.com", argv)
 
+    def test_build_ffuf_ext_argv_user_agent(self) -> None:
+        argv = build_ffuf_ext_argv(
+            "http://10.0.0.1/scripts/scriptFUZZ",
+            "/tmp/ext.txt",
+            40,
+            json_path="/tmp/out.json",
+            user_agent="Mozilla/5.0 (X11; Linux x86_64)",
+        )
+        self.assertIn("User-Agent: Mozilla/5.0 (X11; Linux x86_64)", argv)
+
     def test_extract_ffuf_ext_findings(self) -> None:
         payload = {
             "results": [

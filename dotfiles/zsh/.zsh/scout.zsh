@@ -36,6 +36,7 @@ scout() {
   local plan_only="" no_plan=""
   local vhosts_only="" vhosts_target="" vhost_scheme=""
   local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz=""
+  local -a user_agent_args=()
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
   local -a wordlist_ids=()
@@ -102,6 +103,7 @@ scout() {
         echo "  -t, --threads                  gobuster threads (-ds default: 15)"
         echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
         echo "  -H, --host <name>              vhost Host header (-d/-ds only; IP URL + Host: name)"
+        echo "  -A, --ua <value>               user-agent for -d/-ds/-dx"
         echo ""
         echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
         echo "  -p is NOT ports (ports report → -rp)."
@@ -140,6 +142,7 @@ scout() {
         echo "  s -v example.com                    # vhost (https → http)"
         echo "  s -v --https example.com            # HTTPS only"
         echo "  s -d -H www.example.com             # dir on discovered vhost"
+        echo "  s -d -A 'Mozilla/5.0'               # custom user-agent"
         echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
         echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
         echo "  s -ds :443/hoge                # https://\$IP/hoge/"
@@ -394,6 +397,10 @@ scout() {
         host_header="-H $2"
         shift 2
         ;;
+      -A|--ua|--user-agent)
+        user_agent_args=(-A "$2")
+        shift 2
+        ;;
       http://*|https://*)
         extra_urls+=("$1")
         shift
@@ -495,6 +502,11 @@ scout() {
     return 1
   fi
 
+  if (( ${#user_agent_args[@]} )) && [[ -z "$dirs_only$dirs_multi" ]]; then
+    echo "[-] -A/--ua requires scout -d or -ds" >&2
+    return 1
+  fi
+
   if [[ ${#wordlist_ids[@]} -gt 0 && -z "$dirs_multi" ]]; then
     echo "[-] repeat -w requires scout -ds" >&2
     return 1
@@ -548,6 +560,7 @@ scout() {
   [[ -n "$dirs_ext_fuzz" ]] && args+=("$dirs_ext_fuzz")
   [[ -n "$dirs_multi" ]] && args+=("$dirs_multi")
   [[ -n "$host_header" ]] && args+=(${=host_header})
+  (( ${#user_agent_args[@]} )) && args+=("${user_agent_args[@]}")
   [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
   [[ -n "$force" ]] && args+=("$force")
   [[ -n "$plan_only" ]] && args+=("$plan_only")
@@ -596,6 +609,7 @@ _scout() {
     '-t[threads]:threads:' \
     '-x[extensions]:ext:' \
     '-H[vhost Host header with -d/-ds]:host:' '--host[vhost Host header with -d/-ds]:host:' \
+    '-A[user-agent with -d/-ds/-dx]:ua:' '--ua[user-agent with -d/-ds/-dx]:ua:' '--user-agent[user-agent with -d/-ds/-dx]:ua:' \
     '*:ip:($IP)'
 }
 

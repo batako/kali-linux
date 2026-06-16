@@ -54,6 +54,15 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         )
         self.assertEqual(argv[argv.index("-H") + 1], "Host:mafialive.thm")
 
+    def test_build_gobuster_dir_argv_user_agent(self) -> None:
+        argv = build_gobuster_dir_argv(
+            "http://10.0.0.1/",
+            "/tmp/common.txt",
+            40,
+            user_agent="Mozilla/5.0 (X11; Linux x86_64)",
+        )
+        self.assertEqual(argv[argv.index("-a") + 1], "Mozilla/5.0 (X11; Linux x86_64)")
+
     def test_dirs_job_host_matches(self) -> None:
         plain = "gobuster dir -u http://10.0.0.1/ -w /tmp/common.txt"
         vhost = "gobuster dir -u http://10.0.0.1/ -H Host:mafialive.thm -w /tmp/common.txt"
