@@ -48,6 +48,7 @@ _case-on-enter() {
   if (( $+functions[_ftp-shell-reset-case] )); then
     _ftp-shell-reset-case
   fi
+  unset IP
   if target-load; then
     echo "[+] target: $IP  ($CASE_HOME/.target)"
   fi

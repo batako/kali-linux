@@ -1,4 +1,9 @@
 # ========================
+# terminal (256-color backgrounds for p10k, etc.)
+# ========================
+[[ ${TERM:-} == *256color* ]] || export TERM=xterm-256color
+
+# ========================
 # p10k instant prompt
 # ========================
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then

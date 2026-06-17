@@ -82,6 +82,28 @@ case-show() {
   return 1
 }
 
+# Read current target without side effects (safe for prompt rendering).
+# Uses cases/<room>/.target only — not session $IP (avoids stale IP after cs).
+case-target-current() {
+  local f ip
+  [[ -n "${CASE_HOME:-}" ]] || return 1
+  f="$CASE_HOME/.target"
+  [[ -f "$f" ]] || return 1
+  ip="$(head -1 "$f" | tr -d '[:space:]')"
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  echo "$ip"
+}
+
+# Attacker IPv4 for prompt (tun0 → eth0). No stderr; safe for prompt rendering.
+case-lhost-current() {
+  local ip
+  ip=$(ip -o -4 addr show tun0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+  [[ -n "$ip" ]] && { echo "$ip"; return 0 }
+  ip=$(ip -o -4 addr show eth0 2>/dev/null | awk '{print $4}' | cut -d/ -f1)
+  [[ -n "$ip" ]] && { echo "$ip"; return 0 }
+  return 1
+}
+
 case-clear() {
   unset CASE CASE_HOME
   echo "[+] case cleared"
