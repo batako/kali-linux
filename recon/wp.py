@@ -19,19 +19,31 @@ from urllib.parse import urlparse
 from urllib.request import Request
 from urllib.request import urlopen
 
+from toolkit_i18n import pick
+
 
 DEFAULT_TIMEOUT = 15
 WPSCAN_TIMEOUT = 20 * 60
 
-WP_USAGE = """usage: wp <command> [options]
+WP_USAGE = pick(
+    """usage: wp <command> [options]
 
 Commands:
   assess   Execute pre-attack WordPress reconnaissance
 
 Run 'wp <command> --help' for command-specific help.
-"""
+""",
+    """使い方: wp <command> [options]
 
-ASSESS_USAGE = """usage: wp assess [--fast|--full] [--use-api] [--out DIR] <URL>
+コマンド:
+  assess   攻撃前の WordPress 偵察を実行
+
+各コマンドの詳細ヘルプは 'wp <command> --help' を参照。
+""",
+)
+
+ASSESS_USAGE = pick(
+    """usage: wp assess [--fast|--full] [--use-api] [--out DIR] <URL>
 
 Modes:
   default  normal
@@ -50,7 +62,28 @@ Output:
 Notes:
   - URL must be a WordPress base path, e.g. http://target/wordpress/
   - WordPress discovery tools are not run here
-"""
+""",
+    """使い方: wp assess [--fast|--full] [--use-api] [--out DIR] <URL>
+
+モード:
+  default  normal
+  --fast   軽量チェックのみ
+  --full   露出チェックを拡張
+
+オプション:
+  --use-api   WPScan で WPSCAN_API_TOKEN を使用
+  --out DIR   レポートを DIR に出力
+
+出力:
+  既定の出力先は CASE_HOME/exports または ./exports
+  WPScan のログは兄弟ディレクトリ logs/ に保存
+  レポート名は wp_assess_<host>_<path>_<mode>_<api>.md
+
+注意:
+  - URL は WordPress のベースパスである必要がある（例: http://target/wordpress/）
+  - ここでは WordPress 発見系ツールは実行しない
+""",
+)
 
 
 @dataclass(slots=True)

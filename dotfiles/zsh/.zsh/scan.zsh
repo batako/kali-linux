@@ -8,22 +8,45 @@ scan() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: scan [options] [ip]"
-        echo "  scan              nmap top 1000 (-sC -sV), skips covered ports"
-        echo "  scan -f           same with --full (TCP 1-65535 until complete)"
-        echo "  scan -r           OPEN + CLOSED from DB (no nmap)"
-        echo ""
-        echo "options:"
-        echo "  -h, --help        this help"
-        echo "  -f, --full        TCP 1-65535 until complete (one command)"
-        echo "  -r, --report      port tables from DB (no nmap)"
-        echo "  --force           rescan (top 1000 or -p- with --full)"
-        echo "  -n, --dry-run     print nmap command only"
-        echo "  -q, --quiet       no port tables at end"
-        echo "  -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)"
-        echo ""
-        echo "prep: case-set <room>  &&  target-set <ip>"
-        echo "more: scout -r  (recon summary)  |  case-reset  (wipe room)"
+        if _toolkit-lang-ja; then
+          cat <<EOF
+使い方: scan [options] [ip]
+  scan              nmap top 1000 (-sC -sV)、coverage 済みポートをスキップ
+  scan -f           --full と同じ（TCP 1-65535 を完了まで）
+  scan -r           DB から OPEN + CLOSED を表示（nmap なし）
+
+オプション:
+  -h, --help        このヘルプ
+  -f, --full        TCP 1-65535 を完了まで実行（1 コマンド）
+  -r, --report      DB のポート表のみ表示（nmap なし）
+  --force           再スキャン（top 1000、または --full 時は -p-）
+  -n, --dry-run     nmap コマンドだけ表示
+  -q, --quiet       最後のポート表を省略
+  -j, --jobs N      --full 時のみ: 並列ワーカー数 (1-${SCAN_FULL_JOBS_MAX:-8}, 既定 1)
+
+事前準備: case-set <room>  &&  target-set <ip>
+関連: scout -r  （偵察サマリ）  |  case-reset  （ルーム消去）
+EOF
+        else
+          cat <<EOF
+usage: scan [options] [ip]
+  scan              nmap top 1000 (-sC -sV), skips covered ports
+  scan -f           same with --full (TCP 1-65535 until complete)
+  scan -r           OPEN + CLOSED from DB (no nmap)
+
+options:
+  -h, --help        this help
+  -f, --full        TCP 1-65535 until complete (one command)
+  -r, --report      port tables from DB (no nmap)
+  --force           rescan (top 1000 or -p- with --full)
+  -n, --dry-run     print nmap command only
+  -q, --quiet       no port tables at end
+  -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)
+
+prep: case-set <room>  &&  target-set <ip>
+more: scout -r  (recon summary)  |  case-reset  (wipe room)
+EOF
+        fi
         return 0
         ;;
       -f|--full)

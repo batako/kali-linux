@@ -74,14 +74,14 @@ _target-set-session() {
 # usage: target-set <ip> [--new|--pick]  |  target-set
 target-set() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: target-set <ip> [--new|--pick]  |  target-set"
-    echo "  alias: ts (= target-set)"
-    echo "  set \$IP (+ save to cases/<room>/.target)"
-    echo "  IP change: auto-inherit previous target when it has recon data"
-    echo "  hosts:     previous IP in cases/<room>/hosts → new IP on target-set (not --new)"
-    echo "  lineage: prior IPs of same VM accumulate in cases/<room>/.lineage"
-    echo "  --new   pivot (clear lineage)    --pick   numbered load_from picker"
-    echo "  no args: reload from .target file"
+    _toolkit-echo "usage: target-set <ip> [--new|--pick]  |  target-set" "使い方: target-set <ip> [--new|--pick]  |  target-set"
+    _toolkit-echo "  alias: ts (= target-set)" "  alias: ts （= target-set）"
+    _toolkit-echo "  set \$IP (+ save to cases/<room>/.target)" "  \$IP を設定（+ cases/<room>/.target に保存）"
+    _toolkit-echo "  IP change: auto-inherit previous target when it has recon data" "  IP 変更時: 前の target に recon データがあれば自動継承"
+    _toolkit-echo "  hosts:     previous IP in cases/<room>/hosts → new IP on target-set (not --new)" "  hosts:     cases/<room>/hosts 内の旧 IP を target-set 時に新 IP へ更新（--new を除く）"
+    _toolkit-echo "  lineage: prior IPs of same VM accumulate in cases/<room>/.lineage" "  lineage: 同一 VM の過去 IP を cases/<room>/.lineage に蓄積"
+    _toolkit-echo "  --new   pivot (clear lineage)    --pick   numbered load_from picker" "  --new   pivot 用（lineage クリア）    --pick   番号付き load_from 選択"
+    _toolkit-echo "  no args: reload from .target file" "  引数なし: .target ファイルから再読込"
     return 0
   fi
 

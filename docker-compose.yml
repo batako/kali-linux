@@ -9,6 +9,7 @@ services:
     environment:
       - VNC_PASSWORD=${VNC_PASSWORD}
       - WPSCAN_API_TOKEN=${WPSCAN_API_TOKEN}
+      - TOOLKIT_LANG=${TOOLKIT_LANG}
 
     volumes:
       # working directory

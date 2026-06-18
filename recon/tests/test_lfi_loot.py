@@ -7,6 +7,8 @@ import os
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 import unittest.mock
 from pathlib import Path
 
@@ -76,6 +78,23 @@ class LfiLootTests(unittest.TestCase):
         self.assertEqual(code, 0)
         out = self.case_home / "exploits" / "lfi-loot"
         self.assertTrue((out / "files" / "etc__passwd.txt").is_file())
+
+    def test_help_respects_toolkit_lang_ja(self) -> None:
+        old = os.environ.get("TOOLKIT_LANG")
+        os.environ["TOOLKIT_LANG"] = "ja"
+        try:
+            stdout = StringIO()
+            with self.assertRaises(SystemExit) as ctx:
+                with redirect_stdout(stdout):
+                    lfi_loot.parse_args(["--help"])
+            self.assertEqual(ctx.exception.code, 0)
+            self.assertIn("ローカルファイル、ディレクトリ、HTTP(S) URL を解析", stdout.getvalue())
+            self.assertIn("取得する HTTP(S) URL", stdout.getvalue())
+        finally:
+            if old is None:
+                os.environ.pop("TOOLKIT_LANG", None)
+            else:
+                os.environ["TOOLKIT_LANG"] = old
 
     def test_infer_logical_name_from_url(self) -> None:
         self.assertEqual(

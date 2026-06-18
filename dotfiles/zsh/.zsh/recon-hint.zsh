@@ -4,13 +4,13 @@
 
 _hint-add() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hint-add [-t tag] text..."
-    echo "  alias: ha"
-    echo "examples:"
-    echo "  hint-add go!go!go!"
-    echo "  hint-add -t codeword vigilante"
-    echo "  hint-add -t island-page 'The Code Word is: ...'"
-    echo "  hint-add -t codeword -   # paste via stdin"
+    _toolkit-echo "usage: hint-add [-t tag] text..." "使い方: hint-add [-t タグ] text..."
+    _toolkit-echo "  alias: ha" "  alias: ha"
+    _toolkit-echo "examples:" "例:"
+    _toolkit-echo "  hint-add go!go!go!" "  hint-add go!go!go!"
+    _toolkit-echo "  hint-add -t codeword vigilante" "  hint-add -t codeword vigilante"
+    _toolkit-echo "  hint-add -t island-page 'The Code Word is: ...'" "  hint-add -t island-page 'The Code Word is: ...'"
+    _toolkit-echo "  hint-add -t codeword -   # paste via stdin" "  hint-add -t codeword -   # stdin から貼り付け"
     return 0
   fi
 
@@ -60,8 +60,8 @@ hint-add() { _hint-add "$@"; }
 
 hint-list() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hint-list"
-    echo "  alias: hl"
+    _toolkit-echo "usage: hint-list" "使い方: hint-list"
+    _toolkit-echo "  alias: hl" "  alias: hl"
     return 0
   fi
   if [[ -z "${CASE:-}" ]]; then
@@ -73,8 +73,8 @@ hint-list() {
 
 hint-rm() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hint-rm <hint_id>"
-    echo "  alias: hr"
+    _toolkit-echo "usage: hint-rm <hint_id>" "使い方: hint-rm <hint_id>"
+    _toolkit-echo "  alias: hr" "  alias: hr"
     return 0
   fi
   if [[ $# -lt 1 ]]; then

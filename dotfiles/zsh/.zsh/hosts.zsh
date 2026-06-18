@@ -191,27 +191,55 @@ _hosts-remap-ip() {
 }
 
 _hosts-usage() {
-  echo "usage: hosts [-h] [<hostname> [aliases...]]"
-  echo "       hosts [<ip>] <hostname> [aliases...]"
-  echo "       hosts -r|--replace [<ip>] <hostname> [aliases...]"
-  echo "       hosts --apply | --off | -e|--edit"
-  echo
-  echo "  (no args)              show case file + /etc/hosts recon block"
-  echo "  <host> [names]         upsert cases/<room>/hosts (same name replaces line)"
-  echo "  <ip> <host> [names]    append with explicit IP"
-  echo "  -r, --replace          replace case hosts file with one line, then apply"
-  echo "  --apply                apply cases/<room>/hosts to /etc/hosts"
-  echo "  --off                  remove recon block from /etc/hosts only"
-  echo "  -e, --edit             edit cases/<room>/hosts, then apply"
-  echo
-  echo "  case-set switches rooms → hosts auto-applies when cases/<room>/hosts exists"
-  echo "  target-set <new-ip>      rewrites lines with the previous target IP to the new IP"
-  echo
-  echo "examples:"
-  echo "  hosts smag.thm                    # uses \$IP"
-  echo "  hosts 10.10.238.190 mafialive.thm"
-  echo "  hosts mafialive.thm www.mafialive.thm"
-  echo "  hosts --off"
+  if _toolkit-lang-ja; then
+    cat <<'EOF'
+使い方: hosts [-h] [<hostname> [aliases...]]
+       hosts [<ip>] <hostname> [aliases...]
+       hosts -r|--replace [<ip>] <hostname> [aliases...]
+       hosts --apply | --off | -e|--edit
+
+  （引数なし）             case ファイルと /etc/hosts の recon ブロックを表示
+  <host> [names]         cases/<room>/hosts に upsert（同名は置換）
+  <ip> <host> [names]    明示 IP で追記
+  -r, --replace          case の hosts ファイルを 1 行で置換して適用
+  --apply                cases/<room>/hosts を /etc/hosts に反映
+  --off                  /etc/hosts の recon ブロックだけ削除
+  -e, --edit             cases/<room>/hosts を編集してから適用
+
+  case-set で部屋を切り替えると、cases/<room>/hosts があれば自動適用
+  target-set <new-ip> では、前の target IP の行を新 IP へ書き換える
+
+例:
+  hosts smag.thm                    # \$IP を使用
+  hosts 10.10.238.190 mafialive.thm
+  hosts mafialive.thm www.mafialive.thm
+  hosts --off
+EOF
+  else
+    cat <<'EOF'
+usage: hosts [-h] [<hostname> [aliases...]]
+       hosts [<ip>] <hostname> [aliases...]
+       hosts -r|--replace [<ip>] <hostname> [aliases...]
+       hosts --apply | --off | -e|--edit
+
+  (no args)              show case file + /etc/hosts recon block
+  <host> [names]         upsert cases/<room>/hosts (same name replaces line)
+  <ip> <host> [names]    append with explicit IP
+  -r, --replace          replace case hosts file with one line, then apply
+  --apply                apply cases/<room>/hosts to /etc/hosts
+  --off                  remove recon block from /etc/hosts only
+  -e, --edit             edit cases/<room>/hosts, then apply
+
+  case-set switches rooms → hosts auto-applies when cases/<room>/hosts exists
+  target-set <new-ip>      rewrites lines with the previous target IP to the new IP
+
+examples:
+  hosts smag.thm                    # uses $IP
+  hosts 10.10.238.190 mafialive.thm
+  hosts mafialive.thm www.mafialive.thm
+  hosts --off
+EOF
+  fi
 }
 
 _hosts-show() {

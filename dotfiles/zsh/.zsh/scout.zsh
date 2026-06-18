@@ -44,115 +44,229 @@ scout() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
-        echo "usage: scout [options] [ip|path|url...]"
-        echo "  alias: s"
-        echo ""
-        echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
-        echo "  scout -ds           parallel dirs (preset tiers; default standard)"
-        echo ""
-        echo "dirs job status (pair):"
-        echo "  -s, --status [ip]              show once"
-        echo "  -ws, --wait-dirs [sec]         refresh until all jobs finish (default 2s)"
-        echo ""
-        echo "report (DB only, no rescan):"
-        echo "  -r, --report [ip]              full report"
-        echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
-        echo "  -re, --report-exploits [ip]   EXPLOITS"
-        echo "  -ep, --exploit-pack [ip]       AI submission → cases/<room>/plans/*.md"
-        echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
-        echo "  -rtf, --report-tree-fetch [ip]  PATHS → sitemap + local mirror (-n dry-run)"
-        echo ""
-        echo "search (always refreshes exploit cache; e.g. after searchsploit -u):"
-        echo "  -se, --search-exploits [ip]    searchsploit → cache (also in scout)"
-        echo "  scout -r -se [ip]              refresh exploits then full report"
-        echo ""
-        echo "exploit reject (manual — only after confirming N/A; untried picks stay):"
-        echo "  exploit-reject <EDB> [--port 80/tcp]    hide from scout -re  (alias: erj)"
-        echo "  exploit-unreject <EDB> [--port 80/tcp]  undo  (alias: eru)"
-        echo "  exploit-rejects [ip]                    list rejected  (alias: erl)"
-        echo ""
-        echo "ports (scan only — like -d for gobuster):"
-        echo "  -fp, --full-ports              TCP 1-65535 then searchsploit (-se)"
-        echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
-        echo ""
-        echo "vhost discovery (THM / IP):"
-        echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
-        echo "  s -v example.com                 # vhost (https → http; auto from nmap)"
-        echo "  s -v --https example.com         # HTTPS only"
-        echo "  s -d -H www.example.com          # dir on discovered vhost"
-        echo ""
-        echo "other:"
-        echo "  -d, --dirs [path]              gobuster dir (single wl)"
-        echo "  -dx, --dirs-ext-fuzz [path]    ffuf extension fuzz (requires -dx; .FUZZ / stem.* with -dx)"
-        echo "  -ds, --dirs-multi [path]       parallel dirs (see presets below)"
-        echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
-        echo "  --plan                         auth-quick enqueue only (phase 2.5; no hydra)"
-        echo "  --no-plan                      skip auth enqueue during full scout"
-        echo ""
-        echo "attack queue (see also: strike):"
-        echo "  s --plan [ip]                  enqueue auth tasks from DB ports"
-        echo "  strike [ip]                    run pending auth tasks"
-        echo "  strike -l                      list tasks"
-        echo ""
-        echo "dirs job cache (-d / -ds):"
-        echo "  skip when same ip + url + wordlist + Host is running or done"
-        echo "  -x (extensions) is NOT part of the cache key — use --force to rerun with different -x"
-        echo "  -n, --dry-run                  show planned commands"
-        echo "  -q, --quiet                    no port tables after scan"
-        echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker (-h: tier table below)"
-        echo "  -t, --threads                  gobuster threads (-ds default: 15)"
-        echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
-        echo "  -H, --host <name>              vhost Host header (-d/-ds only; IP URL + Host: name)"
-        echo "  -A, --ua <value>               user-agent for -d/-ds/-dx"
-        echo ""
-        echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
-        echo "  -p is NOT ports (ports report → -rp)."
-        echo ""
-        echo "  dirs (no -x):"
-        echo "    light     common, quickhits"
-        echo "    standard  + raft-small-directories          (default -ds)"
-        echo "    wide      + raft-small-files"
-        echo "    deep      + dirbuster-small, raft-small-words"
-        echo ""
-        echo "  dirs-ext (-x EXT):"
-        echo "    light     common"
-        echo "    standard  + dirbuster-small                 (default -ds -x)"
-        echo "    wide      + dirbuster-medium"
-        echo "    deep      + raft-small-files"
-        echo ""
-        echo "  -p next     next tier adds only (skip done jobs on same URL)"
-        echo "  aliases: fast→light, ctf→standard"
-        echo ""
-        echo "  common wordlist ids (-w):"
-        echo "    common, quickhits, raft-small-directories, raft-small-files,"
-        echo "    raft-small-words, dirbuster-small, dirbuster-medium"
-        echo ""
-        echo "examples:"
-        echo "  s -ds /admin                  # standard tier on /admin/"
-        echo "  s -ds /assets                 # enumerate under /assets/"
-        echo "  s -ds -p next /assets         # tier up when hits empty"
-        echo "  s -ds -p wide /uploads        # cumulative through wide"
-        echo "  s -ds -x php /backup          # ext fuzz, standard tier"
-        echo "  s -ds -x bak -p next /api     # next ext tier"
-        echo "  s -dx /scripts/script.txt       # ffuf ext fuzz (script.FUZZ)"
-        echo "  s -dx /scripts/script.FUZZ      # stem with dots — explicit marker"
-        echo "  s -d /scripts/script.FUZZ/      # literal dir named script.FUZZ"
-        echo "  s -dx /scripts/script.*         # stem.* syntax (requires -dx)"
-        echo "  s -d /config -w dirbuster-small"
-        echo "  s -v example.com                    # vhost (https → http)"
-        echo "  s -v --https example.com            # HTTPS only"
-        echo "  s -d -H www.example.com             # dir on discovered vhost"
-        echo "  s -d -A 'Mozilla/5.0'               # custom user-agent"
-        echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
-        echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
-        echo "  s -ds :443/hoge                # https://\$IP/hoge/"
-        echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
-        echo "  s -rp                         # port list (not -p)"
-        echo "  s -rt                         # dirs PATHS tree only"
-        echo "  s -rtf                        # PATHS sitemap + download (200/301 + crawl)"
-        echo "  s -rtf -n                     # planned URLs only"
-        echo "  s -fp                         # full port scan (65535) + exploit search"
-        echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
+        if _toolkit-lang-ja; then
+          cat <<'EOF'
+使い方: scout [options] [ip|path|url...]
+  alias: s
+
+  scout / s / scout -d  dirs ジョブを投げて、完了まで自動監視（-ws）
+  scout -ds             並列 dirs（tier プリセット。既定 standard）
+
+dirs ジョブ状態（対になる操作）:
+  -s, --status [ip]              1 回だけ表示
+  -ws, --wait-dirs [sec]         全ジョブ完了まで更新（既定 2 秒）
+
+レポート（DB のみ。再スキャンなし）:
+  -r, --report [ip]              フルレポート
+  -rp, --report-ports [ip]       OPEN + CLOSED
+  -re, --report-exploits [ip]    EXPLOITS
+  -ep, --exploit-pack [ip]       AI 提出用 → cases/<room>/plans/*.md
+  -rt, --report-paths [ip]       PATHS（dirs ツリー）
+  -rtf, --report-tree-fetch [ip] PATHS → サイトマップ + ローカル保存（-n で dry-run）
+
+検索（常に exploit キャッシュを更新）:
+  -se, --search-exploits [ip]    searchsploit → キャッシュ（scout 本体でも実行）
+  scout -r -se [ip]              exploit を更新してからフルレポート
+
+exploit 除外（手動で N/A を確認した後だけ）:
+  exploit-reject <EDB> [--port 80/tcp]    scout -re から隠す  (alias: erj)
+  exploit-unreject <EDB> [--port 80/tcp]  元に戻す  (alias: eru)
+  exploit-rejects [ip]                    除外一覧  (alias: erl)
+
+ポート（scan のみ）:
+  -fp, --full-ports              TCP 1-65535 の後に searchsploit (-se)
+  -j, --jobs N                   -fp と併用: 並列 full scan（例: -fp -j 4）
+
+vhost 発見（THM / IP）:
+  -v, --vhosts [domain|ip]       Host: FUZZ.domain（ffuf）または IP 向け gobuster vhost
+  s -v example.com               # vhost（https → http; nmap から自動判断）
+  s -v --https example.com       # HTTPS のみ
+  s -d -H www.example.com        # 発見済み vhost に対して dir
+
+その他:
+  -d, --dirs [path]              gobuster dir（単一 wordlist）
+  -dx, --dirs-ext-fuzz [path]    ffuf 拡張子 fuzz（-dx 必須）
+  -ds, --dirs-multi [path]       並列 dirs（下の tier 参照）
+  --force                        ポート再走査 / dirs 再 dispatch（-se には不要）
+  --plan                         auth-quick の enqueue のみ（phase 2.5、hydra なし）
+  --no-plan                      フル scout 時の auth enqueue を省略
+
+攻撃キュー（strike も参照）:
+  s --plan [ip]                  DB ポートから auth タスクを enqueue
+  strike [ip]                    保留中 auth タスクを実行
+  strike -l                      タスク一覧
+
+dirs ジョブキャッシュ（-d / -ds）:
+  同じ ip + url + wordlist + Host が running / done ならスキップ
+  -x（拡張子）はキャッシュキーに含まれない。-x を変えて再実行するなら --force
+  -n, --dry-run                  実行予定コマンドのみ表示
+  -q, --quiet                    scan 後のポート表を省略
+  -w, --wordlist [id]            id/path。-d で bare -w はピッカー
+  -t, --threads                  gobuster スレッド（-ds 既定: 15）
+  -x, --ext                      拡張子 fuzz（-d のみ。既定: common）
+  -H, --host <name>              vhost Host ヘッダ（-d/-ds のみ）
+  -A, --ua <value>               -d/-ds/-dx 用 user-agent
+
+scout -ds -p（wordlist tier: light → standard → wide → deep）
+  -p は ports ではない（ports report は -rp）。
+
+  dirs（-x なし）:
+    light     common, quickhits
+    standard  + raft-small-directories          （既定 -ds）
+    wide      + raft-small-files
+    deep      + dirbuster-small, raft-small-words
+
+  dirs-ext（-x EXT）:
+    light     common
+    standard  + dirbuster-small                 （既定 -ds -x）
+    wide      + dirbuster-medium
+    deep      + raft-small-files
+
+  -p next     次 tier の追加分のみ（同 URL で done 済みはスキップ）
+  alias: fast→light, ctf→standard
+
+  よく使う wordlist id（-w）:
+    common, quickhits, raft-small-directories, raft-small-files,
+    raft-small-words, dirbuster-small, dirbuster-medium
+
+例:
+  s -ds /admin                  # /admin/ に standard tier
+  s -ds /assets                 # /assets/ 配下を列挙
+  s -ds -p next /assets         # ヒットが薄ければ次 tier
+  s -ds -p wide /uploads        # wide まで累積
+  s -ds -x php /backup          # ext fuzz, standard tier
+  s -ds -x bak -p next /api     # 次の ext tier
+  s -dx /scripts/script.txt     # ffuf ext fuzz（script.FUZZ）
+  s -dx /scripts/script.FUZZ    # ドット入り stem を明示
+  s -d /scripts/script.FUZZ/    # script.FUZZ という実ディレクトリ
+  s -dx /scripts/script.*       # stem.* 記法（-dx 必須）
+  s -d /config -w dirbuster-small
+  s -v example.com              # vhost（https → http）
+  s -v --https example.com      # HTTPS のみ
+  s -d -H www.example.com       # 発見済み vhost に dir
+  s -d -A 'Mozilla/5.0'         # custom user-agent
+  s -d -H app.example.com       # Host: app.example.com で gobuster
+  s -ds :65524/hidden/          # http://$IP:65524/hidden/
+  s -ds :443/hoge               # https://$IP/hoge/
+  s -ds :80/fuga                # http://$IP/fuga/
+  s -rp                         # ポート一覧（-p ではない）
+  s -rt                         # dirs PATHS ツリーのみ
+  s -rtf                        # PATHS サイトマップ + 取得
+  s -rtf -n                     # 予定 URL のみ
+  s -fp                         # full port scan（65535）+ exploit search
+  s -fp -j 4                    # 同上、nmap 4 並列
+EOF
+        else
+          echo "usage: scout [options] [ip|path|url...]"
+          echo "  alias: s"
+          echo ""
+          echo "  scout / s / scout -d  dispatch dirs then auto-watch (-ws) until jobs finish"
+          echo "  scout -ds           parallel dirs (preset tiers; default standard)"
+          echo ""
+          echo "dirs job status (pair):"
+          echo "  -s, --status [ip]              show once"
+          echo "  -ws, --wait-dirs [sec]         refresh until all jobs finish (default 2s)"
+          echo ""
+          echo "report (DB only, no rescan):"
+          echo "  -r, --report [ip]              full report"
+          echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
+          echo "  -re, --report-exploits [ip]   EXPLOITS"
+          echo "  -ep, --exploit-pack [ip]       AI submission → cases/<room>/plans/*.md"
+          echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
+          echo "  -rtf, --report-tree-fetch [ip]  PATHS → sitemap + local mirror (-n dry-run)"
+          echo ""
+          echo "search (always refreshes exploit cache; e.g. after searchsploit -u):"
+          echo "  -se, --search-exploits [ip]    searchsploit → cache (also in scout)"
+          echo "  scout -r -se [ip]              refresh exploits then full report"
+          echo ""
+          echo "exploit reject (manual — only after confirming N/A; untried picks stay):"
+          echo "  exploit-reject <EDB> [--port 80/tcp]    hide from scout -re  (alias: erj)"
+          echo "  exploit-unreject <EDB> [--port 80/tcp]  undo  (alias: eru)"
+          echo "  exploit-rejects [ip]                    list rejected  (alias: erl)"
+          echo ""
+          echo "ports (scan only — like -d for gobuster):"
+          echo "  -fp, --full-ports              TCP 1-65535 then searchsploit (-se)"
+          echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
+          echo ""
+          echo "vhost discovery (THM / IP):"
+          echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
+          echo "  s -v example.com                 # vhost (https → http; auto from nmap)"
+          echo "  s -v --https example.com         # HTTPS only"
+          echo "  s -d -H www.example.com          # dir on discovered vhost"
+          echo ""
+          echo "other:"
+          echo "  -d, --dirs [path]              gobuster dir (single wl)"
+          echo "  -dx, --dirs-ext-fuzz [path]    ffuf extension fuzz (requires -dx; .FUZZ / stem.* with -dx)"
+          echo "  -ds, --dirs-multi [path]       parallel dirs (see presets below)"
+          echo "  --force                        rescan ports / re-dispatch dirs (not -se)"
+          echo "  --plan                         auth-quick enqueue only (phase 2.5; no hydra)"
+          echo "  --no-plan                      skip auth enqueue during full scout"
+          echo ""
+          echo "attack queue (see also: strike):"
+          echo "  s --plan [ip]                  enqueue auth tasks from DB ports"
+          echo "  strike [ip]                    run pending auth tasks"
+          echo "  strike -l                      list tasks"
+          echo ""
+          echo "dirs job cache (-d / -ds):"
+          echo "  skip when same ip + url + wordlist + Host is running or done"
+          echo "  -x (extensions) is NOT part of the cache key — use --force to rerun with different -x"
+          echo "  -n, --dry-run                  show planned commands"
+          echo "  -q, --quiet                    no port tables after scan"
+          echo "  -w, --wordlist [id]            id/path; bare -w on -d opens picker (-h: tier table below)"
+          echo "  -t, --threads                  gobuster threads (-ds default: 15)"
+          echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
+          echo "  -H, --host <name>              vhost Host header (-d/-ds only; IP URL + Host: name)"
+          echo "  -A, --ua <value>               user-agent for -d/-ds/-dx"
+          echo ""
+          echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
+          echo "  -p is NOT ports (ports report → -rp)."
+          echo ""
+          echo "  dirs (no -x):"
+          echo "    light     common, quickhits"
+          echo "    standard  + raft-small-directories          (default -ds)"
+          echo "    wide      + raft-small-files"
+          echo "    deep      + dirbuster-small, raft-small-words"
+          echo ""
+          echo "  dirs-ext (-x EXT):"
+          echo "    light     common"
+          echo "    standard  + dirbuster-small                 (default -ds -x)"
+          echo "    wide      + dirbuster-medium"
+          echo "    deep      + raft-small-files"
+          echo ""
+          echo "  -p next     next tier adds only (skip done jobs on same URL)"
+          echo "  aliases: fast→light, ctf→standard"
+          echo ""
+          echo "  common wordlist ids (-w):"
+          echo "    common, quickhits, raft-small-directories, raft-small-files,"
+          echo "    raft-small-words, dirbuster-small, dirbuster-medium"
+          echo ""
+          echo "examples:"
+          echo "  s -ds /admin                  # standard tier on /admin/"
+          echo "  s -ds /assets                 # enumerate under /assets/"
+          echo "  s -ds -p next /assets         # tier up when hits empty"
+          echo "  s -ds -p wide /uploads        # cumulative through wide"
+          echo "  s -ds -x php /backup          # ext fuzz, standard tier"
+          echo "  s -ds -x bak -p next /api     # next ext tier"
+          echo "  s -dx /scripts/script.txt       # ffuf ext fuzz (script.FUZZ)"
+          echo "  s -dx /scripts/script.FUZZ      # stem with dots — explicit marker"
+          echo "  s -d /scripts/script.FUZZ/      # literal dir named script.FUZZ"
+          echo "  s -dx /scripts/script.*         # stem.* syntax (requires -dx)"
+          echo "  s -d /config -w dirbuster-small"
+          echo "  s -v example.com                    # vhost (https → http)"
+          echo "  s -v --https example.com            # HTTPS only"
+          echo "  s -d -H www.example.com             # dir on discovered vhost"
+          echo "  s -d -A 'Mozilla/5.0'               # custom user-agent"
+          echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
+          echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
+          echo "  s -ds :443/hoge                # https://\$IP/hoge/"
+          echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
+          echo "  s -rp                         # port list (not -p)"
+          echo "  s -rt                         # dirs PATHS tree only"
+          echo "  s -rtf                        # PATHS sitemap + download (200/301 + crawl)"
+          echo "  s -rtf -n                     # planned URLs only"
+          echo "  s -fp                         # full port scan (65535) + exploit search"
+          echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
+        fi
         return 0
         ;;
       -rp|--report-ports)

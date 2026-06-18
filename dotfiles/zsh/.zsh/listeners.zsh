@@ -25,9 +25,9 @@ listen() {
         shift
         ;;
       -h|--help)
-        echo "usage: listen [-l] [port]"
-        echo "  start netcat listener (default: 4444)"
-        echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)"
+        _toolkit-echo "usage: listen [-l] [port]" "使い方: listen [-l] [port]"
+        _toolkit-echo "  start netcat listener (default: 4444)" "  netcat リスナーを開始（既定: 4444）"
+        _toolkit-echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)" "  -l  cases/<name>/logs/ に記録（cs <name> が必要。もしくは CASE_LOOSE=1）"
         return 0
         ;;
       *)

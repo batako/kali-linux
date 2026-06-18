@@ -25,8 +25,8 @@ artifact-add() {
 
 artifact-list() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: artifact-list [-l] [ip]"
-    echo "  alias: al"
+    _toolkit-echo "usage: artifact-list [-l] [ip]" "使い方: artifact-list [-l] [ip]"
+    _toolkit-echo "  alias: al" "  alias: al"
     return 0
   fi
   python3 "$RECON_APP" artifact-list "$@"

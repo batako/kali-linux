@@ -6,6 +6,7 @@ typeset -g ZSH_HELPER_DIR="${${(%):-%N}:A:h}"
 
 source "$ZSH_HELPER_DIR/creds-cli.zsh"
 source "$ZSH_HELPER_DIR/wordlist.zsh"
+source "$ZSH_HELPER_DIR/i18n.zsh"
 source "$ZSH_HELPER_DIR/aliases.zsh"
 source "$ZSH_HELPER_DIR/recon.zsh"
 source "$ZSH_HELPER_DIR/cases.zsh"

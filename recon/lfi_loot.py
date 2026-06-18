@@ -28,6 +28,8 @@ from urllib.parse import urlunparse
 from urllib.request import Request
 from urllib.request import urlopen
 
+from toolkit_i18n import is_ja
+
 
 BASE64_RE = re.compile(r"(?<![A-Za-z0-9+/=])([A-Za-z0-9+/]{20,}={0,2})(?![A-Za-z0-9+/=])")
 TAG_RE = re.compile(r"(?is)<(pre|textarea)[^>]*>(.*?)</\1>")
@@ -131,27 +133,43 @@ def output_root() -> Path:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="lfi-loot",
-        description="Parse local files, directories, or HTTP(S) URLs and extract likely LFI loot.",
+        description=(
+            "ローカルファイル、ディレクトリ、HTTP(S) URL を解析して LFI 由来の取得物を抽出します。"
+            if is_ja()
+            else "Parse local files, directories, or HTTP(S) URLs and extract likely LFI loot."
+        ),
     )
     parser.add_argument(
         "--name",
         action="append",
         default=[],
         metavar="LOGICAL=TARGET",
-        help="Override logical filename (TARGET may be a local path or URL).",
+        help=(
+            "論理ファイル名を上書きします（TARGET にはローカルパスか URL を指定可能）。"
+            if is_ja()
+            else "Override logical filename (TARGET may be a local path or URL)."
+        ),
     )
     parser.add_argument(
         "-k",
         "--insecure",
         action="store_true",
-        help="Skip TLS certificate verification for https:// URLs.",
+        help=(
+            "https:// URL の TLS 証明書検証をスキップします。"
+            if is_ja()
+            else "Skip TLS certificate verification for https:// URLs."
+        ),
     )
     parser.add_argument(
         "--timeout",
         type=int,
         default=DEFAULT_FETCH_TIMEOUT,
         metavar="SEC",
-        help=f"HTTP timeout for URLs (default: {DEFAULT_FETCH_TIMEOUT}).",
+        help=(
+            f"URL 用の HTTP タイムアウト（既定: {DEFAULT_FETCH_TIMEOUT}）。"
+            if is_ja()
+            else f"HTTP timeout for URLs (default: {DEFAULT_FETCH_TIMEOUT})."
+        ),
     )
     parser.add_argument(
         "-u",
@@ -159,24 +177,40 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         action="append",
         default=[],
         metavar="URL",
-        help="HTTP(S) URL to fetch (repeatable). Prefer this over a bare URL in zsh.",
+        help=(
+            "取得する HTTP(S) URL（複数指定可）。zsh では bare URL よりこちらを推奨。"
+            if is_ja()
+            else "HTTP(S) URL to fetch (repeatable). Prefer this over a bare URL in zsh."
+        ),
     )
     parser.add_argument(
         "--fuzz-payload",
         action="append",
         default=[],
         metavar="PATH",
-        help=f"Extra include path when URL contains {FUZZ_MARKER} (repeatable).",
+        help=(
+            f"URL に {FUZZ_MARKER} を含むときの追加 include パス（複数指定可）。"
+            if is_ja()
+            else f"Extra include path when URL contains {FUZZ_MARKER} (repeatable)."
+        ),
     )
     parser.add_argument(
         "--no-b64-fallback",
         action="store_true",
-        help="Do not auto-retry with php://filter base64 when direct include returns empty.",
+        help=(
+            "direct include が空のときに php://filter base64 で自動再試行しません。"
+            if is_ja()
+            else "Do not auto-retry with php://filter base64 when direct include returns empty."
+        ),
     )
     parser.add_argument(
         "inputs",
         nargs="*",
-        help="Local files/directories and/or http(s):// URLs to scan.",
+        help=(
+            "解析対象のローカルファイル/ディレクトリ、または http(s):// URL。"
+            if is_ja()
+            else "Local files/directories and/or http(s):// URLs to scan."
+        ),
     )
     return parser.parse_args(argv)
 

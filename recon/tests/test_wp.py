@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+import importlib
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -31,6 +32,24 @@ class WpCliTests(unittest.TestCase):
             code = wp.main(["assess", "--help"])
         self.assertEqual(code, 0)
         self.assertIn("usage: wp assess [--fast|--full] [--use-api] [--out DIR] <URL>", stdout.getvalue())
+
+    def test_top_level_help_respects_toolkit_lang_ja(self) -> None:
+        old = os.environ.get("TOOLKIT_LANG")
+        os.environ["TOOLKIT_LANG"] = "ja"
+        try:
+            importlib.reload(wp)
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                code = wp.main(["--help"])
+            self.assertEqual(code, 0)
+            self.assertIn("使い方: wp <command> [options]", stdout.getvalue())
+            self.assertIn("コマンド:", stdout.getvalue())
+        finally:
+            if old is None:
+                os.environ.pop("TOOLKIT_LANG", None)
+            else:
+                os.environ["TOOLKIT_LANG"] = old
+            importlib.reload(wp)
 
     def test_normalize_target_requires_path(self) -> None:
         with self.assertRaises(wp.AssessError):

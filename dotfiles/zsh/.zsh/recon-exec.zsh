@@ -4,8 +4,8 @@
 
 exec-run() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: exec-run [-s] [ip] <command...>"
-    echo "  alias: x (exec-run -s → xs)"
+    _toolkit-echo "usage: exec-run [-s] [ip] <command...>" "使い方: exec-run [-s] [ip] <command...>"
+    _toolkit-echo "  alias: x (exec-run -s → xs)" "  alias: x （exec-run -s → xs）"
     return 0
   fi
 
@@ -38,8 +38,8 @@ xs() { exec-run -s "$@"; }
 
 exec-cache() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: exec-cache [-s] [ip] <command...>"
-    echo "  alias: xc (exec-cache -s → xcs)"
+    _toolkit-echo "usage: exec-cache [-s] [ip] <command...>" "使い方: exec-cache [-s] [ip] <command...>"
+    _toolkit-echo "  alias: xc (exec-cache -s → xcs)" "  alias: xc （exec-cache -s → xcs）"
     return 0
   fi
 
@@ -72,8 +72,8 @@ xcs() { exec-cache -s "$@"; }
 
 exec-list() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: exec-list [-l] [--all-case] [ip]"
-    echo "  alias: el"
+    _toolkit-echo "usage: exec-list [-l] [--all-case] [ip]" "使い方: exec-list [-l] [--all-case] [ip]"
+    _toolkit-echo "  alias: el" "  alias: el"
     return 0
   fi
   python3 "$RECON_APP" exec-list "$@"
@@ -81,8 +81,8 @@ exec-list() {
 
 exec-view() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: exec-view <exec_id> [--tail N]"
-    echo "  alias: ev"
+    _toolkit-echo "usage: exec-view <exec_id> [--tail N]" "使い方: exec-view <exec_id> [--tail N]"
+    _toolkit-echo "  alias: ev" "  alias: ev"
     return 0
   fi
   if [[ $# -lt 1 ]]; then

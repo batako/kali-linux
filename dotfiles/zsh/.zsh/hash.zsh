@@ -4,9 +4,9 @@
 
 hash-list() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hash-list [--json] [ip]"
-    echo "  alias: hlist"
-    echo "  columns: user<TAB>stored<TAB>state"
+    _toolkit-echo "usage: hash-list [--json] [ip]" "使い方: hash-list [--json] [ip]"
+    _toolkit-echo "  alias: hlist" "  alias: hlist"
+    _toolkit-echo "  columns: user<TAB>stored<TAB>state" "  列: user<TAB>stored<TAB>state"
     return 0
   fi
   if [[ -n "${1:-}" ]]; then
@@ -23,9 +23,9 @@ hash-list() {
 
 _hash-add() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hash-add [ip] <user hash-line>"
-    echo "  alias: hxa"
-    echo "  e.g. hxa postgres md532e12f215ba27cb750c9e093ce4b5127"
+    _toolkit-echo "usage: hash-add [ip] <user hash-line>" "使い方: hash-add [ip] <user hash-line>"
+    _toolkit-echo "  alias: hxa" "  alias: hxa"
+    _toolkit-echo "  e.g. hxa postgres md532e12f215ba27cb750c9e093ce4b5127" "  例: hxa postgres md532e12f215ba27cb750c9e093ce4b5127"
     return 0
   fi
 
@@ -48,9 +48,9 @@ _hash-add() {
 
 _hash-rm() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: hash-rm [ip] [username]"
-    echo "  alias: hxr"
-    echo "  no username → delete all hashes for ip"
+    _toolkit-echo "usage: hash-rm [ip] [username]" "使い方: hash-rm [ip] [username]"
+    _toolkit-echo "  alias: hxr" "  alias: hxr"
+    _toolkit-echo "  no username → delete all hashes for ip" "  username 省略時はその IP のハッシュを全削除"
     return 0
   fi
 

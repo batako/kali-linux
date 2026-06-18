@@ -14,9 +14,9 @@ export CASE_FALLBACK_NAME="_unscoped"
 
 case-set() {
   if [[ $# -lt 1 ]]; then
-    echo "usage: case-set <room>"
-    echo "  alias: cs"
-    echo "  cd to cases/<room>/ and set CASE / CASE_HOME"
+    _toolkit-echo "usage: case-set <room>" "使い方: case-set <room>"
+    _toolkit-echo "  alias: cs" "  alias: cs"
+    _toolkit-echo "  cd to cases/<room>/ and set CASE / CASE_HOME" "  cases/<room>/ に移動し、CASE / CASE_HOME を設定"
     return 1
   fi
 
@@ -117,9 +117,9 @@ case-reset() {
     case "$arg" in
       -y|--yes) yes="--yes" ;;
       -h|--help)
-        echo "usage: case-reset [-y] [<room>]"
-        echo "  delete all files under cases/<room>/ and recon DB data for the room"
-        echo "  default room: current CASE (requires case-set or pass <room>)"
+        _toolkit-echo "usage: case-reset [-y] [<room>]" "使い方: case-reset [-y] [<room>]"
+        _toolkit-echo "  delete all files under cases/<room>/ and recon DB data for the room" "  cases/<room>/ 配下の全ファイルと、そのルームの recon DB データを削除"
+        _toolkit-echo "  default room: current CASE (requires case-set or pass <room>)" "  room 省略時は現在の CASE を使用（case-set 済み、または <room> 指定が必要）"
         return 0
         ;;
       *)
@@ -178,8 +178,8 @@ case-load() {
     return 1
   fi
   if [[ $# -lt 1 ]]; then
-    echo "usage: case-load <ip|--new|--pick>"
-    echo "  change inherit source for exec-list / creds-list / scout (current IP unchanged)"
+    _toolkit-echo "usage: case-load <ip|--new|--pick>" "使い方: case-load <ip|--new|--pick>"
+    _toolkit-echo "  change inherit source for exec-list / creds-list / scout (current IP unchanged)" "  exec-list / creds-list / scout の継承元を変更（現在 IP は変えない）"
     return 1
   fi
   python3 "$RECON_APP" case-load-from "$1"
@@ -188,8 +188,8 @@ case-load() {
 # List IPs in current case (lineage, scope, activity summary)
 case-ips() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
-    echo "usage: case-ips"
-    echo "  list case IPs with lineage / load_from markers (+ in lineage, * latest load_from)"
+    _toolkit-echo "usage: case-ips" "使い方: case-ips"
+    _toolkit-echo "  list case IPs with lineage / load_from markers (+ in lineage, * latest load_from)" "  ケース内の IP 一覧を表示（lineage / load_from の印付き。+ は lineage、* は最新 load_from）"
     return 0
   fi
   if [[ -z "${CASE:-}" ]]; then
