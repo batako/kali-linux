@@ -248,11 +248,101 @@ class WpCliTests(unittest.TestCase):
         self.assertEqual(len(result.version_vulnerabilities), 1)
         self.assertEqual(len(result.themes), 1)
         self.assertTrue(result.themes[0].is_main_theme)
-        self.assertFalse(result.vuln_api.used)
+        self.assertTrue(result.vuln_api.used)
         self.assertEqual(result.vuln_api.plan, "free")
         self.assertEqual(len(result.interesting_findings), 1)
         self.assertEqual(result.interesting_findings[0].kind, "headers")
         self.assertIn("Source: Headers (Passive Detection)", wp.build_server_information(result))
+        attack_surface = wp.build_attack_surface(
+            wp.AssessResult(
+                target_url="http://target/wordpress/",
+                mode="normal",
+                use_api=True,
+                wordpress_detected=True,
+                login_page="200",
+                wp_json="200",
+                xmlrpc="unknown",
+                xmlrpc_http_status="",
+                xmlrpc_evidence="",
+                version=result.version,
+                version_status=result.version_status,
+                version_release_date=result.version_release_date,
+                version_vulnerabilities=result.version_vulnerabilities,
+                plugins=[],
+                themes=result.themes,
+                users=[],
+                http_checks=[],
+                exposure_checks=[],
+                next_actions=[],
+                report_path=Path("report.md"),
+                errors=[],
+                interesting_findings=result.interesting_findings,
+                vuln_api=wp.VulnApiInfo(used=True),
+            )
+        )
+        version_entry = next(entry for entry in attack_surface if entry.title == "WordPress 6.4.3")
+        version_text = "\n".join(version_entry.evidence)
+        self.assertIn("  CVE:", version_text)
+        self.assertIn("    - CVE-2024-0001", version_text)
+        self.assertIn("  ExploitDB:", version_text)
+        self.assertIn("    - 12345", version_text)
+
+    def test_parse_wpscan_result_extracts_nested_vulnerability_references(self) -> None:
+        payload = {
+            "vuln_api": {
+                "plan": "free",
+                "requests_remaining": 20,
+            },
+            "plugins": {
+                "mail-masta": {
+                    "slug": "mail-masta",
+                    "version": {
+                        "number": "1.0",
+                    },
+                    "vulnerabilities": [
+                        {
+                            "title": "Mail Masta <= 1.0 - Unauthenticated Local File Inclusion (LFI)",
+                            "references": {
+                                "cve": ["2016-10956"],
+                                "exploitdb": ["40290", "50226"],
+                            },
+                        }
+                    ],
+                }
+            },
+        }
+
+        result = wp.parse_wpscan_result(payload)
+        self.assertTrue(result.vuln_api.used)
+        self.assertEqual(len(result.plugins), 1)
+        self.assertEqual(result.plugins[0].vulnerabilities[0].cves, ["CVE-2016-10956"])
+        self.assertEqual(result.plugins[0].vulnerabilities[0].edb_ids, ["40290", "50226"])
+        md = wp.render_markdown(
+            wp.AssessResult(
+                target_url="http://target/wordpress/",
+                mode="normal",
+                use_api=True,
+                wordpress_detected=True,
+                login_page="200",
+                wp_json="200",
+                xmlrpc="unknown",
+                xmlrpc_http_status="",
+                xmlrpc_evidence="",
+                version="5.5.1",
+                plugins=result.plugins,
+                themes=[],
+                users=[],
+                http_checks=[],
+                exposure_checks=[],
+                next_actions=[],
+                report_path=Path("report.md"),
+                errors=[],
+                vuln_api=result.vuln_api,
+            )
+        )
+        self.assertIn("CVE-2016-10956", md)
+        self.assertIn("40290", md)
+        self.assertIn("50226", md)
 
     def test_xmlrpc_without_http_verification_is_unknown(self) -> None:
         result = wp.AssessResult(
@@ -399,13 +489,70 @@ class WpCliTests(unittest.TestCase):
         self.assertIn("WPScan API used: `yes`", md)
         self.assertIn("## Report Mode", md)
         self.assertIn("Mode: Vulnerability correlation", md)
-        self.assertIn("| 100 | mail-masta 1.0 | LFI |", md)
-        self.assertIn("Primary Target: mail-masta 1.0", md)
-        self.assertIn("1. mail-masta 1.0", md)
-        self.assertIn("Overall Risk: Critical", md)
-        self.assertIn("CVE-2016-10956", md)
-        self.assertIn("40290", md)
-        self.assertIn("50226", md)
+        self.assertIn("| 85 | mail-masta 1.0 - LFI | LFI |", md)
+        self.assertIn("Primary Target: mail-masta 1.0 - LFI", md)
+        self.assertIn("1. mail-masta 1.0 - LFI", md)
+        self.assertIn("Overall Risk: High", md)
+        self.assertIn("Vulnerability: Mail Masta <= 1.0 - Unauthenticated Local File Inclusion", md)
+        self.assertIn("  CVE:", md)
+        self.assertIn("    - CVE-2016-10956", md)
+        self.assertIn("  ExploitDB:", md)
+        self.assertIn("    - 40290", md)
+        self.assertIn("    - 50226", md)
+        self.assertNotIn("CVE: CVE-2016-10956, ", md)
+        self.assertNotIn("ExploitDB: 40290, 50226", md)
+
+    def test_multiple_plugin_vulnerabilities_are_not_collapsed(self) -> None:
+        result = wp.AssessResult(
+            target_url="http://target/wordpress/",
+            mode="normal",
+            use_api=True,
+            wordpress_detected=True,
+            login_page="200",
+            wp_json="200",
+            xmlrpc="reachable",
+            xmlrpc_http_status="200",
+            xmlrpc_evidence="XML-RPC response markers were returned",
+            version="5.5.1",
+            plugins=[
+                wp.Finding(
+                    name="mail-masta",
+                    version="1.0",
+                    vulnerabilities=[
+                        wp.VulnerabilityFinding(
+                            title="Mail Masta <= 1.0 - Unauthenticated Local File Inclusion",
+                            cves=["CVE-2016-10956"],
+                            edb_ids=["40290", "50226"],
+                        ),
+                        wp.VulnerabilityFinding(
+                            title="Mail Masta 1.0 - Multiple SQL Injection",
+                            cves=["CVE-2017-6095", "CVE-2017-6096"],
+                            edb_ids=["41438"],
+                        ),
+                    ],
+                )
+            ],
+            themes=[],
+            users=[],
+            http_checks=[],
+            exposure_checks=[],
+            next_actions=[],
+            report_path=Path("report.md"),
+            errors=[],
+            vuln_api=wp.VulnApiInfo(used=True),
+        )
+
+        md = wp.render_markdown(result)
+        self.assertIn("| 100 | mail-masta 1.0 - SQLi | SQLi |", md)
+        self.assertIn("| 85 | mail-masta 1.0 - LFI | LFI |", md)
+        self.assertIn("Vulnerability: Mail Masta <= 1.0 - Unauthenticated Local File Inclusion", md)
+        self.assertIn("Vulnerability: Mail Masta 1.0 - Multiple SQL Injection", md)
+        self.assertIn("  CVE:", md)
+        self.assertIn("    - CVE-2017-6095", md)
+        self.assertIn("    - CVE-2017-6096", md)
+        self.assertIn("  ExploitDB:", md)
+        self.assertIn("    - 41438", md)
+        self.assertNotIn("CVE: CVE-2017-6095, CVE-2017-6096", md)
 
     def test_report_mode_uses_api_usage_not_request_flag(self) -> None:
         result = wp.AssessResult(

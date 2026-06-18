@@ -436,6 +436,17 @@ def _collect_from_mapping(value: Any, keys: tuple[str, ...]) -> list[str]:
     return _dedupe_text(items)
 
 
+def _normalize_cve_identifier(value: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if text.upper().startswith("CVE-"):
+        return "CVE-" + text[4:]
+    if re.fullmatch(r"\d{4}-\d{4,}", text):
+        return f"CVE-{text}"
+    return text
+
+
 def _pick_first_text(value: Any, keys: tuple[str, ...]) -> str:
     if not isinstance(value, dict):
         return ""
@@ -637,8 +648,12 @@ def _extract_vulnerabilities(section: Any) -> list[VulnerabilityFinding]:
             continue
         title = _pick_first_text(value, ("title", "name", "slug")) or "Unknown vulnerability"
         fixed_in = _pick_first_text(value, ("fixed_in", "fixed", "fixed_version", "fixed_version_string"))
-        cves = _collect_from_mapping(value, ("cve", "cves"))
+        cves = [_normalize_cve_identifier(item) for item in _collect_from_mapping(value, ("cve", "cves"))]
         edb_ids = _collect_from_mapping(value, ("edb", "edbs", "exploitdb", "exploitdb_ids"))
+        references_value = value.get("references")
+        if isinstance(references_value, dict):
+            cves = _dedupe_text(cves + [_normalize_cve_identifier(item) for item in _collect_from_mapping(references_value, ("cve", "cves"))])
+            edb_ids = _dedupe_text(edb_ids + _collect_from_mapping(references_value, ("edb", "edbs", "exploitdb", "exploitdb_ids")))
         references: list[str] = []
         for candidate in (
             value.get("references"),
@@ -850,7 +865,7 @@ def _extract_interesting_findings(section: Any) -> list[InterestingFinding]:
 def _extract_vuln_api(section: Any) -> VulnApiInfo:
     if not isinstance(section, dict):
         return VulnApiInfo()
-    used = any(_parse_bool(section.get(candidate)) for candidate in ("used", "enabled", "present"))
+    used = any(_parse_bool(section.get(candidate)) for candidate in ("used", "enabled", "present")) or bool(section)
     return VulnApiInfo(
         used=used,
         plan=_pick_first_text(section, ("plan", "tier", "type")),
@@ -1000,12 +1015,27 @@ def _sort_vulnerabilities(vulnerabilities: list[VulnerabilityFinding]) -> list[V
 def _format_vulnerability_evidence(vulnerability: VulnerabilityFinding) -> list[str]:
     evidence = [vulnerability.title]
     if vulnerability.cves:
-        evidence.append(f"CVE: {', '.join(vulnerability.cves)}")
+        evidence.extend(vulnerability.cves)
     if vulnerability.edb_ids:
-        evidence.append(f"ExploitDB: {', '.join(vulnerability.edb_ids)}")
+        evidence.extend(vulnerability.edb_ids)
     if vulnerability.fixed_in:
         evidence.append(f"Fixed in: {vulnerability.fixed_in}")
     return evidence
+
+
+def _vulnerability_hierarchy(vulnerability: VulnerabilityFinding) -> list[str]:
+    lines = [f"Vulnerability: {vulnerability.title}"]
+    if vulnerability.cves:
+        lines.append("  CVE:")
+        for cve in vulnerability.cves:
+            lines.append(f"    - {cve}")
+    if vulnerability.edb_ids:
+        lines.append("  ExploitDB:")
+        for edb in vulnerability.edb_ids:
+            lines.append(f"    - {edb}")
+    if vulnerability.fixed_in:
+        lines.append(f"  - Fixed in: {vulnerability.fixed_in}")
+    return lines
 
 
 def build_wordpress_version_assessment(result: AssessResult) -> list[str]:
@@ -1042,9 +1072,11 @@ def build_wordpress_version_assessment(result: AssessResult) -> list[str]:
         for vulnerability in _sort_vulnerabilities(result.version_vulnerabilities)[:10]:
             lines.append(f"- {vulnerability.title}")
             if vulnerability.cves:
-                lines.append(f"  - CVE: {', '.join(vulnerability.cves)}")
+                for cve in vulnerability.cves:
+                    lines.append(f"  - {cve}")
             if vulnerability.edb_ids:
-                lines.append(f"  - ExploitDB: {', '.join(vulnerability.edb_ids)}")
+                for edb in vulnerability.edb_ids:
+                    lines.append(f"  - {edb}")
             if vulnerability.fixed_in:
                 lines.append(f"  - Fixed in: {vulnerability.fixed_in}")
         if len(result.version_vulnerabilities) > 10:
@@ -1066,9 +1098,13 @@ def build_vulnerabilities_section(result: AssessResult) -> list[str]:
         for vulnerability in _sort_vulnerabilities(result.version_vulnerabilities)[:10]:
             lines.append(f"- {vulnerability.title}")
             if vulnerability.cves:
-                lines.append(f"  - CVE: {', '.join(vulnerability.cves)}")
+                lines.append("  CVE:")
+                for cve in vulnerability.cves:
+                    lines.append(f"    - {cve}")
             if vulnerability.edb_ids:
-                lines.append(f"  - ExploitDB: {', '.join(vulnerability.edb_ids)}")
+                lines.append("  ExploitDB:")
+                for edb in vulnerability.edb_ids:
+                    lines.append(f"    - {edb}")
             if vulnerability.fixed_in:
                 lines.append(f"  - Fixed in: {vulnerability.fixed_in}")
         if len(result.version_vulnerabilities) > 10:
@@ -1089,9 +1125,13 @@ def build_vulnerabilities_section(result: AssessResult) -> list[str]:
             for vulnerability in _sort_vulnerabilities(plugin.vulnerabilities):
                 lines.append(f"  - {vulnerability.title}")
                 if vulnerability.cves:
-                    lines.append(f"    - CVE: {', '.join(vulnerability.cves)}")
+                    lines.append("    CVE:")
+                    for cve in vulnerability.cves:
+                        lines.append(f"      - {cve}")
                 if vulnerability.edb_ids:
-                    lines.append(f"    - ExploitDB: {', '.join(vulnerability.edb_ids)}")
+                    lines.append("    ExploitDB:")
+                    for edb in vulnerability.edb_ids:
+                        lines.append(f"      - {edb}")
                 if vulnerability.fixed_in:
                     lines.append(f"    - Fixed in: {vulnerability.fixed_in}")
         lines.append("")
@@ -1110,9 +1150,13 @@ def build_vulnerabilities_section(result: AssessResult) -> list[str]:
             for vulnerability in _sort_vulnerabilities(theme.vulnerabilities):
                 lines.append(f"  - {vulnerability.title}")
                 if vulnerability.cves:
-                    lines.append(f"    - CVE: {', '.join(vulnerability.cves)}")
+                    lines.append("    CVE:")
+                    for cve in vulnerability.cves:
+                        lines.append(f"      - {cve}")
                 if vulnerability.edb_ids:
-                    lines.append(f"    - ExploitDB: {', '.join(vulnerability.edb_ids)}")
+                    lines.append("    ExploitDB:")
+                    for edb in vulnerability.edb_ids:
+                        lines.append(f"      - {edb}")
                 if vulnerability.fixed_in:
                     lines.append(f"    - Fixed in: {vulnerability.fixed_in}")
         lines.append("")
@@ -1733,6 +1777,10 @@ def _vulnerability_reason_summary(vulnerabilities: list[VulnerabilityFinding]) -
     return ", ".join(_dedupe_text(reasons))
 
 
+def _plugin_vulnerability_title(plugin: Finding, vulnerability: VulnerabilityFinding) -> str:
+    return f"Plugin: {_format_plugin_label(plugin)} - {_vulnerability_reason_summary([vulnerability])}"
+
+
 def build_top_target_rows(result: AssessResult) -> list[tuple[int, str, str]]:
     rows: list[tuple[int, str, str]] = []
     seen_titles: set[str] = set()
@@ -1746,10 +1794,16 @@ def build_top_target_rows(result: AssessResult) -> list[tuple[int, str, str]]:
         rows.append((score, title, reason))
 
     for plugin in result.plugins:
+        if result.use_api and result.vuln_api.used and plugin.vulnerabilities:
+            for vulnerability in _sort_vulnerabilities(plugin.vulnerabilities):
+                add_row(
+                    _score_vulnerability_finding(vulnerability),
+                    f"{plugin.name}{f' {plugin.version}' if plugin.version else ''} - {_vulnerability_reason_summary([vulnerability])}",
+                    _vulnerability_reason_summary([vulnerability]),
+                )
+            continue
         title = f"{plugin.name}{f' {plugin.version}' if plugin.version else ''}"
-        score = _score_plugin_entry(result, plugin)
-        reason = _vulnerability_reason_summary(plugin.vulnerabilities) if result.use_api and result.vuln_api.used and plugin.vulnerabilities else "Plugin detected"
-        add_row(score, title, reason)
+        add_row(_score_plugin_entry(result, plugin), title, "Plugin detected")
 
     for theme in result.themes:
         if not _theme_is_outdated(theme) and not theme.is_main_theme and not theme.vulnerabilities:
@@ -1834,20 +1888,27 @@ def build_attack_surface(result: AssessResult) -> list[TargetEntry]:
         entries.append(entry)
 
     for plugin in result.plugins:
+        evidence_url = plugin.location or urljoin(result.target_url, f"wp-content/plugins/{_slugify(plugin.name, fallback='plugin')}/")
+        if result.use_api and result.vuln_api.used and plugin.vulnerabilities:
+            for vulnerability in _sort_vulnerabilities(plugin.vulnerabilities):
+                evidence = [f"Version: {_normalize_version_display(plugin.version)}"] + _vulnerability_hierarchy(vulnerability)
+                add_entry(
+                    TargetEntry(
+                        title=_plugin_vulnerability_title(plugin, vulnerability),
+                        score=_score_vulnerability_finding(vulnerability),
+                        evidence=evidence + ([f"URL: {evidence_url}"] if evidence_url else []),
+                        evidence_url=evidence_url,
+                        confidence=plugin.confidence or plugin.version_confidence,
+                        found_by=_found_by_lines(plugin.found_by),
+                    )
+                )
+            continue
         title = f"Plugin: {_format_plugin_label(plugin)}"
         evidence = [f"Version: {_normalize_version_display(plugin.version)}"]
         if plugin.latest_version:
             evidence.append(f"Latest version: {plugin.latest_version}")
         if plugin.location:
             evidence.append(f"Location: {plugin.location}")
-        evidence_url = plugin.location or urljoin(result.target_url, f"wp-content/plugins/{_slugify(plugin.name, fallback='plugin')}/")
-        if result.use_api and result.vuln_api.used and plugin.vulnerabilities:
-            for vulnerability in plugin.vulnerabilities:
-                evidence.append(_format_vulnerability_label(vulnerability))
-                if vulnerability.cves:
-                    evidence.append(f"CVE: {', '.join(vulnerability.cves)}")
-                if vulnerability.edb_ids:
-                    evidence.append(f"ExploitDB: {', '.join(vulnerability.edb_ids)}")
         add_entry(
             TargetEntry(
                 title=title,
@@ -1890,6 +1951,8 @@ def build_attack_surface(result: AssessResult) -> list[TargetEntry]:
         if result.use_api and result.vuln_api.used and result.version_vulnerabilities:
             total_core = len(result.version_vulnerabilities)
             evidence.append(f"Core vulnerabilities: {total_core}")
+            for vulnerability in _sort_vulnerabilities(result.version_vulnerabilities)[:10]:
+                evidence.extend(_vulnerability_hierarchy(vulnerability))
             breakdown = build_core_vulnerability_groups(result)
             evidence.append("Breakdown:")
             for category in (
@@ -2093,7 +2156,10 @@ def render_markdown(result: AssessResult) -> str:
             lines.append("Evidence:")
             evidence_lines = _dedupe_text(entry.evidence)
             for evidence in evidence_lines:
-                lines.append(f"- {evidence}")
+                if evidence.startswith("  - ") or evidence.startswith("    - "):
+                    lines.append(evidence)
+                else:
+                    lines.append(f"- {evidence}")
             if entry.found_by:
                 lines.append("Found by:")
                 for source in _dedupe_text(entry.found_by):
