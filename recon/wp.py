@@ -1998,7 +1998,6 @@ def build_attack_surface(result: AssessResult) -> list[TargetEntry]:
                 score=_score_exposure(check.path),
                 evidence=[f"HTTP status: {check.status}", f"URL: {urljoin(result.target_url, check.path)}"],
                 evidence_url=urljoin(result.target_url, check.path),
-                confidence=check.confidence,
             )
         )
 
