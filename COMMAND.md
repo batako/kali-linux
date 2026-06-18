@@ -1,139 +1,137 @@
-# コマンドリファレンス（kali-linux）
+# Command Reference (kali-linux)
 
-English: [COMMAND.en.md](COMMAND.en.md)
+How to use the **custom wrappers** loaded in zsh inside the Kali container.
 
-Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
+For flag details, each command's `-h` / `--help` is the source of truth.
 
-フラグの詳細は各コマンドの `-h` / `--help` を正とする。
+**Convention:** This document uses **full command names** in the main text. Short aliases are supplementary (listed at the end of each section/table).
 
-**記述:** 本文は **フルコマンド名** を正とする。短縮 alias は補助（各節・表の末尾に記載）。
+## Prerequisites
 
-## 前提
-
-| 変数・概念 | 説明 |
+| Variable / Concept | Description |
 |------------|------|
-| `$IP` | 調査対象 IP（`target-set` / `cases/<room>/target`、`case-set` で自動復元） |
-| `case-set <room>` | ルーム用 `cases/<room>/` を用意して選択（下記「ルーム」参照。alias: `cs`） |
-| Recon CLI | `recon/`（コンテナ内 `/opt/recon/recon.py`）。zsh ラッパ経由で使用 |
-| `recon.db` | Recon CLI の DB（`/opt/recon/data/recon.db`、ホスト `recon/data/recon.db`） |
-| `RECON_PASSLIST` | john / hydra / stegcracker の既定ワードリスト |
-| `GB_VHOST_WORDLIST` | `scout -v` IP モード用（既定: raft-small-words） |
-| `GB_DNS_WORDLIST` | `gb-dns` 用（`gb-set-dns`） |
-| `GB_THREADS` | `gb-dns` / `scout -v` のスレッド（既定 40） |
-| `GB_VHOST_EXCLUDE_LENGTH` | `scout -v` domain の ffuf `-fs` 手動上書き（未設定時は 3× probe → `-fs` または `-ac`） |
-| `GB_VHOST_MATCH_CODES` | `scout -v` domain の ffuf `-mc` 補助（既定: `200-299,301,302,307,401,403,405,421,422,500`） |
-| `GB_VHOST_NO_MC` | 非空なら `-mc` を付けず差分フィルタ（`-fs`/`-ac`）のみ |
-| `GB_VHOST_SKIP_HTTP_REDIRECT` | 非空なら HTTP が redirect-only と判断されたとき ffuf をスキップ（既定は advisory のみ） |
-| `SCOUT_STATUS_SLOTS` | `scout -s` / `-ws` で表示する **完了 dirs ジョブ**の上限（既定 **4**） |
-| `CASE_LOOSE=1` | ルーム未設定時に `cases/_unscoped/` へフォールバック |
-| `CASE_ROOT` | `/workspace/cases`（`CASE_HOME` の親） |
-| `RECON_DATA` | `/opt/recon/data`（DB ディレクトリ） |
+| `$IP` | Target IP (`target-set` / `cases/<room>/target`, auto-restored by `case-set`) |
+| `case-set <room>` | Prepare and select `cases/<room>/` for a room (see "Rooms" below. alias: `cs`) |
+| Recon CLI | `recon/` (inside container: `/opt/recon/recon.py`). Use through zsh wrappers |
+| `recon.db` | Recon CLI database (`/opt/recon/data/recon.db`, host `recon/data/recon.db`) |
+| `RECON_PASSLIST` | Default wordlist for john / hydra / stegcracker |
+| `GB_VHOST_WORDLIST` | For `scout -v` IP mode (default: raft-small-words) |
+| `GB_DNS_WORDLIST` | For `gb-dns` (`gb-set-dns`) |
+| `GB_THREADS` | Threads for `gb-dns` / `scout -v` (default 40) |
+| `GB_VHOST_EXCLUDE_LENGTH` | Manual ffuf `-fs` for `scout -v` domain mode (default: 3× probe → `-fs` or `-ac`) |
+| `GB_VHOST_MATCH_CODES` | Auxiliary ffuf `-mc` for `scout -v` domain mode (default: `200-299,301,302,307,401,403,405,421,422,500`) |
+| `GB_VHOST_NO_MC` | When set, omit `-mc` and rely on diff filters (`-fs`/`-ac`) only |
+| `GB_VHOST_SKIP_HTTP_REDIRECT` | When set, skip HTTP ffuf on strong redirect suspicion (default: advisory only) |
+| `SCOUT_STATUS_SLOTS` | Max number of **completed dirs jobs** shown by `scout -s` / `-ws` (default **4**) |
+| `CASE_LOOSE=1` | Fallback to `cases/_unscoped/` when room is unset |
+| `CASE_ROOT` | `/workspace/cases` (parent of `CASE_HOME`) |
+| `RECON_DATA` | `/opt/recon/data` (DB directory) |
 | `RECON_DB` / `RECON_DB_PATH` | `/opt/recon/data/recon.db` |
 
 ```bash
 case-set startup
 target-set 10.49.140.156
-# 別タブ（cwd が cases/startup/ なら）:
-case-sync                 # または target-set だけ（target 再読込）
+# In another tab (if cwd is cases/startup/):
+case-sync                 # or just target-set (reload target)
 target-show
 ```
 
-素の OpenSSH / ftp クライアント: `command ssh ...` / `command ftp ...`
+Raw OpenSSH / ftp clients: `command ssh ...` / `command ftp ...`
 
 ---
 
-## workspace（`/workspace`）
+## workspace (`/workspace`)
 
-ホスト `./workspace` がコンテナ `/workspace` にマウントされる。
+Host `./workspace` is mounted to container `/workspace`.
 
-| パス | 内容 |
+| Path | Contents |
 |------|------|
-| `cases/<room>/` | TryHackMe ルーム単位のファイル（下記） |
-| `exploits/` | ダウンロードした PoC・第三者 exploit（ルーム非依存） |
-| `payloads/` | 自作ペイロード（webshell 等。`upload-shell` 既定は `payloads/webshells/shell.phtml`） |
+| `cases/<room>/` | Files per TryHackMe room (see below) |
+| `exploits/` | Downloaded PoCs / third-party exploits (not room-specific) |
+| `payloads/` | Custom payloads (webshell, etc. `upload-shell` default is `payloads/webshells/shell.phtml`) |
 
-構造化データは Recon CLI → `recon.db`、シェルログ・クラック出力・手書きメモは `cases/<room>/`（`logs/` `exports/` またはルート直下）。
+Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, and handwritten notes go to `cases/<room>/` (`logs/` `exports/` or room root).
 
 ---
 
-## ルーム（`cases/`）
+## Rooms (`cases/`)
 
-`case-set` は **cd だけではない**。TryHackMe の 1 ルーム（または 1 スコープ）用の作業ディレクトリを **作成・選択** する（alias: `cs`）。
+`case-set` is **not only cd**. It **creates and selects** a working directory for one TryHackMe room (or one scope) (alias: `cs`).
 
-### `case-set <room>` がすること
+### What `case-set <room>` does
 
-1. **ディレクトリ作成** — 無ければ `mkdir -p`
+1. **Create directories** - if missing, `mkdir -p`
    `/workspace/cases/<room>/`
-   および必須サブディレクトリ `logs/` `exports/`
-2. **セッション変数** — `CASE=<room>`, `CASE_HOME=/workspace/cases/<room>`
-3. **作業ディレクトリ** — `cd "$CASE_HOME"`
-4. **入場時フック**（`_case-on-enter`）
-   - `cases/<room>/target` があれば → `$IP` を読み込み
-   - `cases/<room>/ftp-shell` があれば → `ftp-revshell` 用パスを読み込み（メッセージ表示）
+   and required subdirectories `logs/` `exports/`
+2. **Session variables** - `CASE=<room>`, `CASE_HOME=/workspace/cases/<room>`
+3. **Working directory** - `cd "$CASE_HOME"`
+4. **On-enter hook** (`_case-on-enter`)
+   - If `cases/<room>/target` exists -> load `$IP`
+   - If `cases/<room>/ftp-shell` exists -> load path for `ftp-revshell` (with message)
 
-**自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
-それらは `CASE_HOME` 直下に直接置いてよい。
+**Not auto-created** (place manually if needed): `target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
+Those can be placed directly under `CASE_HOME`.
 
-**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。`cases/<room>/hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `case-ips` で一覧。
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). Lines in `cases/<room>/hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
 
 ```bash
 case-set startup
 # [+] case: startup
 # [+] path: /workspace/cases/startup
-# [+] target: 10.49.140.156  (.../target)   # target がある場合
-# [+] ftp-shell: .../ftp-shell               # ある場合
+# [+] target: 10.49.140.156  (.../target)   # if target exists
+# [+] ftp-shell: .../ftp-shell               # if it exists
 ```
 
-### ディレクトリ例（初回 `case-set startup` 後）
+### Directory example (after first `case-set startup`)
 
 ```
 /workspace/cases/startup/
-├── logs/          # case-set で必ず作成（listen -l, ssh -l など）
-├── exports/       # case-set で必ず作成（steg-extract, john 出力など）
-├── target         # target-set で作成（任意だが推奨）
-├── hosts          # hosts コマンドで作成（THM vhost → /etc/hosts 自動適用）
-├── ftp-shell      # 任意（ルーム別 FTP/HTTP パス）
-└── …              # 取得ファイル・MEMO.md・locks.txt 等はルートに直接置いてよい
+├── logs/          # always created by case-set (listen -l, ssh -l, etc.)
+├── exports/       # always created by case-set (steg-extract, john output, etc.)
+├── target         # created by target-set (optional but recommended)
+├── hosts          # hosts command (THM vhost → auto-apply /etc/hosts)
+├── ftp-shell      # optional (room-specific FTP/HTTP path)
+└── ...            # downloaded files, MEMO.md, locks.txt, etc. can be placed at root
 ```
 
-### その他のコマンド
+### Other commands
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `case-show` | 現在の `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
-| `case-ips` | ルーム内 IP 一覧（lineage / scope / 活動サマリ。`+` = lineage、`*` = load_from） |
-| `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（lineage）だけ変更 |
-| `case-clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
-| `case-reset [-y] [<room>]` | **ルーム情報を全消去** — `cases/<room>/` の全ファイル削除（`logs/` `exports/` は空で再作成）+ recon DB の当該ルーム行 |
-| `case-open` | ルームを変えず `CASE_HOME` に cd し直す |
+| `case-show` | Current `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
+| `case-ips` | Case IP list (lineage / scope / activity; `+` = in lineage, `*` = load_from) |
+| `case-load <ip\|--new\|--pick>` | Keep current IP, change inherit source (lineage) only |
+| `case-clear` | Unset `CASE` / `CASE_HOME` (does not delete directories) |
+| `case-reset [-y] [<room>]` | **Wipe room** — delete all files under `cases/<room>/` (recreate empty `logs/` `exports/`) + recon DB rows for the room |
+| `case-open` | Re-enter `CASE_HOME` without changing room |
 
-### ルーム名のルール
+### Room naming rules
 
-- 先頭英数字、続きは英数字・`.`・`_`・`-`
-- `_unscoped` は予約（`CASE_LOOSE=1` 時のフォールバック用）
+- Must start with alphanumeric, rest can be alphanumeric / `.` / `_` / `-`
+- `_unscoped` is reserved (fallback when `CASE_LOOSE=1`)
 
-### ルーム未設定のとき
+### When room is not set
 
-`listen -l`, `ssh -l`, `steg-extract` など **ファイル出力** は `case-home` 経由で `CASE_HOME` が要る。
-未設定 → エラー。`export CASE_LOOSE=1` なら `cases/_unscoped/` に警告付きで退避。
+Commands with **file output** like `listen -l`, `ssh -l`, `steg-extract` require `CASE_HOME` via `case-home`.
+If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unscoped/` with warning.
 
 ---
 
-## exploit（PoC ランナー）
+## exploit (PoC runner)
 
-ルーム単位で exploit を選択し、**隔離 venv** 内で実行する。`case-set` 必須。状態は `cases/<room>/exploit` に保存（マルチタブ共有）。
+Select an exploit per room and run it inside an **isolated venv**. Requires `case-set`. State in `cases/<room>/exploit` (shared across tabs).
 
-ラッパー用メタ（短い形式）。`-u` 等の exploit 引数はそのまま転送。
+Wrapper meta (short forms). Exploit args like `-u` pass through unchanged.
 
-| 形式 | 説明 |
-|------|------|
-| `<CVE-id>` | 選択 + venv + pip（例: `CVE-2021-44228`） |
-| `use <id>` | 同上 |
-| `<git-url>` | `git clone`（`https://github.com/<org>/<repo>.git` 等） |
-| `fetch\|f <url> [id]` | 同上（明示） |
-| `show` `clear` `prepare` | 状態表示 / 解除 / pip 再実行 |
-| `--use` `--fetch` … | 長いフラグ（上と同義） |
-| `-h` | ヘルプ |
+| form | description |
+|------|-------------|
+| `<CVE-id>` | select + venv + pip (e.g. `CVE-2021-44228`) |
+| `use <id>` | same |
+| `<git-url>` | `git clone` (`https://github.com/<org>/<repo>.git`, etc.) |
+| `fetch\|f <url> [id]` | same (explicit) |
+| `show` `clear` `prepare` | status / unset / re-pip |
+| `--use` `--fetch` … | long flags (same) |
+| `-h` | help |
 
 ```bash
 exploit https://github.com/<org>/<repo>.git
@@ -142,190 +140,184 @@ exploit CVE-2021-44228 -u https://target/
 exploit -u https://target/
 ```
 
-任意: `/workspace/exploits/<id>/exploit.manifest`（`entry=` `python=` `fetch=`）。
+Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch=`).
 
-**注意:** 第三者 PoC は常に venv 内 python で実行（システムへの `pip install` なし）。`scout` 連携の `exploit-reject`（`erj`）とは別コマンド。
+**Note:** third-party PoCs always run via venv python (never system `pip install`). Distinct from scout's `exploit-reject` (`erj`).
 
 ---
 
-## ターゲット IP
+## Target IP
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `target-set <ip>` | `cases/<room>/target` に保存し `$IP` 設定。IP 変更時は直前 target に recon データがあれば **自動継承**（alias: `ts`） |
-| `target-set` | `target` から `$IP` を再読込（`cases/<room>/` 以下の cwd からルーム推定可） |
-| `target-set <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
-| `target-set <ip> --pick` | 継承元 IP を番号で選択（last_seen + open/dirs 件数） |
-| `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
-| `target-show` | 現在のターゲット IP（RHOST） |
-| `lhost` | 攻撃マシン側 IP のみ出力（LHOST: tun0 → eth0） |
-| `target-clear` | クリア |
-| `hosts <host> [aliases...]` | `cases/<room>/hosts` に upsert（同一 hostname は行を上書き。IP は `$IP` / `target`）して `/etc/hosts` に適用 |
-| `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
-| `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
-| `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
-| `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
-| `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
-| `scan -f -j 4` | full を **4 並列**（1 wave あたり最大 4000 ポート、`recon.db.lock` でマージ） |
-| `scan --force` | 再スキャン（basic=top 1000、full=`-p-`） |
-| `scan -r` / `scan --report` | DB の OPEN + CLOSED（`scan` 終了時と同型・nmap なし） |
-| `scan -n` / `-q` | dry-run / ポート表なし |
+| `target-set <ip>` | Save to `cases/<room>/target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target; **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
+| `target-set` | Reload `$IP` from `target` (can infer room if cwd is under `cases/<room>/`) |
+| `target-set <ip> --new` | Pivot — no load_from, no hosts IP rewrite (do not inherit old IP scan/dirs) |
+| `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |
+| `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
+| `target-show` | Current target IP (RHOST) |
+| `lhost` | Print attacker IP only (LHOST: tun0 → eth0) |
+| `target-clear` | Clear IP |
+| `hosts <host> [aliases...]` | Upsert `cases/<room>/hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
+| `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
+| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (`case-set` auto-applies; `target-set` rewrites old IP lines) |
+| `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
+| `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
+| `scan -f` / `scan --full` | **TCP 1-65535 automatically to completion** (single command end-to-end) |
+| `scan -f -j 4` | Run full scan in **4 parallel jobs** (up to 4000 ports per wave, merged with `recon.db.lock`) |
+| `scan --force` | Re-scan (basic=top 1000, full=`-p-`) |
+| `scan -r` / `scan --report` | Print DB OPEN + CLOSED only (same shape as post-`scan`, no nmap) |
+| `scan -n` / `-q` | dry-run / hide port table |
 
 ```bash
 case-set startup && target-set 10.49.140.156
-scout             # 偵察初手（scan → プローブ → dirs BG → dirs 完了まで自動 watch）
-scout -r          # 偵察サマリ（ポート + プローブ + PATHS、再実行なし）
-scout --force     # スキャン・dirs を再実行（DB は消さず上書き）
-scout -s            # dirs 状態（1 回）
-scout -ws           # dirs 完了まで自動更新のみ（-s の対）
-exec-list && exec-view <id>     # 同期プローブの出力
-scan              # ポートだけ（定番 1000）
-scan -f           # 65535 完了まで自動
-scan -f -j 4      # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
-scan -r           # ポート表だけ再表示（軽い）
-case-reset -y     # ルーム全消去（複数 IP・lineage 含む）
+scout             # first recon action (scan -> probes -> dirs BG -> auto watch until dirs done)
+scout -r          # recon summary (ports + probes + PATHS, no re-run)
+scout --force     # rescan / re-dispatch dirs (overwrite DB, no wipe)
+scout -s            # dirs status (one-shot)
+scout -ws           # auto-refresh status only until done (pair of -s)
+exec-list && exec-view <id>     # output of synchronous probes
+scan              # ports only (classic top 1000)
+scan -f           # auto through all 65535
+scan -f -j 4      # 4-way parallel (2-4 recommended on THM, can stop with Ctrl+C)
+scan -r           # print only port table again (lightweight)
+case-reset -y     # wipe whole room (all IPs + lineage)
 ```
 
-coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキップ）。ポート偵察は **`scan` / `scan -f` / `scan -r`** のみ。
+coverage is **per port number** (`scan`-covered ports are skipped even in `scan -f`). Port recon is only via **`scan` / `scan -f` / `scan -r`**.
 
 ---
 
-## 偵察（scout）
+## Recon (scout)
 
-**偵察の司令塔**（alias: `s`）。ポートスキャン・サービスプローブ・ディレクトリ探索を順序付きで実行する。攻撃（exploit）やルーム完走は含まない。
+**Recon orchestrator** (alias: `s`). Executes port scan, service probes, and directory discovery in order. Exploitation and full room completion are out of scope.
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
-| `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + **OS** + プローブ + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
-| `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
-| `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
-| `scout -ep` / `--exploit-pack [ip]` | **AI 提出資料** — searchsploit + Metasploit を更新し `cases/<room>/plans/` に Markdown 保存（パスのみ表示） |
-| `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
-| `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
-| `scout -r -se [ip]` | search してからフルレポート |
-| `scout -fp` / `--full-ports [ip]` | **TCP 1–65535**（`-sC -sV`）のみ。完了後 **自動で `-se`**（`searchsploit -u` 後は手動で `-se`） |
-| `scout -fp -j N` | 上記を N 並列 nmap で実行 |
-| `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
-| `scout -d -x <ext> [path]` | gobuster 拡張子 fuzz（`-x` のみなら catalog **dirs-ext** の default: `common`） |
-| `scout -dx /path/stem[.ext]` | **ffuf** + **ext-fuzz** リスト（`-dx` 必須。`script.txt` → `script.FUZZ`） |
-| `scout -dx /path/stem.FUZZ` | 同上（stem に `.` があるときの明示マーカー） |
-| `scout -dx /path/stem.*` | stem 固定で拡張子のみ fuzz |
-| `scout -d /path/stem.FUZZ/` | **リテラル dir** として gobuster（末尾 `/` でマーカー無効） |
-| `scout -d /path/stem.FUZZ` | **リテラル path** として gobuster（`-dx` なしでは ext fuzz しない） |
-| `scout -d /path/file.ext` | **通常 gobuster** |
-| `scout -d -w <id>` | カタログ id（例: `dirbuster-small`）または絶対 path |
-| `scout -d`（`-w` 省略） | catalog default（`common` 等） |
-| `scout -d -w` | 対話ピッカー（`-x` で dirs / dirs-ext） |
-| `scout -d -w browse` | 全カテゴリ browse |
-| `scout -ds` / `-ds [path]` | **並列 dir** — **standard** tier まで（累積 3 本） |
-| `-ds -x <ext>` | ext fuzz — **standard** tier まで（累積 2 本） |
-| `scout -ds -p next [path]` | 次 tier の adds のみ（済み job スキップ） |
-| `scout -ds -p light\|standard\|wide\|deep` | 指定 tier まで累積 |
-| `scout -ds -w id -w id` | 明示 id のみ並列 |
-| `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
-| `scout -d -A <ua>` / `-ds -A <ua>` | dir 探索の `User-Agent` を指定 |
-| `scout -d <fqdn>` | FQDN（`.` あり）は `-H` と同義（`/app.example/` にはならない） |
-| `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。Domain: ffuf **HTTPS→HTTP**；3× probe（status/size/redirect/hash/headers）→ **`-fs` または `-ac`**；HTTP redirect-only は advisory（スキップは `GB_VHOST_SKIP_HTTP_REDIRECT`）；ヒットは `hosts` 自動追記 |
-| `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
-| `scout -ws` / `--wait-dirs [sec]` | dirs 状態を自動更新。**running が 0 になったら終了**（`-s` の対） |
-| `scout -n` | 実行せずコマンド計画を表示 |
-| `scout --no-plan` | Phase 2.5 の auth enqueue をスキップ（フル scout 時） |
-| `scout --plan [ip]` | auth enqueue のみ（phase 2.5・hydra は走らせない） |
-| `scout --force` | Phase 1 の再スキャン、Phase 3 dirs の再 dispatch（**`-se` には不要** — `-se` は常に refresh） |
+| `scout [ip]` | Run Phase 1-3 + **exploit search**. **After dirs dispatch, auto-watch like `-ws`** (ends when running=0) |
+| `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + **OS** + probes + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
+| `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** only (DB) |
+| `scout -re` / `--report-exploits [ip]` | **EXPLOITS** only (DB, no re-search) |
+| `scout -ep` / `--exploit-pack [ip]` | **AI submission pack** — refresh searchsploit + Metasploit, save Markdown under `cases/<room>/plans/` (prints paths only) |
+| `scout -rt` / `--report-paths [ip]` | **PATHS** tree only (DB, merged dirs hits) |
+| `scout -se` / `--search-exploits [ip]` | Run and cache searchsploit |
+| `scout -r -se [ip]` | Search first, then full report |
+| `scout -fp` / `--full-ports [ip]` | **TCP 1-65535** (`-sC -sV`) only. **Auto `-se`** after scan (after `searchsploit -u`, run `-se` manually) |
+| `scout -fp -j N` | Same with N parallel nmap workers |
+| `scout -d` / `scout --dirs [path] [ip]` | gobuster dir only. `-d /admin` -> `http://$IP/admin/`. **Auto-watch to completion** |
+| `scout -d -x <ext> [path]` | Extension fuzz (`-x` only uses catalog **dirs-ext** default: `common`) |
+| `scout -d -w <id>` | Catalog id (e.g. `dirbuster-small`) or absolute path |
+| `scout -d` (`-w` omitted) | Catalog default (`common`, etc.) |
+| `scout -d -w` | Interactive picker (`-x` switches dirs / dirs-ext) |
+| `scout -d -w browse` | Browse all categories |
+| `scout -ds` / `-ds [path]` | **Parallel dir** - up to **standard** tier (3 jobs cumulative) |
+| `-ds -x <ext>` | ext fuzz - up to **standard** tier (2 jobs cumulative) |
+| `scout -ds -p next [path]` | Only add next-tier jobs (skip already completed jobs) |
+| `scout -ds -p light\|standard\|wide\|deep` | Cumulative up to specified tier |
+| `scout -ds -w id -w id` | Parallel with explicit ids only |
+| `scout -d -H <hostname>` / `-ds -H <name>` | vhost dir bust — `http://$IP/` + gobuster `-H Host:<name>` (no `/etc/hosts` needed) |
+| `scout -d -A <ua>` / `-ds -A <ua>` | set `User-Agent` for dir discovery |
+| `scout -d mafialive.thm` | dotted FQDN is treated like `-H` (not as `/mafialive.thm/` path) |
+| `scout -v` / `--vhosts [domain\|ip]` | vhost discovery. Domain: ffuf **HTTPS→HTTP**; 3× probe (status/size/redirect/hash/headers) → **`-fs` or `-ac`**; HTTP redirect-only is advisory (`GB_VHOST_SKIP_HTTP_REDIRECT` to skip); hits auto-added to `hosts` |
+| `scout -s` / `--status [ip]` | Show dirs job status **once** |
+| `scout -ws` / `--wait-dirs [sec]` | Auto-refresh dirs status. **Ends when running=0** (pair of `-s`) |
+| `scout -n` | Show command plan without execution |
+| `scout --no-plan` | Skip Phase 2.5 auth enqueue during full scout |
+| `scout --plan [ip]` | Auth enqueue only (phase 2.5; no hydra) |
+| `scout --force` | Re-scan Phase 1 and re-dispatch Phase 3 dirs (**not needed for `-se`** - `-se` always refreshes) |
 
-**前提:** `$IP` または `[ip]`。Web 探索対象は DB 上 **open** かつ **service が Web 系**（`http` / `https` / `nginx` 等）のポート。`scout -d` は事前に Phase 1 が済んでいること（未スキャンなら `scout` を先に実行）。
+**Prerequisite:** `$IP` or `[ip]`. Web exploration targets ports marked **open** in DB and with **web-like service** (`http` / `https` / `nginx`, etc.). `scout -d` requires Phase 1 already done (run `scout` first if not scanned).
 
-### Phase 1 — ポートスキャン
+### Phase 1 - Port scan
 
-内部で `scan`（top 1000、`-sC -sV`）を 1 回実行。結果は `recon.db` の ports / coverage に記録。
+Internally runs `scan` once (top 1000, `-sC -sV`). Results are recorded in `recon.db` ports / coverage.
 
-### Phase 2 — サービスプローブ（同期）
+### Phase 2 - Service probes (synchronous)
 
-**open の全ポート**を走査し、DB の **service** 名が **SSH / Web 系**（および ftp）に合うものだけ短いプローブを実行する（22 / 80 固定ではない。8080 の tomcat 等も対象）。
+Scans **all open ports**, and runs short probes only where DB **service** matches **SSH / Web type** (and ftp) (not fixed to 22/80; tomcat on 8080 is included).
 
-| service（例） | プローブ |
+| service (examples) | Probe |
 |---------------|----------|
 | `ssh` | nmap `ssh2-enum-algos` |
-| `ftp`（`sftp` 除く） | `curl` ftp |
-| Web 系（`http` / `nginx` / `apache` / `tomcat` 等） | `curl` |
+| `ftp` (excluding `sftp`) | `curl` ftp |
+| Web-like (`http` / `nginx` / `apache` / `tomcat`, etc.) | `curl` |
 
-service 不明のポートはスキップ（プローブ結果で service を上書きしない）。出力はコンソールと **`executions`**（`exec-list` / `exec-view`）。`task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`。
+Ports with unknown service are skipped (probe results do not overwrite service). Output goes to console and **`executions`** (`exec-list` / `exec-view`). `task_type`: `scout-ssh`, `scout-http`, `scout-https`, `scout-ftp`.
 
-**再実行:** 同一 `ip` + **command** で過去に **成功**（`done`, `exit_code=0`）があれば再実行せず `(cached)` と表示する。`http://IP/` と `http://IP:80/`、`https://IP/` と `https://IP:443/` は URL 正規化により同一扱い。非標準ポート（例: `:8080`）はポート付きのまま別 probe。**`scout --force` は probe には効かない**（dirs / scan / exploit のみ）。
+**Re-run behavior:** For same `ip` + **command**, if a previous run **succeeded** (`done`, `exit_code=0`), it does not rerun and shows `(cached)`. URL normalization treats `http://IP/` and `http://IP:80/` as same, and `https://IP/` and `https://IP:443/` as same. Non-standard ports (e.g. `:8080`) remain separate probes. **`scout --force` does not affect probes** (dirs / scan / exploit only).
 
-### Phase 2.5 — task-plan（同期・enqueue のみ）
+### Phase 2.5 - task-plan (sync, enqueue only)
 
-Phase 2 の後、**open ポート**の service から **auth-quick** タスクを `tasks` テーブルに登録する（**hydra は走らせない**）。実行は **`strike`**。
+After Phase 2, enqueue **auth-quick** tasks into `tasks` from open port services (**does not run hydra**). Run them with **`strike`**.
 
-| service（例） | task_type | 内容 |
+| service (examples) | task_type | Action |
 |---------------|-----------|------|
-| `ftp`（`sftp` 除く） | `auth-ftp-anon` | `ftp-quick-userpass.txt`（anonymous / ftp / guest 等の定番組） |
-| `ssh`（`sftp` 除く） | `auth-ssh-quick` | `ssh-quick-userpass.txt`（空パス → user-as-pass → 追試行） |
+| `ftp` (excluding `sftp`) | `auth-ftp-anon` | `ftp-quick-userpass.txt` (anonymous / ftp / guest quick pairs) |
+| `ssh` (excluding `sftp`) | `auth-ssh-quick` | `ssh-quick-userpass.txt` (empty pass, then user-as-pass, then retries) |
 | `postgres` / `postgresql` | `auth-pg-quick` | seclists postgres betterdefaultpasslist |
 | `mysql` / `mariadb` | `auth-my-quick` | `hydra -l root -e ns` |
 
-dedupe: `{case}:{ip}:{port}:{task_type}`。`done` / `running` は再 enqueue しない。非標準ポートは `-s {port}` をコマンドに埋め込む。
+Dedupe key: `{case}:{ip}:{port}:{task_type}`. Skips re-enqueue when `done` or `running`. Non-standard ports use `-s {port}` in the command.
 
 ```bash
 scout                    # task-plan at end
-scout --no-plan          # enqueue スキップ
-scout --plan [ip]        # 手動 enqueue のみ
-scout --plan -n           # dry-run
-strike [ip]              # pending auth タスクを実行 → cl
-strike -l                  # タスク一覧
-strike -l --all-case     # ルーム内全 IP
-strike --force           # 完了済み auth を再実行
+scout --no-plan          # skip enqueue
+scout --plan [ip]        # manual enqueue only
+scout --plan -n          # dry-run
+strike [ip]              # run pending auth tasks -> cl
+strike -l                  # list tasks
+strike -l --all-case     # all IPs in case
+strike --force           # redo completed auth tasks
 strike -n                # dry-run
 ```
 
-環境変数: `SCOUT_NO_PLAN=1` で task-plan オフ。
+Env: `SCOUT_NO_PLAN=1` disables task-plan.
 
-### Phase search-exploits — searchsploit（同期）
+### Phase search-exploits - searchsploit (synchronous)
 
-Phase 2 の後（`scout` 本番実行時）、**open ポート**の `service` / `version`（nmap `product` + `version` + `extrainfo`）から `searchsploit -j` を実行。DoS / PoC は `--exclude` で除外し、**remote / webapps** 系を優先してポートごとに最大 **5 件**を `artifacts`（`exploit_report` JSON）へ保存。
+After Phase 2 (during normal `scout` run), runs `searchsploit -j` using `service` / `version` (nmap `product` + `version` + `extrainfo`) from **open ports**. DoS / PoC are excluded via `--exclude`, and up to **5** prioritized **remote / webapps** items per port are saved to `artifacts` as `exploit_report` JSON.
 
-**`scout -r` の EXPLOITS は再検索不要:** 各候補に **title / 絶対パス / run コマンド / `searchsploit -m EDB`** を載せる。生 JSON は `exec-view <id>`（`executions` キャッシュ）に残る。
+**No re-search needed for EXPLOITS in `scout -r`:** each candidate includes **title / absolute path / run command / `searchsploit -m EDB`**. Raw JSON remains in `exec-view <id>` (`executions` cache).
 
-**試して非該当と確認した候補**は手動で reject して `scout -re` / `scout -r` から除外する（未試行の候補はそのまま表示）。
+If you tried a candidate and confirmed it is not applicable, reject it manually to hide it from `scout -re` / `scout -r` (untested items remain visible).
 
 ```bash
-exploit-reject 50383                      # EDB-50383 を非表示（$IP 向け）
-exploit-reject --port 80/tcp 50383        # ポート限定
+exploit-reject 50383                      # hide EDB-50383 (for $IP)
+exploit-reject --port 80/tcp 50383        # port-scoped
 exploit-reject 50383 --note "400 Bad Request"
-exploit-rejects                           # reject 一覧
-exploit-unreject 50383                    # 元に戻す
+exploit-rejects                           # list rejects
+exploit-unreject 50383                    # restore
 ```
 
-（alias: `erj` / `erl` / `eru`）
+(alias: `erj` / `erl` / `eru`)
 
-`scout -se` で再検索しても reject は維持される。
+Rejects persist even after re-search with `scout -se`.
 
-| 入力例 | searchsploit クエリ |
+| Input example | searchsploit query |
 |--------|---------------------|
 | `http` + `Apache httpd 2.4.49` | `Apache httpd 2.4.49` |
-| `mysql` + `5.7.33` | `5.7.33` または product 行 |
-| `http` のみ（product 不明） | スキップ（広すぎる） |
+| `mysql` + `5.7.33` | `5.7.33` or product line |
+| `http` only (product unknown) | Skip (too broad) |
 
-`task_type`: `scout-exploit`。詳細 stdout は `exec-view <id>`。サマリは **`scout -r`** の `--- EXPLOITS ---`。
+`task_type`: `scout-exploit`. Detailed stdout is in `exec-view <id>`. Summary appears under `--- EXPLOITS ---` in **`scout -r`**.
 
 ```bash
-scout -se                # searchsploit → キャッシュ
-scout -re                # キャッシュ済み EXPLOITS を表示
-scout -rp                # ポート一覧のみ
-scout -r                 # フルレポート
-scout -r -se             # 検索してからフルレポート
-scout -se                # searchsploit -u 後など、明示的に再検索（常に refresh）
+scout -se                # searchsploit -> cache
+scout -re                # show cached EXPLOITS
+scout -rp                # ports only
+scout -r                 # full report
+scout -r -se             # search, then full report
+scout -se                # explicit re-search after searchsploit -u, etc. (always refresh)
 ```
 
-### Phase 3 — ディレクトリ探索（非同期）
+### Phase 3 - Directory discovery (asynchronous)
 
-Phase 1 後に Web 系 open ポートがあれば、**ポートごと**に gobuster dir を **バックグラウンド**で起動する（例: 80 と 8080 が両方 Web なら並列 2 本）。
+After Phase 1, if web-like open ports exist, starts gobuster dir **in background** **per port** (e.g. 80 and 8080 both web -> 2 parallel jobs).
 
-- **既定 wordlist:** **`-w` 省略時**は catalog default。**`-w` のみ**でピッカー。
-- **ログ:** `cases/<room>/logs/`（`gb-dirs` と同様の命名規則）。
-- **ジョブ管理:** `recon.db` の `scout_jobs`（種別・URL・状態・ログパス）。同一 **URL + ワードリスト**で **running** または **done** のジョブがあれば再 dispatch しない（`http://IP/` と `http://IP:80/` は同一扱い。**`scout --force`** で再実行）。**`-x`（extensions）はキャッシュキーに含まれない** — 同じ wordlist を別 extension で走らせたいときも `--force` が必要（例: `-x html` 済みの `common` を `-x ticket` で再 dispatch したい場合）。
-- **コンソール:** gobuster のリアルタイム出力は出さない。`scout` / `scout -d` 実行後は **自動で dirs watch**（`-ws` 相当）。単独確認は **`scout -s`** / **`scout -ws`**。
+- **Default wordlist:** when **`-w` is omitted**, use catalog default. **`-w` only** opens picker.
+- **Logs:** `cases/<room>/logs/` (same naming convention as `gb-dirs`).
+- **Job management:** `scout_jobs` in `recon.db` (type, URL, status, log path). For same **URL + wordlist**, if a job is **running** or **done**, do not dispatch again (`http://IP/` and `http://IP:80/` are equivalent. use **`scout --force`** to rerun). **`-x` (extensions) is not part of cache key** - to run same wordlist with different extensions, `--force` is required (e.g. rerun `common` with `-x ticket` after already doing `-x html`).
+- **Console:** no real-time gobuster stream. After `scout` / `scout -d`, **dirs watch starts automatically** (`-ws` equivalent). For ad-hoc checks, use **`scout -s`** / **`scout -ws`**.
 
 ```bash
 scout
@@ -335,82 +327,75 @@ scout -ws
 scout --dirs -w dirbuster-small -t 20
 scout -d /admin
 scout -d /admin -x bak,old,txt
-scout -d /scripts/script.txt              # ffuf + SecLists ext list (script.old …)
-scout -H www.example.com -d /scripts/script.txt  # vhost + extension fuzz
-scout -d /scripts/script.txt -w fuzzing-file-extensions
 scout -d /assets -x php,bak -t 50 -w dirbuster-small
 scout -d /admin -x ticket
 scout -d /admin -x ticket -w
 scout -d /admin -x ticket -w dirbuster-small
 scout -d /admin -w browse
 scout -d http://$IP:8080/
-scout -d -H www.example.com
+scout -d -H mafialive.thm
 scout -d -A 'Mozilla/5.0'
-scout -ds -H www.example.com /admin
+scout -ds -H mafialive.thm /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads
 scout -ds -x php /backup
 scout -ds -x bak -p next /api
 scout -ds -p deep -t 10
-scout --force              # dirs / scan をやり直す
+scout --force              # redo dirs / scan
 ```
 
-### `scout -s` / `-ws` / `-r` / `-rt` の PATHS
+### PATHS in `scout -s` / `-ws` / `-r` / `-rt`
 
-`-s` / `-r` / **`-rt`** は **ジョブ一覧（メタデータ）** と **PATHS（統合ツリー）** を分けて表示する（`-rt` は PATHS のみ）。
+`-s` / `-r` / **`-rt`** show **job list (metadata)** and **PATHS (merged tree)** separately (`-rt` shows PATHS only).
 
-| ブロック | 内容 |
+| Block | Content |
 |----------|------|
-| **jobs** | id・URL・wordlist 名・状態・pid・ログパス（ヒット本文は出さない） |
-| **`--- PATHS ---`** | 表示対象ジョブの dirs ヒットを **サイトルート基準の階層ツリー**にマージ。**IP 直スキャン**（`http://10.x.x.x/`）と **`-H` vhost スキャン**（`http://www.example.com/` 等、scheme/port は元 URL から継承）は別ツリー |
+| **jobs** | id, URL, wordlist name, status, pid, log path (no hit body shown) |
+| **`--- PATHS ---`** | Merge dirs hits from shown jobs into a **site-root-based hierarchical tree** |
 
-`-s` の jobs は **完了分を古い順**（新しいものが下）、**running は常に末尾**。完了ジョブの表示上限は **`SCOUT_STATUS_SLOTS`**（既定 **4**、並列 dirs 本数に合わせて調整）。超過分はヘッダに `N older hidden`。
+Jobs in `-s` are ordered as **completed first from oldest** (newest lower), and **running always at the end**. Display limit for completed jobs is **`SCOUT_STATUS_SLOTS`** (default **4**, tune to your parallel dirs count). Hidden overflow is shown as `N older hidden` in header.
 
-`-r` / `-rt` の PATHS は dirs ジョブを **origin + vhost** ごとにマージする（再実行なし・DB のみ）。同一 IP:port でも `s -d` と `s -d -H www.example.com` は混ざらない。
+PATHS in `-r` / `-rt` merge only the **latest dirs job per URL** (no re-execution, DB-only).
 
-**PATHS の例**（ルート dirs + `-d /etc/` の結果を統合）:
+**PATHS example** (merged from root dirs + `-d /etc/`):
 
 ```
 --- PATHS ---
-http://10.0.0.1/
+http://10.49.140.183/
   admin/  301
   etc/  301
     squid/  301
-
-http://www.example.com/
-  login/  200
-  dashboard/  301
 ```
 
-数字は gobuster の HTTP ステータス。200 / 301 / 302 / 401 のみ表示（ノイズ・拡張子 fuzz は除外）。
+Numbers are gobuster HTTP status. Only 200 / 301 / 302 / 401 are shown (noise and extension fuzz are excluded).
 
-### 出力の見方
+### How to read outputs
 
-| 種別 | 確認方法 |
+| Type | How to check |
 |------|----------|
-| 偵察サマリ（ポート + PROBES + PATHS + HINTS + EXPLOITS） | **`scout -r`** |
-| ポートのみ | **`scout -rp`** |
-| PATHS ツリーのみ | **`scout -rt`** |
-| exploit 一覧（DB） | **`scout -re`** |
-| AI 提出資料（searchsploit + MSF） | **`scout -ep`** |
-| exploit 検索（キャッシュ更新） | **`scout -se`** / **`scout -r -se`** |
-| スキャン・同期プローブ | コンソール、`exec-list` / `exec-view`（probe は成功済みなら `(cached)`） |
-| ディレクトリ探索（ジョブ + PATHS ツリー） | **`scout -s`** / **`scout -ws`**、ログファイル |
+| Recon summary (ports + PROBES + PATHS + HINTS + EXPLOITS) | **`scout -r`** |
+| Ports only | **`scout -rp`** |
+| PATHS tree only | **`scout -rt`** |
+| exploit list (DB) | **`scout -re`** |
+| AI submission pack (searchsploit + MSF) | **`scout -ep`** |
+| exploit search (refresh cache) | **`scout -se`** / **`scout -r -se`** |
+| scan and synchronous probes | Console, `exec-list` / `exec-view` (probe shows `(cached)` if already successful) |
+| directory discovery (jobs + PATHS tree) | **`scout -s`** / **`scout -ws`**, log files |
 
-手動で gobuster を回す場合は **`scout -ds`**（並列）または **`scout -d`**（単一 wordlist）。
+For manual gobuster runs, use **`scout -ds`** (parallel) or **`scout -d`** (single wordlist).
 
 ---
 
-## ヒント / メモ（recon DB）
+## Hints / Notes (recon DB)
 
-ページから拾った文字列・codeword・「あとで調べる」メモを **ルーム（`CASE`）単位**で DB に保存。`case-set` 済みなら IP 不要。`scout -r` の **HINTS** セクションにも出る。
+Save strings, codewords, and "investigate later" notes from pages into DB **per room (`CASE`)**. If `case-set` is done, IP is not required. Also appears in **HINTS** section of `scout -r`.
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `hint-add [-t tag] text...` | ヒントを保存（alias: `ha`） |
-| `hint-list` | 一覧（id 付き。alias: `hl`） |
-| `hint-rm <id>` | 削除（alias: `hr`） |
+| `hint-add [-t tag] text...` | Save hint (alias: `ha`) |
+| `hint-list` | List hints with id (alias: `hl`) |
+| `hint-rm <id>` | Delete hint (alias: `hr`) |
 
 ```bash
 case-set lianyu
@@ -418,50 +403,50 @@ hint-add go!go!go!
 hint-add -t codeword vigilante
 hint-add -t island-page 'The Code Word is: </p><h2 style="color:white"> vigilante</style><'
 hint-list
-scout -r          # --- HINTS --- に表示（CASE 設定時）
-hint-rm 3         # id=3 を削除
+scout -r          # shown under --- HINTS --- (when CASE is set)
+hint-rm 3         # delete id=3
 ```
 
-`-t` / `--tag` は任意ラベル。同じルーム + tag + 本文は重複保存しない。
+`-t` / `--tag` is an optional label. Same room + tag + body is deduplicated.
 
 ---
 
-## 認証情報（recon DB）
+## Credentials (recon DB)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `creds-add [-c comment] [ip] <user> <pass>` | 手動登録（alias: `ca`。`-c` で用途メモ。`???` 等は `noglob` 付き） |
-| `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`case-set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
-| `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
-| `hash-list [--json] [ip]` | ハッシュ一覧（`user<TAB>stored<TAB>state`）。alias: `hlist` |
-| `hash-add [ip] <user hash-line>` | 手動登録（alias: `hxa`） |
-| `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
-| `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
-| `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
-| `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`--deep` で詳細、`-s` で差分のみ） |
-| `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
-| `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
-| `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
+| `creds-add [-c comment] [ip] <user> <pass>` | Manual add (alias: `ca`. `-c` sets usage hint) |
+| `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `case-set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
+| `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
+| `hash-list [--json] [ip]` | Hash list (`user<TAB>stored<TAB>state`). alias: `hlist` |
+| `hash-add [ip] <user hash-line>` | Manual add (alias: `hxa`) |
+| `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
+| `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
+| `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP (target: IP or FQDN; default user: anonymous, `hydraftp -h`) |
+| `reqfuzz [options] <url> <param> <start> <end>` | Simple Intruder-like request fuzzing for GET/POST (`--deep` for details, `-s` shows only diffs) |
+| `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (`-U` for username spray) |
+| `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
+| `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
-`reqfuzz` のデフォルト出力は `VALUE / STATUS / BYTES`。`--deep` で `WORDS / LINES / HASH / NOTE` を追加する。
+`reqfuzz` prints `VALUE / STATUS / BYTES` by default. Use `--deep` to add `WORDS / LINES / HASH / NOTE`.
 
-`ssh` の自動ログインは **anonymous を除外**（FTP 用。strike `auth-ftp-anon` 成功分は `cl` に入り `ftp` で利用）。SSH 定番は **strike `auth-ssh-quick`**。
+Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp-anon` hits go to `cl` for `ftp`). SSH quick defaults run via **strike `auth-ssh-quick`**.
 
 ---
 
 ## SSH
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `ssh [user] [ip]` | DB の creds + `sshpass` で接続 |
-| `ssh -i <key> [user] [ip]` | 鍵（パスフレーズは creds から） |
-| `ssh [user]`（`-i` 省略） | 同一 ip+user で前回成功した `ssh -i` の鍵を自動再利用 |
-| `ssh -l` / `ssh --log` | セッションを `cases/.../logs/ssh_*` に記録 |
-| `ssh-list [ip]` | creds 一覧（`creds-list` と同系） |
-| `ssh-get` | `creds-list` の creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰。省略時 `cases/<room>/exports/scp/`。alias: `sget`） |
-| `ssh-put` | `creds-list` の creds で **scp アップロード**（`-r` 再帰。alias: `sput`） |
+| `ssh [user] [ip]` | Connect using DB creds + `sshpass` |
+| `ssh -i <key> [user] [ip]` | Key-based login (passphrase loaded from creds) |
+| `ssh [user]` (no `-i`) | Reuses the last successful `ssh -i` key for that ip+user |
+| `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |
+| `ssh-list [ip]` | List creds (same style as `creds-list`) |
+| `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive; default `cases/<room>/exports/scp/`. alias: `sget`) |
+| `ssh-put` | **scp upload** using creds from `creds-list` (`-r` recursive. alias: `sput`) |
 
-**注意:** `-l` は OpenSSH の login user ではなく **ログ保存**。ユーザー指定は `ssh holt` のように引数で。
+**Note:** `-l` is for **log save**, not OpenSSH login user. Specify user as argument, e.g. `ssh holt`.
 
 ```bash
 ssh-get tryhackme.asc credential.pgp
@@ -475,42 +460,42 @@ ssh-put -i id_rsa script.sh /home/user/script.sh
 
 ## FTP
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `ftp [user] [ip]` | DB creds で接続 |
-| `ftp -l` | セッションログ |
-| `ftp -A <host>` | システム ftp の匿名モード（OpenSSH の `-A` とは別） |
+| `ftp [user] [ip]` | Connect with DB creds |
+| `ftp -l` | Session log |
+| `ftp -A <host>` | System ftp anonymous mode (not OpenSSH `-A`) |
 
 ---
 
 ## svcguess
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `svcguess <host> <port>` | TCP バナー / HTTP / HTTPS / 証明書を確認してサービス候補を推定する |
+| `svcguess <host> <port>` | Probe TCP banner, HTTP, HTTPS, and cert info; print a service guess |
 
 ---
 
-## Metasploit（msfr）
+## Metasploit (msfr)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `msfr list` | 登録済み preset 一覧 |
-| `msfr <preset> [opts]` | MSF モジュールを case 既定で実行 |
+| `msfr list` | List registered presets |
+| `msfr <preset> [opts]` | Run an MSF module with case defaults |
 
-`RHOSTS` = `$IP`、`RPORT` = scout / 環境変数 / family 既定、`LHOST` = `lhost`（exploit 時）。login preset（`pg-login` / `my-login` / `ssh-login` / `ftp-login`）は **定番の簡易チェック**。DB 系は MSF 内蔵、SSH/FTP は seclists `*-betterdefaultpasslist.txt`。フルスプレーは `hydrassh` / `hydraftp`。成功時は `cl` へ自動登録。`pg-hashdump` / `my-hashdump` は `hlist` へ。続く `pg-sql` / `my-sql` 等は `$IP` の `cl` からユーザ選択（手動 `ca` も可。`SSH`/`hydra` 等の comment は除外）。`-u USER` または `msfr pg-sql USER` で指定可。
+`RHOSTS` = `$IP`, `RPORT` = scout / env / family default, `LHOST` = `lhost` (exploits). Login presets (`pg-login`, `my-login`, `ssh-login`, `ftp-login`) are **quick default checks**. DB modules use MSF built-ins; SSH/FTP use seclists `*-betterdefaultpasslist.txt`. Full spray → `hydrassh` / `hydraftp`. Hits go to `cl`; `pg-hashdump` / `my-hashdump` to `hlist`. Follow-up modules (`pg-sql`, `my-sql`, etc.) pick from `cl` for `$IP` (manual `ca` included; comments tagged `SSH`/`hydra`/etc. excluded). Use `-u USER` or `msfr pg-sql USER`.
 
-| preset | 用途 |
-|--------|------|
-| `pg-login` … `pg-shell` | PostgreSQL 系 |
-| `my-login` … `my-shell` | MySQL 系（`mysql-*` エイリアス可） |
-| `ssh-login` | SSH 簡易ログイン（定番のみ → `cl`） |
-| `ftp-login` | FTP 簡易ログイン（anonymous 等 → `cl`） |
-| `tomcat-mgr` | Tomcat manager upload（`-u` / `-U`） |
+| preset | purpose |
+|--------|---------|
+| `pg-login` … `pg-shell` | PostgreSQL |
+| `my-login` … `my-shell` | MySQL (`mysql-*` aliases) |
+| `ssh-login` | SSH quick login (defaults only → `cl`) |
+| `ftp-login` | FTP quick login (anonymous etc. → `cl`) |
+| `tomcat-mgr` | Tomcat manager upload (`-u` / `-U`) |
 
 ```bash
 msfr pg-login
-msfr pg-sql -n              # dry-run（コマンドと resource のみ表示）
+msfr pg-sql -n              # dry-run (print command + resource only)
 msfr my-login
 msfr my-sql -u root
 msfr ssh-login
@@ -518,185 +503,170 @@ msfr tomcat-mgr -u bob -w bubbles -p 1234
 msfr -m exploit/... -u user --creds --stay
 ```
 
-詳細: [docs/Metasploit.md](docs/Metasploit.md)
+See [docs/Metasploit.md](docs/Metasploit.md).
 
 ---
 
-## リスナー・RCE トリガー
+## Listener / RCE trigger
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `listen [port]` | `nc -lvnp`（既定 4444） |
-| `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
-| `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`-u user[:pass]` で HTTP Basic（pass 省略時は `cl`） |
+| `listen [port]` | `nc -lvnp` (default 4444) |
+| `listen -l [port]` | Save connection log to `cases/.../logs/revshell_*` |
+| `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0`. `-u user[:pass]` for HTTP Basic (pass from `cl` if omitted) |
 
-`ftp-revshell` の前に **別ターミナルで `listen`** を起動する。
+Before `ftp-revshell`, start `listen` in **another terminal**.
 
 ---
 
-## FTP → webshell → reverse shell
+## FTP -> webshell -> reverse shell
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `ftp-put-shell [opts] [ip]` | ペイロードを FTP put → URL 表示 |
-| `ftp-revshell` | put + `webrsh` で revshell（alias: `ftprsh`） |
-| `ftp-revshell -u` | upload 省略（既に置いた shell の URL のみ） |
+| `ftp-put-shell [opts] [ip]` | Upload payload via FTP put -> print URL |
+| `ftp-revshell` | put + `webrsh` for reverse shell (alias: `ftprsh`) |
+| `ftp-revshell -u` | Skip upload (use URL of already uploaded shell only) |
 
-### よく使うオプション
+### Common options
 
-| オプション | 意味 |
+| Option | Meaning |
 |------------|------|
-| `-d <dir>` | FTP 上のサブディレクトリ（例: `ftp`） |
-| `-w <prefix>` | HTTP パス接頭（例: `/files`） |
-| `-U <url>` | shell の完全 URL（パス計算スキップ） |
-| `-n <name>` | リモートファイル名（既定 `shell.php`） |
-| `-p <path>` | ローカルペイロード |
-| `-P <port>` | revshell ポート（既定 4444） |
+| `-d <dir>` | Subdirectory on FTP (e.g. `ftp`) |
+| `-w <prefix>` | HTTP path prefix (e.g. `/files`) |
+| `-U <url>` | Full shell URL (skip path calculation) |
+| `-n <name>` | Remote filename (default `shell.php`) |
+| `-p <path>` | Local payload path |
+| `-P <port>` | Reverse shell port (default 4444) |
 
-### ケース別設定
+### Per-room settings
 
-`cases/<room>/ftp-shell`（`case-set` で自動読込）:
+`cases/<room>/ftp-shell` (auto-loaded by `case-set`):
 
 ```bash
 REMOTE_DIR=ftp
 WEB_PREFIX=/files
 ```
 
-例（Startup）: `http://$IP/files/ftp/shell.php`
+Example (Startup): `http://$IP/files/ftp/shell.php`
 
-設定なしの既定: `ftp://$IP/shell.php` → `http://$IP/shell.php`
+Default without config: `ftp://$IP/shell.php` -> `http://$IP/shell.php`
 
 ```bash
 case-set startup
-listen 4444          # 別ターミナル
+listen 4444          # another terminal
 ftp-revshell
-# または
+# or
 ftp-revshell -d ftp -w /files
 ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
 ```
 
-詳細: `ftp-revshell -h`
+Details: `ftp-revshell -h`
 
 ---
 
 ## steghide
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `steg-extract <image> [wordlist]` | info → 空 PW → stegcracker → 展開（alias: `stegx`） |
-| `imgrpt [-o path] [-B] <image>` | 画像メタデータ収集 → Markdown レポート（exiftool / GPS / fixmagic / steghide / binwalk / strings） |
-| `imgmap [-q] <image>` | GPS があれば Google マップ URL を出力、なければ「位置情報なし」 |
-| `imgsearch [-q] [-O] [-u url] <image>` | 画像を一時アップロード → Google Lens 逆画像検索 URL（`-O` でブラウザ起動） |
+| `steg-extract <image> [wordlist]` | info -> empty PW -> stegcracker -> extract (alias: `stegx`) |
+| `imgrpt [-o path] [-B] <image>` | Collect image metadata -> Markdown report (exiftool / GPS / fixmagic / steghide / binwalk / strings) |
+| `imgmap [-q] <image>` | Print Google Maps URL from GPS, or report no location |
+| `imgsearch [-q] [-O] [-u url] <image>` | Temp upload -> Google Lens reverse image search URL (`-O` opens browser) |
 
-`steg-extract` 出力: `cases/<room>/exports/<name>.steg.out`（ルーム未設定時は画像横）
+`steg-extract` output: `cases/<room>/exports/<name>.steg.out` (if room unset, next to image)
 
-`imgrpt` 出力: `cases/<room>/exports/<name>_imgrpt_<ts>.md`（`-B` で binwalk 省略）
+`imgrpt` output: `cases/<room>/exports/<name>_imgrpt_<ts>.md` (`-B` skips binwalk)
 
-ログ: `cases/<room>/logs/steg_*`
+Logs: `cases/<room>/logs/steg_*`
 
-手動コマンド → [CHEATSHEET.md](CHEATSHEET.md)
+Manual commands -> [CHEATSHEET.md](CHEATSHEET.md)
 
 ---
 
-## repolog（Git 履歴の徹底洗い出し）
+## repolog (exhaustive Git history)
 
-| コマンド | 説明 |
-|----------|------|
-| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | mirror clone → 全 ref のコミットを時系列で列挙（**case-set 必須**） |
-| `repolog -f <url-list>` | 複数リポを一括（`github_repos.txt` など 1 行 1 URL） |
-| `repolog -u <user>` / `@user` / `repolog <user>` | GitHub API でユーザのリポ一覧取得 → 一括 scan（`--user` と同じ） |
-| `repolog -M [-S] [-R] -f <url-list>` | 全リポからユニークな名前+メール一覧（`-S` 個人メール疑いのみ、`-R` でリポ名付き） |
+| Command | Description |
+|---------|-------------|
+| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | Mirror clone -> all refs (**case-set required**) |
+| `repolog -f <url-list>` | Batch repos (one URL per line, e.g. `MEMO.md`) |
+| `repolog -M [-S] [-R] -f <url-list>` | Unique name+email pairs across repos (`-S` suspect only, `-R` repo prefix) |
+| `repolog -u <user>` / `@user` | GitHub API repo list -> batch scan (same as `--user`) |
 
-`git clone --mirror` + `git log --all --date-order`。**デフォルトブランチだけの `gh api` より漏れが少ない**（全ブランチ・タグ）。
+Uses `git clone --mirror` + `git log --all --date-order`. Mirrors always under `cases/<room>/exports/repolog/`; re-run uses **fetch only**. `-F` forces re-clone.
 
-`--user` は `type=owner` かつ **fork 除外**。`GITHUB_TOKEN` / `GH_TOKEN` で API レート緩和可。
+`--user`: `type=owner`, forks excluded by default. Optional `GITHUB_TOKEN` / `GH_TOKEN`.
 
-mirror は常に `cases/<room>/exports/repolog/<host>_<owner>_<repo>.git` に保持。再実行時は **fetch のみ**（無駄な再 clone なし）。`-F` で強制再 clone。
+| Option | Description |
+|--------|-------------|
+| `-F` | Remove mirror and clone from scratch |
+| `-U` | Commit URLs only on stdout |
+| `-M` | Unique name+email on stdout (`name<TAB>email`) |
+| `-S` | With `-M`: non-noreply (suspect) only |
+| `-R` | With `-M`: `owner/repo<TAB>name<TAB>email` |
+| `-o` | Report path (directory when multiple repos) / email list file with `-M` |
+| `-q` | Print output path(s) only |
 
-| オプション | 説明 |
-|------------|------|
-| `-u` / `--user` | GitHub ユーザ名（またはプロフィール URL） |
-| `@user` / `user` | 位置引数でも可（`owner/repo` とは区別: `/` なし） |
-| `--forks` | `-u` と併用: fork を含める |
-| `-l` | `-u` と併用: リポ一覧保存のみ（既定: `github_repos.txt`） |
-| `-F` | mirror を削除して最初から clone し直す |
-| `-U` | コミット URL のみ stdout（1 行 1 URL） |
-| `-M` | 名前+メールのみ stdout（`name<TAB>email`、author + committer、重複除去） |
-| `-S` | `-M` と併用: noreply 以外（`check`）のみ |
-| `-R` | `-M` と併用: `owner/repo<TAB>name<TAB>email` 形式 |
-| `-o` | レポート path（複数リポ時はディレクトリ）／`-M` 時はメール一覧ファイル |
-| `-q` | 出力 path のみ |
-
-出力: `cases/<room>/exports/<repo>_repolog_<ts>.md`（refs 一覧・コミット表・ユニークメール）
-
-```bash
-cs sakura
-repolog -u sakurasnowangelaiko             # 一覧取得 → mirror → レポート
-repolog @sakurasnowangelaiko -l            # 一覧だけ（github_repos.txt）
-repolog sakurasnowangelaiko -M -S          # 同上（省略形）
-repolog -u someuser --forks                # fork 含む
-repolog -M -f github_repos.txt             # 保存済み一覧で再実行
-```
+Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
 
 ---
 
-## Recon CLI（DB・スキャン）
+## Recon CLI (DB / scan)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `recon-init` | `recon.db` 初期化 |
-| `net-scan <cidr>` | ネットワークスキャン → DB |
-| `net-view` | 登録ホスト一覧 |
-| `scout [ip]` | 偵察司令塔。`scout -r` / `scout -d` / `scout -s` / `scout -ws` |
+| `recon-init` | Initialize `recon.db` |
+| `net-scan <cidr>` | Network scan -> DB |
+| `net-view` | List registered hosts |
+| `scout [ip]` | Recon orchestrator. `scout -r` / `scout -d` / `scout -s` / `scout -ws` |
 
-## 実行履歴・成果物
+## Execution history / artifacts
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `exec-run [ip] <cmd...>` | コマンド実行を記録（alias: `x`） |
-| `exec-run -s [ip] <cmd...>` | サイレント（出力抑制寄り。alias: `xs`） |
-| `exec-cache [ip] <cmd...>` | キャッシュ付き（同一 ip+cmd は再利用可。alias: `xc` / `xcs` は `-s` 付き） |
-| `exec-list [ip]` | 実行一覧。**`case-set` 済みなら lineage + 現在 IP**（reboot 継承）。`exec-list --all-case` でルーム内全 IP、`exec-list -l` で全ホスト（alias: `el`） |
-| `exec-view <id> [--tail N]` | 出力表示（alias: `ev`） |
-| `exec-form <id> [--shell]` | 実行 stdout からアップロードフォーム解析 |
-| `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |
-| `artifact-list [ip]` | 成果物一覧（`artifact-list -l` で全ホスト。alias: `al`） |
-| `artifact-del <id>` | 成果物削除 |
-| `lfi-loot [-k] [--name LOGICAL=TARGET] <file\|dir\|url>...` | 保存済みレスポンス / 取得ファイル / **URL** を解析し、`cases/<room>/exploits/lfi-loot/` に保存（`-k` で TLS 検証スキップ。URL に `FUZZ` を含めると既定 14 パスを自動試行） |
+| `exec-run [ip] <cmd...>` | Run command with record (alias: `x`) |
+| `exec-run -s [ip] <cmd...>` | Silent mode (suppressed output bias. alias: `xs`) |
+| `exec-cache [ip] <cmd...>` | With cache (same ip+cmd can be reused. alias: `xc` / `xcs` is with `-s`) |
+| `exec-list [ip]` | Execution list. **If `case-set` is active: load_from + current IP** (reboot inheritance). `exec-list --all-case` lists all room IPs, `exec-list -l` all hosts (alias: `el`) |
+| `exec-view <id> [--tail N]` | Show output (alias: `ev`) |
+| `exec-form <id> [--shell]` | Parse upload form from execution stdout |
+| `artifact-add [ip] <kind> <value> [key]` | Add artifact |
+| `artifact-list [ip]` | List artifacts (`artifact-list -l` lists all hosts. alias: `al`) |
+| `artifact-del <id>` | Delete artifact |
+| `lfi-loot [-k] [--name LOGICAL=TARGET] <file\|dir\|url>...` | Parse saved responses / acquired files / **URLs** and write results to `cases/<room>/exploits/lfi-loot/` (`-k` skips TLS verify; `FUZZ` in URL tries 14 default include paths) |
 
-例: `exec-run curl -sS http://$IP/` → `exec-view <id>` → `upload-shell <id>`
+Example: `exec-run curl -sS http://$IP/` -> `exec-view <id>` -> `upload-shell <id>`
 
 ---
 
 ## Gobuster
 
-偵察フローでは **`scout -d`**（単一） / **`scout -ds`**（並列）が dir 探索の正。DNS / vhost はこちら。
+In recon flow, **`scout -d`** (single) / **`scout -ds`** (parallel) are the proper dir discovery commands. Use these for DNS / vhost:
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `scout -d [path]` | 単一 wordlist（catalog default / `-w` / ピッカー）— 上記「偵察（scout）」参照 |
-| `scout -ds [path]` | 並列 dir（default: standard tier；`-p next` で昇格） |
-| `gb-dirs [opts] [url]` | **非推奨** — `scout -ds` へ委譲 |
-| `gb-dns [domain]` | DNS ブルート（実 DNS 問い合わせ） |
-| `scout -v [domain\|ip]` | vhost 列挙（上記 scout 表参照） |
-| `gb-vhost [domain\|ip]` | **非推奨** — `scout -v` へ委譲 |
+| `scout -d [path]` | Single wordlist (catalog default / `-w` / picker) - see "Recon (scout)" above |
+| `scout -ds [path]` | Parallel dir (default: standard tier; upgrade with `-p next`) |
+| `gb-dirs [opts] [url]` | **Deprecated** - delegated to `scout -ds` |
+| `gb-dns [domain]` | DNS brute-force (real DNS queries) |
+| `scout -v [domain\|ip]` | vhost discovery (see scout table above) |
+| `gb-vhost [domain\|ip]` | **Deprecated** — delegates to `scout -v` |
 
-**`-ds` 省略** = **standard** tier まで（累積）。**`-p next`** = 次 tier の adds のみ。
+Omitting **`-p`** in `-ds` = cumulative up to **standard** tier. **`-p next`** = only add next-tier jobs.
 
-| tier | dirs（`-x` なし）累積 | dirs-ext（`-x`）累積 |
+| tier | dirs (without `-x`) cumulative | dirs-ext (`-x`) cumulative |
 |------|----------------------|---------------------|
 | light | common, quickhits | common |
 | standard | + raft-small-directories | + dirbuster-small |
 | wide | + raft-small-files | + dirbuster-medium |
 | deep | + dirbuster-small, raft-small-words | + raft-small-files |
 
-aliases: `fast→light`, `ctf→standard`。旧 dirs `-p deep`（4 jobs）は **`wide`** に変更。
+aliases: `fast->light`, `ctf->standard`. Legacy dirs `-p deep` (4 jobs) is now **`wide`**.
 
-DNS ワードリストの対話設定:
+Interactive DNS wordlist selection:
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `gb-set-dns` | `GB_DNS_WORDLIST` を選択 |
+| `gb-set-dns` | Select `GB_DNS_WORDLIST` |
 
 ```bash
 case-set overpass
@@ -705,116 +675,116 @@ scout -ds /admin
 scout -ds -p next /assets
 scout -ds -x php /backup
 scout -ds -p wide -n
-hosts example.com         # apex のみ先に登録
-scout -v example.com      # HTTPS→HTTP。ヒットは hosts に自動追記
-scout -v --https example.com
-scout -v              # IP 直叩き vhost
-gb-dns example.com    # 実 DNS がある環境向け
+hosts lookup.thm
+scout -v lookup.thm       # THM: HTTPS→HTTP Host header fuzz
+scout -v --https lookup.thm
+scout -v              # vhost against IP
+gb-dns example.com    # when real DNS exists
 ```
 
 ---
 
-## クラック（john）
+## Cracking (john)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john → 成功時 `creds-add` |
-| `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john → `credential.pgp` 復号 → 平文を表示 |
-| `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | 1行/ファイル/URL を john。引数なし（または `-a`）で `hlist` 全件バッチ → 成功時 `cl`。`-b` で creds を `borg@$IP` に保存 |
-| `zip-crack <zip> [wordlist]` | zip ハッシュ |
-| `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | フォルダ内の Borg リポジトリを検出 → 全アーカイブを `borg extract` |
+| `sshkey-crack [-f] [-u user] <key> [wordlist]` | ssh2john + john -> `creds-add` on success |
+| `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john -> decrypt `credential.pgp` -> print plaintext |
+| `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | Single hash/file/URL to john. No arg (or `-a`) cracks all pending `hlist` entries → `cl` on success. `-b` saves creds as `borg@$IP` |
+| `zip-crack <zip> [wordlist]` | zip hash |
+| `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | Detect Borg repo in directory -> `borg extract` all archives |
 
 ```bash
 msfr pg-hashdump && hlist && hash-crack      # hlist → john → cl
 hash-crack -b http://$IP/etc/squid/passwd   # creds-list: borg@$IP
-borg-crack <dir>                            # creds-list の borg を自動使用
+borg-crack <dir>                            # auto-use borg from creds-list
 borg-crack -u <user> <dir>
 borg-crack -p <passphrase> <dir>
 ```
 
-展開先: `exports/<repo名>/borg/`（`case-set` 必須）。`borg-crack` は `-u` 省略時 **creds-list の `borg`**（`RECON_BORG_CREDS_USER`）を優先。
+Extraction target: `exports/<repo_name>/borg/` (`case-set` required). If `-u` is omitted, `borg-crack` prioritizes **`borg` from creds-list** (`RECON_BORG_CREDS_USER`).
 
 ---
 
-## Web アップロード（フォーム POST）
+## Web upload (form POST)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `upload-shell [opts] [<exec_id>\|]<url>` | `shell.phtml` を multipart POST（alias: `upsh`） |
-| `exec-form <exec_id>` | `exec-view` で見た HTML からフォーム項目をプレビュー |
-| `shell-url` / `shell-cmd` | URL 組み立て・`?cmd=` テスト |
+| `upload-shell [opts] [<exec_id>\|]<url>` | multipart POST of `shell.phtml` (alias: `upsh`) |
+| `exec-form <exec_id>` | Preview form fields from HTML seen in `exec-view` |
+| `shell-url` / `shell-cmd` | Build URL / test `?cmd=` |
 
-既定ペイロード: `/workspace/payloads/webshells/shell.phtml`
+Default payload: `/workspace/payloads/webshells/shell.phtml`
 
 ```bash
 exec-run curl -sS http://$IP/panel/
 upload-shell 63
 ```
 
-`upload-shell -h` 参照。
+See `upload-shell -h`.
 
 ---
 
-## enc（Base64 / Base32 / Base58 / Base10）
+## enc (Base64 / Base32 / Base58 / Base10)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `enc -d <str>` / `… \| enc -d` | b10 + b64 + b32 + b58 を試してデコード |
-| `enc -e <str>` | 全形式でエンコード |
-| `enc -t b10 -d <digits>` | 10進整数 → バイト列（ASCII） |
-| `enc -t b10 -e <str>` | 文字列 → 10進整数 |
-| `enc -t b64 -d <str>` | Base64 のみ |
-| `enc -t b32 -d <str>` | Base32 のみ |
-| `enc -t b58 -d <str>` | Base58 のみ |
+| `enc -d <str>` / `... \| enc -d` | Try and decode b10 + b64 + b32 + b58 |
+| `enc -e <str>` | Encode in all formats |
+| `enc -t b10 -d <digits>` | decimal integer -> byte sequence (ASCII) |
+| `enc -t b10 -e <str>` | string -> decimal integer |
+| `enc -t b64 -d <str>` | Base64 only |
+| `enc -t b32 -d <str>` | Base32 only |
+| `enc -t b58 -d <str>` | Base58 only |
 
-`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。
-旧名 `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` は alias。`enc -h`
+If `-t` is omitted, all types are tried. b10 works for input with **0-9 only**. `enc -d` (alias: `dec`).
+Legacy names `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` are aliases. `enc -h`
 
-## rot（Caesar / ROT）
+## rot (Caesar / ROT)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `rot -a <str>` / `rot -a -f <file>` / `… \| rot -a` | シフト 0–25 をすべて表示 |
+| `rot <str>` / `rot -f <file>` / `... \| rot` | Show all shifts 0-25 |
 
-`rot -a 'MAF{...}'` → `THM{` の行（shift 7）を探す。旧名 `rotall`。`rot -h`
+`rot 'MAF{...}'` -> find the line with `THM{` (shift 7). Legacy name `rotall`. `rot -h`
 
-## vig（Vigenère）
+## vig (Vigenere)
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `vig -a <cipher>` | 鍵長 1–3 を総当たり（flag らしい行だけ） |
-| `vig -a --all <cipher>` | フィルタなし |
-| `vig -a -n 4 <cipher>` | 鍵長上限（4 以上は遅い） |
-| `vig -d -k KEY <cipher>` | 復号 |
-| `vig -e -k KEY <plain>` | 暗号化 |
-| `vig -K -p PLAIN <cipher>` | 既知平文から鍵を復元 |
+| `vig -a <cipher>` | Brute-force key lengths 1-3 (only likely-flag lines) |
+| `vig -a --all <cipher>` | No filtering |
+| `vig -a -n 4 <cipher>` | Max key length (4+ is slow) |
+| `vig -d -k KEY <cipher>` | Decrypt |
+| `vig -e -k KEY <plain>` | Encrypt |
+| `vig -K -p PLAIN <cipher>` | Recover key from known plaintext |
 
-`vig -a 'CIPHER{...}'` → `key THM: TRYHACKME{...}`。外枠が分かるとき `vig -K -p TRYHACKME '...'` → `THM`。
-`-f` / パイプ可。旧名 `vigd` `vige` `vigall` `vigkey` は alias。`vig -h`
+`vig -a 'CIPHER{...}'` -> `key THM: TRYHACKME{...}`. If wrapper text is known, `vig -K -p TRYHACKME '...'` -> `THM`.
+Supports `-f` / pipes. Legacy `vigd` `vige` `vigall` `vigkey` are aliases. `vig -h`
 
-## Magic byte 修復
+## Magic byte repair
 
-| コマンド | 説明 |
+| Command | Description |
 |----------|------|
-| `fixmagic <file>` | magic byte をチェックし、必要なときだけ修復 |
-| `fixmagic -o out.png <file>` | 出力先指定 |
-| `fixmagic -n <file>` | チェックのみ（修復しない） |
-| `fixmagic -i <file>` | 必要時のみ上書き（`.bak` を残す） |
-| `magic <file>` | magic byte からファイル種別を推定 |
-| `magic -r TYPE [-o out] <file>` | 修復して保存（`-o` 省略時は自動で `<name>_<type>.<ext>`） |
+| `fixmagic <file>` | Check magic byte and repair only if needed |
+| `fixmagic -o out.png <file>` | Specify output path |
+| `fixmagic -n <file>` | Check only (no repair) |
+| `fixmagic -i <file>` | In-place only when needed (keeps `.bak`) |
+| `magic <file>` | Guess file type from magic bytes |
+| `magic -r TYPE [-o out] <file>` | Repair and save (`-o` omitted => auto `<name>_<type>.<ext>`) |
 
-修復不要なら `[=] ok` で終了。PNG / JPEG / GIF に対応。
-`fixmagic broken.png` — 壊れていれば `broken_fixed.png`、正常なら何も書かない。`fixmagic -h`
-`magic broken.png` — `PNG` / `JPEG` / `GIF` / `BMP` / `WEBP` / `ICO` / `ZIP` / `RAR` / `7Z` / `GZIP` / `PDF` / `ELF` を推定。`magic -h`
-`magic -r PNG broken.bin` — `broken_png.bin` のように自動保存。`-o` で別名保存。`magic -h`
+If no repair is needed, exits with `[=] ok`. Supports PNG / JPEG / GIF.
+`fixmagic broken.png` - if broken, writes `broken_fixed.png`; if valid, writes nothing. `fixmagic -h`
+`magic broken.png` - guesses `PNG` / `JPEG` / `GIF` / `BMP` / `WEBP` / `ICO` / `ZIP` / `RAR` / `7Z` / `GZIP` / `PDF` / `ELF`. `magic -h`
+`magic -r PNG broken.bin` - saves as `broken_png.bin` by default; `-o` writes elsewhere. `magic -h`
 
 ---
 
-## エイリアス
+## Aliases
 
-### ラッパ
+### Wrappers
 
-| フルコマンド | alias |
+| Full command | alias |
 |--------------|-------|
 | `case-set` | `cs` |
 | `target-set` | `ts` |
@@ -850,9 +820,9 @@ upload-shell 63
 | `pop3-get` | `p3g` |
 | `pop3-dump` | `p3d` |
 
-### その他
+### Others
 
-| コマンド | alias |
+| Command | alias |
 |----------|-------|
 | `ss -tulnp` | `ports` |
 | `python3 -m http.server 8000` | `http` |
@@ -866,14 +836,14 @@ upload-shell 63
 
 ---
 
-## ドキュメントに載せないもの
+## Not documented for users
 
-内部ヘルパ（直接は使わない）: `ftp-login`, `ssh-login`, `target-load`, `case-home`, `_revshell-lhost` など。
-`python3 $RECON_APP …` は上記 zsh コマンド経由が正。
+Internal helpers (not for direct use): `ftp-login`, `ssh-login`, `target-load`, `case-home`, `_revshell-lhost`, etc.
+`python3 $RECON_APP ...` should be invoked through the zsh commands above.
 
 ---
 
-## ヘルプ一覧
+## Help list
 
 ```bash
 ftp-revshell -h
@@ -895,27 +865,27 @@ rot -h
 vig -h
 fixmagic -h
 ftp -h
-hydraweb   # 引数不足時に usage 表示
+hydraweb   # shows usage when args are missing
 hydrabasic -h
 ```
 
-## 索引（ユーザー向けコマンド一覧）
+## Index (user-facing commands)
 
-フル名のみ。括弧内は alias。
+Full names only. Alias is shown in parentheses.
 
-`case-set`（`cs`）`case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
-`target-set`（`ts`）`target-show` `target-clear` ·
-`scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
+`case-set` (`cs`) `case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
+`target-set` (`ts`) `target-show` `target-clear` ·
+`scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` ·
-`creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
-`hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
-`hash-list`（`hlist`）`hash-add`（`hxa`）`hash-rm`（`hxr`） ·
-`ssh` `ssh-list` `ssh-get`（`sget`）`ssh-put`（`sput`）· `ftp` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
-`steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
-`exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
-`artifact-add` `artifact-list`（`al`）`artifact-del` `lfi-loot` ·
-`exploit` · `exploit-reject`（`erj`）`exploit-rejects`（`erl`）`exploit-unreject`（`eru`）·
+`creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
+`hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
+`hash-list` (`hlist`) `hash-add` (`hxa`) `hash-rm` (`hxr`) ·
+`ssh` `ssh-list` `ssh-get` (`sget`) `ssh-put` (`sput`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
+`steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
+`exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
+`artifact-add` `artifact-list` (`al`) `artifact-del` `lfi-loot` ·
+`exploit` · `exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
-`sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell`（`upsh`）`postcmd`（`pcmd`）`shell-url` `shell-cmd` ·
-`pop3`（`p3`）`pop3-list`（`p3l`）`pop3-get`（`p3g`）`pop3-dump`（`p3d`）`hydrapop3` ·
-`enc`（`dec`）`rot` `vig` `fixmagic` · `msfr` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
+`sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·
+`pop3` (`p3`) `pop3-list` (`p3l`) `pop3-get` (`p3g`) `pop3-dump` (`p3d`) `hydrapop3` ·
+`enc` (`dec`) `rot` `vig` `fixmagic` · `msfr` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`
