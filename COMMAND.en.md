@@ -634,6 +634,7 @@ Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
 | `artifact-add [ip] <kind> <value> [key]` | Add artifact |
 | `artifact-list [ip]` | List artifacts (`artifact-list -l` lists all hosts. alias: `al`) |
 | `artifact-del <id>` | Delete artifact |
+| `lfi-loot [-k] [--name LOGICAL=TARGET] <file\|dir\|url>...` | Parse saved responses / acquired files / **URLs** and write results to `cases/<room>/exploits/lfi-loot/` (`-k` skips TLS verify; `FUZZ` in URL tries 14 default include paths) |
 
 Example: `exec-run curl -sS http://$IP/` -> `exec-view <id>` -> `upload-shell <id>`
 
@@ -884,7 +885,7 @@ Full names only. Alias is shown in parentheses.
 `ssh` `ssh-list` `ssh-get` (`sget`) `ssh-put` (`sput`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
-`artifact-add` `artifact-list` (`al`) `artifact-del` ·
+`artifact-add` `artifact-list` (`al`) `artifact-del` `lfi-loot` ·
 `exploit` · `exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·

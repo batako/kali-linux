@@ -2079,6 +2079,11 @@ def main():
 
         sys.exit(exploit_main(sys.argv[2:]))
 
+    elif cmd == "lfi-loot":
+        from lfi_loot import main as lfi_loot_main
+
+        sys.exit(lfi_loot_main(sys.argv[2:]))
+
     else:
         print(f"unknown command: {cmd}")
         sys.exit(1)

@@ -662,6 +662,7 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 | `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |
 | `artifact-list [ip]` | 成果物一覧（`artifact-list -l` で全ホスト。alias: `al`） |
 | `artifact-del <id>` | 成果物削除 |
+| `lfi-loot [-k] [--name LOGICAL=TARGET] <file\|dir\|url>...` | 保存済みレスポンス / 取得ファイル / **URL** を解析し、`cases/<room>/exploits/lfi-loot/` に保存（`-k` で TLS 検証スキップ。URL に `FUZZ` を含めると既定 14 パスを自動試行） |
 
 例: `exec-run curl -sS http://$IP/` → `exec-view <id>` → `upload-shell <id>`
 
@@ -912,7 +913,7 @@ hydrabasic -h
 `ssh` `ssh-list` `ssh-get`（`sget`）`ssh-put`（`sput`）· `ftp` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
 `steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
-`artifact-add` `artifact-list`（`al`）`artifact-del` ·
+`artifact-add` `artifact-list`（`al`）`artifact-del` `lfi-loot` ·
 `exploit` · `exploit-reject`（`erj`）`exploit-rejects`（`erl`）`exploit-unreject`（`eru`）·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
 `sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell`（`upsh`）`postcmd`（`pcmd`）`shell-url` `shell-cmd` ·
