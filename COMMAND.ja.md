@@ -529,6 +529,7 @@ msfr -m exploit/... -u user --creds --stay
 |----------|------|
 | `listen [port]` | `nc -lvnp`（既定 4444） |
 | `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
+| `listen -d [port]` | `tar` ストリームを受信して `cases/<room>/exports/listen_<ts>/` に展開（`nc -lvnp PORT | tar xf - -C ...`）。ターゲット側の送信コマンドも表示 |
 | `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`-u user[:pass]` で HTTP Basic（pass 省略時は `cl`） |
 
 `ftp-revshell` の前に **別ターミナルで `listen`** を起動する。

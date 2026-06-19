@@ -516,6 +516,7 @@ See [docs/Metasploit.md](docs/Metasploit.md).
 |----------|------|
 | `listen [port]` | `nc -lvnp` (default 4444) |
 | `listen -l [port]` | Save connection log to `cases/.../logs/revshell_*` |
+| `listen -d [port]` | Receive `tar` stream and extract under `cases/<room>/exports/listen_<ts>/` (`nc -lvnp PORT | tar xf - -C ...`); also prints target-side send command |
 | `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0`. `-u user[:pass]` for HTTP Basic (pass from `cl` if omitted) |
 
 Before `ftp-revshell`, start `listen` in **another terminal**.
