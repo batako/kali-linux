@@ -217,6 +217,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -ds -w id -w id` | Parallel with explicit ids only |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost dir bust — `http://$IP/` + gobuster `-H Host:<name>` (no `/etc/hosts` needed) |
 | `scout -d -A <ua>` / `-ds -A <ua>` | set `User-Agent` for dir discovery |
+| `scout -d -C <cookie>` / `-ds -C <cookie>` | set `Cookie` header for dir discovery and wildcard probe |
 | `scout -d mafialive.thm` | dotted FQDN is treated like `-H` (not as `/mafialive.thm/` path) |
 | `scout -v` / `--vhosts [domain\|ip]` | vhost discovery. Domain: ffuf **HTTPS→HTTP**; 3× probe (status/size/redirect/hash/headers) → **`-fs` or `-ac`**; HTTP redirect-only is advisory (`GB_VHOST_SKIP_HTTP_REDIRECT` to skip); hits auto-added to `hosts` |
 | `scout -s` / `--status [ip]` | Show dirs job status **once** |
@@ -335,7 +336,9 @@ scout -d /admin -w browse
 scout -d http://$IP:8080/
 scout -d -H mafialive.thm
 scout -d -A 'Mozilla/5.0'
+scout -d -C 'PHPSESSID=abc123'
 scout -ds -H mafialive.thm /admin
+scout -ds -C 'PHPSESSID=abc123; role=admin' /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads

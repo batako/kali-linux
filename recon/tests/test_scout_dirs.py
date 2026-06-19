@@ -63,6 +63,20 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         )
         self.assertEqual(argv[argv.index("-a") + 1], "Mozilla/5.0 (X11; Linux x86_64)")
 
+    def test_build_gobuster_dir_argv_cookie(self) -> None:
+        argv = build_gobuster_dir_argv(
+            "http://10.0.0.1/",
+            "/tmp/common.txt",
+            40,
+            cookie="PHPSESSID=abc123; role=admin",
+        )
+        cookie_headers = [
+            argv[idx + 1]
+            for idx, token in enumerate(argv[:-1])
+            if token == "-H"
+        ]
+        self.assertIn("Cookie:PHPSESSID=abc123; role=admin", cookie_headers)
+
     def test_dirs_job_host_matches(self) -> None:
         plain = "gobuster dir -u http://10.0.0.1/ -w /tmp/common.txt"
         vhost = "gobuster dir -u http://10.0.0.1/ -H Host:mafialive.thm -w /tmp/common.txt"
@@ -137,6 +151,21 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         mock_run.return_value.returncode = 0
         mock_run.return_value.stdout = "404\n1234\n"
         self.assertIsNone(probe_wildcard_exclude_length("http://10.0.0.1/"))
+
+    @patch("scout_run.subprocess.run")
+    def test_probe_wildcard_exclude_length_cookie(self, mock_run) -> None:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = "200\n345\n"
+        self.assertEqual(
+            probe_wildcard_exclude_length(
+                "http://10.0.0.1/",
+                cookie="PHPSESSID=abc123; role=admin",
+            ),
+            345,
+        )
+        args = mock_run.call_args[0][0]
+        self.assertIn("-H", args)
+        self.assertIn("Cookie: PHPSESSID=abc123; role=admin", args)
 
     def test_parse_soft404_size_from_hits(self) -> None:
         import tempfile

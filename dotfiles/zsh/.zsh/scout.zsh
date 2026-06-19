@@ -35,7 +35,7 @@ scout() {
   local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local plan_only="" no_plan=""
   local vhosts_only="" vhosts_target="" vhost_scheme=""
-  local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz=""
+  local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz="" cookie=""
   local -a user_agent_args=()
   local report="" report_ports="" report_exploits="" report_exploit_pack="" report_paths="" report_tree_fetch="" search_exploits=""
   local -a extra_urls=()
@@ -106,6 +106,7 @@ dirs ジョブキャッシュ（-d / -ds）:
   -x, --ext                      拡張子 fuzz（-d のみ。既定: common）
   -H, --host <name>              vhost Host ヘッダ（-d/-ds のみ）
   -A, --ua <value>               -d/-ds/-dx 用 user-agent
+  -C, --cookie <value>           -d/-ds 用 Cookie ヘッダ
 
 scout -ds -p（wordlist tier: light → standard → wide → deep）
   -p は ports ではない（ports report は -rp）。
@@ -145,7 +146,9 @@ scout -ds -p（wordlist tier: light → standard → wide → deep）
   s -v --https example.com      # HTTPS のみ
   s -d -H www.example.com       # 発見済み vhost に dir
   s -d -A 'Mozilla/5.0'         # custom user-agent
+  s -d -C 'PHPSESSID=abc123'    # custom cookie
   s -d -H app.example.com       # Host: app.example.com で gobuster
+  s -ds -C 'PHPSESSID=abc123; role=admin' /admin
   s -ds :65524/hidden/          # http://$IP:65524/hidden/
   s -ds :443/hoge               # https://$IP/hoge/
   s -ds :80/fuga                # http://$IP/fuga/
@@ -217,6 +220,7 @@ EOF
           echo "  -x, --ext                      extension fuzz (-d only; default list: common)"
           echo "  -H, --host <name>              vhost Host header (-d/-ds only; IP URL + Host: name)"
           echo "  -A, --ua <value>               user-agent for -d/-ds/-dx"
+          echo "  -C, --cookie <value>           Cookie header for -d/-ds"
           echo ""
           echo "scout -ds -p (wordlist tiers: light → standard → wide → deep)"
           echo "  -p is NOT ports (ports report → -rp)."
@@ -256,7 +260,9 @@ EOF
           echo "  s -v --https example.com            # HTTPS only"
           echo "  s -d -H www.example.com             # dir on discovered vhost"
           echo "  s -d -A 'Mozilla/5.0'               # custom user-agent"
+          echo "  s -d -C 'PHPSESSID=abc123'          # custom cookie"
           echo "  s -d -H app.example.com               # gobuster with Host: app.example.com"
+          echo "  s -ds -C 'PHPSESSID=abc123; role=admin' /admin"
           echo "  s -ds :65524/hidden/           # http://\$IP:65524/hidden/"
           echo "  s -ds :443/hoge                # https://\$IP/hoge/"
           echo "  s -ds :80/fuga                 # http://\$IP/fuga/"
@@ -515,6 +521,10 @@ EOF
         user_agent_args=(-A "$2")
         shift 2
         ;;
+      -C|--cookie)
+        cookie="-C $2"
+        shift 2
+        ;;
       http://*|https://*)
         extra_urls+=("$1")
         shift
@@ -621,6 +631,11 @@ EOF
     return 1
   fi
 
+  if [[ -n "$cookie" && -z "$dirs_only$dirs_multi" ]]; then
+    echo "[-] -C/--cookie requires scout -d or -ds" >&2
+    return 1
+  fi
+
   if [[ ${#wordlist_ids[@]} -gt 0 && -z "$dirs_multi" ]]; then
     echo "[-] repeat -w requires scout -ds" >&2
     return 1
@@ -675,6 +690,7 @@ EOF
   [[ -n "$dirs_multi" ]] && args+=("$dirs_multi")
   [[ -n "$host_header" ]] && args+=(${=host_header})
   (( ${#user_agent_args[@]} )) && args+=("${user_agent_args[@]}")
+  [[ -n "$cookie" ]] && args+=(${=cookie})
   [[ -n "$dirs_preset" ]] && args+=(${=dirs_preset})
   [[ -n "$force" ]] && args+=("$force")
   [[ -n "$plan_only" ]] && args+=("$plan_only")
@@ -724,6 +740,7 @@ _scout() {
     '-x[extensions]:ext:' \
     '-H[vhost Host header with -d/-ds]:host:' '--host[vhost Host header with -d/-ds]:host:' \
     '-A[user-agent with -d/-ds/-dx]:ua:' '--ua[user-agent with -d/-ds/-dx]:ua:' '--user-agent[user-agent with -d/-ds/-dx]:ua:' \
+    '-C[Cookie header with -d/-ds]:cookie:' '--cookie[Cookie header with -d/-ds]:cookie:' \
     '*:ip:($IP)'
 }
 

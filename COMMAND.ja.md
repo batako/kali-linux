@@ -223,6 +223,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -ds -w id -w id` | 明示 id のみ並列 |
 | `scout -d -H <hostname>` / `-ds -H <name>` | vhost 向け dir — `http://$IP/` + gobuster `-H Host:<name>`（`/etc/hosts` 不要） |
 | `scout -d -A <ua>` / `-ds -A <ua>` | dir 探索の `User-Agent` を指定 |
+| `scout -d -C <cookie>` / `-ds -C <cookie>` | dir 探索と wildcard probe の `Cookie` ヘッダを指定 |
 | `scout -d <fqdn>` | FQDN（`.` あり）は `-H` と同義（`/app.example/` にはならない） |
 | `scout -v` / `--vhosts [domain\|ip]` | vhost 列挙。Domain: ffuf **HTTPS→HTTP**；3× probe（status/size/redirect/hash/headers）→ **`-fs` または `-ac`**；HTTP redirect-only は advisory（スキップは `GB_VHOST_SKIP_HTTP_REDIRECT`）；ヒットは `hosts` 自動追記 |
 | `scout -s` / `--status [ip]` | dirs ジョブの状態を **1 回**表示 |
@@ -344,7 +345,9 @@ scout -d /admin -w browse
 scout -d http://$IP:8080/
 scout -d -H www.example.com
 scout -d -A 'Mozilla/5.0'
+scout -d -C 'PHPSESSID=abc123'
 scout -ds -H www.example.com /admin
+scout -ds -C 'PHPSESSID=abc123; role=admin' /admin
 scout -ds /assets
 scout -ds -p next /assets
 scout -ds -p wide /uploads

@@ -388,6 +388,7 @@ def main():
         extensions = None
         host_header = None
         user_agent = None
+        cookie = None
         dirs_urls = []
         no_plan = os.environ.get("SCOUT_NO_PLAN", "").strip().lower() in (
             "1",
@@ -563,6 +564,12 @@ def main():
                     sys.exit(1)
                 user_agent = args[1]
                 args = args[2:]
+            elif a in ("-C", "--cookie"):
+                if len(args) < 2:
+                    print("usage: recon.py scout -d -C '<name=value; ...>' [path] [ip]")
+                    sys.exit(1)
+                cookie = args[1]
+                args = args[2:]
             elif a.startswith("http://") or a.startswith("https://"):
                 dirs_urls.append(a)
                 args = args[1:]
@@ -645,6 +652,10 @@ def main():
 
         if user_agent and not dirs_only:
             print("[-] -A/--ua requires scout -d or -ds")
+            sys.exit(1)
+
+        if cookie and not dirs_only:
+            print("[-] -C/--cookie requires scout -d or -ds")
             sys.exit(1)
 
         if scan_jobs != DEFAULT_FULL_JOBS and not full_ports:
@@ -750,6 +761,7 @@ def main():
             dirs_multi_preset_is_next=dirs_preset_is_next,
             host_header=host_header,
             user_agent=user_agent,
+            cookie=cookie,
             no_plan=no_plan,
             dirs_ext_fuzz=dirs_ext_fuzz,
             ext_fuzz_wordlist=ext_fuzz_wordlist,

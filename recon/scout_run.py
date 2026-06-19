@@ -115,6 +115,7 @@ class DirsPlan:
     exclude_length: Optional[int] = None
     host_header: Optional[str] = None
     user_agent: Optional[str] = None
+    cookie: Optional[str] = None
 
 
 def _normalize_service(service: str) -> str:
@@ -647,6 +648,7 @@ def probe_wildcard_exclude_length(
     timeout_sec: Optional[int] = None,
     host_header: Optional[str] = None,
     user_agent: Optional[str] = None,
+    cookie: Optional[str] = None,
 ) -> Optional[int]:
     """Probe a random path; if the server soft-404s with a fixed body, return its length."""
     if timeout_sec is None:
@@ -668,6 +670,8 @@ def probe_wildcard_exclude_length(
         curl_args.append("-k")
     if host_header:
         curl_args.extend(["-H", f"Host: {host_header.strip()}"])
+    if cookie:
+        curl_args.extend(["-H", f"Cookie: {cookie.strip()}"])
     if user_agent:
         curl_args.extend(["-A", user_agent.strip()])
     curl_args.append(probe)
@@ -747,6 +751,47 @@ def parse_soft404_size_from_hits(log_path: str) -> Optional[int]:
     return None
 
 
+def _command_header_values(command: str) -> list[str]:
+    try:
+        argv = shlex.split(command or "")
+    except ValueError:
+        return []
+    values: list[str] = []
+    for idx, token in enumerate(argv):
+        if token == "-H" and idx + 1 < len(argv):
+            values.append(argv[idx + 1])
+    return values
+
+
+def _command_header_value(command: str, name: str) -> Optional[str]:
+    want = (name or "").strip().lower()
+    if not want:
+        return None
+    for raw in _command_header_values(command):
+        header_name, sep, header_value = raw.partition(":")
+        if sep and header_name.strip().lower() == want:
+            value = header_value.strip()
+            if value:
+                return value
+    return None
+
+
+def _command_option_value(command: str, *flags: str) -> Optional[str]:
+    wanted = set(flags)
+    if not wanted:
+        return None
+    try:
+        argv = shlex.split(command or "")
+    except ValueError:
+        return None
+    for idx, token in enumerate(argv):
+        if token in wanted and idx + 1 < len(argv):
+            value = argv[idx + 1].strip()
+            if value:
+                return value
+    return None
+
+
 def _known_exclude_length_from_scope(target_ip: str, url: str) -> Optional[int]:
     """Reuse exclude-length learned on lineage IPs for the same scan base."""
     from url_util import url_path_key
@@ -788,6 +833,7 @@ def build_gobuster_dir_argv(
     exclude_length: Optional[int] = None,
     host_header: Optional[str] = None,
     user_agent: Optional[str] = None,
+    cookie: Optional[str] = None,
 ) -> list[str]:
     args = [
         "gobuster",
@@ -806,6 +852,8 @@ def build_gobuster_dir_argv(
         args.append("-k")
     if host_header:
         args.extend(["-H", f"Host:{host_header.strip()}"])
+    if cookie:
+        args.extend(["-H", f"Cookie:{cookie.strip()}"])
     if user_agent:
         args.extend(["-a", user_agent.strip()])
     if exclude_length is not None:
@@ -827,6 +875,7 @@ def build_dirs_plan(
     exclude_length_override: Optional[int] = None,
     host_header: Optional[str] = None,
     user_agent: Optional[str] = None,
+    cookie: Optional[str] = None,
 ) -> DirsPlan:
     from wordlists.scout import resolve_scout_wordlist
 
@@ -850,6 +899,7 @@ def build_dirs_plan(
             url,
             host_header=vhost,
             user_agent=user_agent,
+            cookie=cookie,
         )
         if exclude_length is None and target_ip:
             exclude_length = _known_exclude_length_from_scope(target_ip, url)
@@ -873,6 +923,7 @@ def build_dirs_plan(
         exclude_length=exclude_length,
         host_header=vhost,
         user_agent=user_agent,
+        cookie=cookie,
     )
     log_path = build_dirs_log_path(url, wl, dry_run=dry_run, host_header=vhost)
     command = " ".join(shlex.quote(a) for a in argv)
@@ -887,6 +938,7 @@ def build_dirs_plan(
         exclude_length=exclude_length,
         host_header=vhost,
         user_agent=user_agent,
+        cookie=cookie,
     )
 
 
@@ -1169,6 +1221,9 @@ def reconcile_scout_job(job_id: int) -> None:
                     wordlist=row["wordlist"],
                     threads=_threads_from_gobuster_command(row["command"] or ""),
                     exclude_length_override=xl,
+                    host_header=_command_header_value(row["command"] or "", "Host"),
+                    user_agent=_command_option_value(row["command"] or "", "-a", "-A"),
+                    cookie=_command_header_value(row["command"] or "", "Cookie"),
                 )
             except (FileNotFoundError, ValueError) as exc:
                 print(f"    [-] wildcard retry failed: {exc}", file=sys.stderr)
@@ -1251,6 +1306,7 @@ def _dispatch_dirs_job(
                 exclude_length=plan.exclude_length,
                 host_header=plan.host_header,
                 user_agent=plan.user_agent,
+                cookie=plan.cookie,
             ),
             stdout=logf,
             stderr=subprocess.STDOUT,
@@ -1442,6 +1498,7 @@ def _run_dirs_phase(
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
     user_agent: Optional[str] = None,
+    cookie: Optional[str] = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> int:
@@ -1540,6 +1597,7 @@ def _run_dirs_phase(
                     dry_run=dry_run,
                     host_header=host_header,
                     user_agent=user_agent,
+                    cookie=cookie,
                 )
             except FileNotFoundError as e:
                 print(f"[-] {e}")
@@ -2226,6 +2284,7 @@ def run_scout(
     extensions: Optional[str] = None,
     host_header: Optional[str] = None,
     user_agent: Optional[str] = None,
+    cookie: Optional[str] = None,
     no_plan: bool = False,
     dirs_ext_fuzz: bool = False,
     ext_fuzz_wordlist: Optional[str] = None,
@@ -2335,13 +2394,14 @@ def run_scout(
                         dirs_preset=dirs_preset,
                         dirs_multi_preset_from_flag=dirs_multi_preset_from_flag,
                         dirs_multi_preset_is_next=dirs_multi_preset_is_next,
-                    threads=threads,
-                    extensions=extensions,
-                    host_header=host_header,
-                    user_agent=user_agent,
-                    dry_run=dry_run,
-                    force=force_dirs,
-                )
+                        threads=threads,
+                        extensions=extensions,
+                        host_header=host_header,
+                        user_agent=user_agent,
+                        cookie=cookie,
+                        dry_run=dry_run,
+                        force=force_dirs,
+                    )
                     rc = max(rc, rc2)
                 wait_rc = _auto_wait_dirs(ip, dry_run=dry_run)
                 return max(rc, wait_rc)
@@ -2362,6 +2422,7 @@ def run_scout(
             extensions=extensions,
             host_header=host_header,
             user_agent=user_agent,
+            cookie=cookie,
             dry_run=dry_run,
             force=force_dirs,
         )
@@ -2437,6 +2498,8 @@ def run_scout(
         threads=threads,
         extensions=extensions,
         host_header=host_header,
+        user_agent=user_agent,
+        cookie=cookie,
         dry_run=dry_run,
         force=force_dirs,
     )
