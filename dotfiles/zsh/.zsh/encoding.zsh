@@ -46,6 +46,40 @@ _enc_read() {
   return 1
 }
 
+_enc_chomp_trailing_eol() {
+  local data="$1"
+  while [[ "$data" == *$'\n' || "$data" == *$'\r' ]]; do
+    data="${data%$'\n'}"
+    data="${data%$'\r'}"
+  done
+  printf '%s' "$data"
+}
+
+_vig_print_result() {
+  local mode="$1" input_text="$2" output_text="$3"
+  if [[ ! -t 1 ]]; then
+    printf '%s\n' "$output_text"
+    return
+  fi
+
+  local needs_pretty=false
+  [[ ${#input_text} -gt 48 ]] && needs_pretty=true
+  [[ "$input_text" == *" "* ]] && needs_pretty=true
+  [[ "$input_text" == *$'\n'* ]] && needs_pretty=true
+  [[ "$output_text" == *$'\n'* ]] && needs_pretty=true
+
+  if ! $needs_pretty; then
+    printf '%s\n' "$output_text"
+    return
+  fi
+
+  if _toolkit-lang-ja; then
+    printf '[出力]\n%s\n' "$output_text"
+  else
+    printf '[output]\n%s\n' "$output_text"
+  fi
+}
+
 _b64_decode_bytes() {
   local data="$1"
   if printf '%s' "$data" | base64 -d 2>/dev/null; then
@@ -2034,7 +2068,7 @@ vig() {
       ;;
   esac
 
-  data="$(_enc_read 1 "$file" "${positional[@]}")" || {
+  data="$(_enc_read 0 "$file" "${positional[@]}")" || {
     if [[ "$mode" == key && -n "$plain" ]]; then
       echo "vig: -K needs cipher text (arg, -f, or stdin)" >&2
     else
@@ -2042,11 +2076,13 @@ vig() {
     fi
     return 1
   }
+  data="$(_enc_chomp_trailing_eol "$data")"
   [[ -n "$data" ]] || { echo "vig: empty input" >&2; return 1; }
 
   case "$mode" in
     de|en)
-      python3 -c '
+      local result
+      result="$(python3 -c '
 import sys
 
 def vig(text, key, encrypt):
@@ -2069,7 +2105,8 @@ mode = sys.argv[1]
 text = sys.argv[2]
 key = sys.argv[3]
 print(vig(text, key, mode == "en"))
-' "$mode" "$data" "$key"
+' "$mode" "$data" "$key")" || return 1
+      _vig_print_result "$mode" "$data" "$result"
       ;;
     attack)
       python3 -c '
