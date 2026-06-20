@@ -63,5 +63,11 @@ compinit
 # ========================
 source ~/.zsh/load.zsh
 
-# Created by `pipx` on 2026-06-02 09:49:32
-export PATH="$PATH:/home/kali/.local/bin"
+# ========================
+# user-local tool paths
+# ========================
+path=(
+  "${ASDF_DATA_DIR:-$HOME/.asdf}/shims"
+  "$HOME/.local/bin"
+  $path
+)
