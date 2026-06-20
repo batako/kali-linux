@@ -1619,6 +1619,7 @@ _enc_try_all_encode() {
 #        enc -t b58 -e <string>
 #        enc -t b64 -d -f <file>
 enc() {
+  emulate -L zsh
   local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0 assume_yes=0
   local -a positional=()
 
