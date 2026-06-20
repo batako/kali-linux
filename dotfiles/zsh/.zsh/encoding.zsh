@@ -1533,7 +1533,7 @@ _enc_smart_decode_core() {
   if [[ "$no_crack" -eq 0 && "$data" == *'$'* ]]; then
     if (( assume_yes )) || _enc_confirm_heavy_hash "$data" "${wordlist:-$RECON_PASSLIST}"; then
       if _enc_hash_crack_pass "$data" "${wordlist:-$RECON_PASSLIST}" "" heavy; then
-        _enc_hit "${_enc_hash_fmt_kind "$data")}" "$_ENC_HASH_CRACK_OUT" 0
+        _enc_hit "$(_enc_hash_fmt_kind "$data")" "$_ENC_HASH_CRACK_OUT" 0
         return 0
       fi
     else
