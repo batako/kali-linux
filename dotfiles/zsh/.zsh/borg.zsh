@@ -28,7 +28,7 @@ _borg_pass_from_cl() {
   local ip user pass
 
   ip="$(_recon-ip-default 2>/dev/null)" || {
-    echo "[-] no target ip for creds-list (target-set <ip> or case-set <room> with target)" >&2
+    echo "[-] no target ip for creds-list (target-set <ip> or cases set <room> with target)" >&2
     return 1
   }
 

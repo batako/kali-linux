@@ -414,7 +414,7 @@ def build_dirs_log_path(
         if dry_run:
             logs = os.environ.get("TMPDIR", "/tmp")
         else:
-            raise RuntimeError("case not set — cs <name> first (or export CASE_LOOSE=1)")
+            raise RuntimeError("case not set — cases set <name> first (or export CASE_LOOSE=1)")
 
     host = _url_host_slug(url)
     if host_header:
@@ -954,7 +954,7 @@ def build_ext_fuzz_log_path(
         if dry_run:
             logs = os.environ.get("TMPDIR", "/tmp")
         else:
-            raise RuntimeError("case not set — cs <name> first (or export CASE_LOOSE=1)")
+            raise RuntimeError("case not set — cases set <name> first (or export CASE_LOOSE=1)")
 
     host = _url_host_slug(seed_url)
     if host_header:
@@ -1442,7 +1442,7 @@ def _run_ext_fuzz_phase(
     dx: bool = False,
 ) -> int:
     if _case_logs_dir() is None and not dry_run:
-        print("[-] case not set — cs <name> first (or export CASE_LOOSE=1)")
+        print("[-] case not set — cases set <name> first (or export CASE_LOOSE=1)")
         return 1
 
     print("")
@@ -1517,7 +1517,7 @@ def _run_dirs_phase(
         return 0
 
     if _case_logs_dir() is None and not dry_run:
-        print("[-] case not set — cs <name> first (or export CASE_LOOSE=1)")
+        print("[-] case not set — cases set <name> first (or export CASE_LOOSE=1)")
         return 1
 
     print("")
@@ -2173,7 +2173,7 @@ def show_scout_report(ip: str) -> int:
         for line in format_hint_report_lines(case):
             print(line)
     else:
-        print("(none — case-set <room> to attach hints)")
+        print("(none — cases set <room> to attach hints)")
     print("")
     print("--- EXPLOITS ---")
     from scout_exploit import format_exploit_report_lines

@@ -961,7 +961,7 @@ def main():
         for table, n in sorted(result["db"].items()):
             if n:
                 print(f"    {table}: {n} row(s) deleted")
-        print("[i] re-enter: case-set {case}  |  target-set <ip>".format(case=case))
+        print("[i] re-enter: cases set {case}  |  target-set <ip>".format(case=case))
 
     elif cmd == "case-target-set":
         args = sys.argv[2:]
@@ -1129,7 +1129,7 @@ def main():
             ip = os.environ.get("IP")
             if not ip:
                 print("usage: recon.py exec-list [-l] [ip]")
-                print("hint: case-set <room>  or  target-set <ip>  or  exec-list -l")
+                print("hint: cases set <room>  or  target-set <ip>  or  exec-list -l")
                 sys.exit(1)
             rows = list_executions(ip=ip, limit=50)
             label = ip
@@ -1474,7 +1474,7 @@ def main():
                         )
         else:
             print("usage: recon.py creds-list [--json] [ip]")
-            print("hint: case-set <room>  or  pass ip")
+            print("hint: cases set <room>  or  pass ip")
             sys.exit(1)
 
     elif cmd == "creds-import-hydra":

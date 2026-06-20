@@ -10,8 +10,8 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 
 | 変数・概念 | 説明 |
 |------------|------|
-| `$IP` | 調査対象 IP（`target-set` / `cases/<room>/.target`、`case-set` で自動復元） |
-| `case-set <room>` | ルーム用 `cases/<room>/` を用意して選択（下記「ルーム」参照。alias: `cs`） |
+| `$IP` | 調査対象 IP（`target-set` / `cases/<room>/.target`、`cases sync` で自動復元） |
+| `cases set <room>` | ルーム用 `cases/<room>/` を用意して選択（下記「ルーム」参照。short: `c set <room>`） |
 | Recon CLI | `recon/`（コンテナ内 `/opt/recon/recon.py`）。zsh ラッパ経由で使用 |
 | `recon.db` | Recon CLI の DB（`/opt/recon/data/recon.db`、ホスト `recon/data/recon.db`） |
 | `RECON_PASSLIST` | john / hydra / stegcracker の既定ワードリスト |
@@ -29,10 +29,10 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 | `RECON_DB` / `RECON_DB_PATH` | `/opt/recon/data/recon.db` |
 
 ```bash
-case-set startup
+cases set startup
 target-set 10.49.140.156
 # 別タブ（cwd が cases/startup/ なら）:
-case-sync                 # または target-set だけ（.target 再読込）
+cases sync                # または target-set だけ（.target 再読込）
 target-show
 ```
 
@@ -56,9 +56,9 @@ target-show
 
 ## ルーム（`cases/`）
 
-`case-set` は **cd だけではない**。TryHackMe の 1 ルーム（または 1 スコープ）用の作業ディレクトリを **作成・選択** する（alias: `cs`）。
+`cases set` は **cd だけではない**。TryHackMe の 1 ルーム（または 1 スコープ）用の作業ディレクトリを **作成・選択** する。短縮は `c set`。
 
-### `case-set <room>` がすること
+### `cases set <room>` がすること
 
 1. **ディレクトリ作成** — 無ければ `mkdir -p`
    `/workspace/cases/<room>/`
@@ -72,22 +72,22 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `.target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは `CASE_HOME` 直下に直接置いてよい。
 
-**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/.hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `case-ips` で一覧。
+**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/.hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `cases ips` で一覧。
 
 ```bash
-case-set startup
+cases set startup
 # [+] case: startup
 # [+] path: /workspace/cases/startup
 # [+] target: 10.49.140.156  (.../.target)   # .target がある場合
 # [+] ftp-shell: .../ftp-shell               # ある場合
 ```
 
-### ディレクトリ例（初回 `case-set startup` 後）
+### ディレクトリ例（初回 `cases set startup` 後）
 
 ```
 /workspace/cases/startup/
-├── logs/          # case-set で必ず作成（listen -l, ssh -l など）
-├── exports/       # case-set で必ず作成（steg-extract, john 出力など）
+├── logs/          # cases set で必ず作成（listen -l, ssh -l など）
+├── exports/       # cases set で必ず作成（steg-extract, john 出力など）
 ├── .target        # target-set で作成（任意だが推奨）
 ├── .hosts         # hosts コマンドで作成（THM vhost → /etc/hosts 自動適用）
 ├── ftp-shell      # 任意（ルーム別 FTP/HTTP パス）
@@ -98,12 +98,12 @@ case-set startup
 
 | コマンド | 説明 |
 |----------|------|
-| `case-show` | 現在の `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
-| `case-ips` | ルーム内 IP 一覧（lineage / scope / 活動サマリ。`+` = lineage、`*` = load_from） |
-| `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（lineage）だけ変更 |
-| `case-clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
-| `case-reset [-y] [<room>]` | **ルーム情報を全消去** — `cases/<room>/` の全ファイル削除（`logs/` `exports/` は空で再作成）+ recon DB の当該ルーム行 |
-| `case-open` | ルームを変えず `CASE_HOME` に cd し直す |
+| `cases show` | 現在の `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
+| `cases ips` | ルーム内 IP 一覧（lineage / scope / 活動サマリ。`+` = lineage、`*` = load_from） |
+| `cases load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（lineage）だけ変更 |
+| `cases clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
+| `cases reset [-y] [<room>]` | **ルーム情報を全消去** — `cases/<room>/` の全ファイル削除（`logs/` `exports/` は空で再作成）+ recon DB の当該ルーム行 |
+| `cases open` | ルームを変えず `CASE_HOME` に cd し直す |
 
 ### ルーム名のルール
 
@@ -119,7 +119,7 @@ case-set startup
 
 ## exploit（PoC ランナー）
 
-ルーム単位で exploit を選択し、**隔離 venv** 内で実行する。`case-set` 必須。状態は `cases/<room>/exploit` に保存（マルチタブ共有）。
+ルーム単位で exploit を選択し、**隔離 venv** 内で実行する。`cases set` 必須。状態は `cases/<room>/exploit` に保存（マルチタブ共有）。
 
 ラッパー用メタ（短い形式）。`-u` 等の exploit 引数はそのまま転送。
 
@@ -154,13 +154,13 @@ exploit -u https://target/
 | `target-set` | `.target` から `$IP` を再読込（`cases/<room>/` 以下の cwd からルーム推定可） |
 | `target-set <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
 | `target-set <ip> --pick` | 継承元 IP を番号で選択（last_seen + open/dirs 件数） |
-| `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
+| `cases sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在のターゲット IP（RHOST） |
 | `lhost` | 攻撃マシン側 IP のみ出力（LHOST: tun0 → eth0） |
 | `target-clear` | クリア |
 | `hosts <host> [aliases...]` | `cases/<room>/.hosts` に upsert（同一 hostname は行を上書き。IP は `$IP` / `target`）して `/etc/hosts` に適用 |
 | `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
-| `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
+| `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`cases set` でも自動適用） |
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
 | `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
@@ -170,7 +170,7 @@ exploit -u https://target/
 | `scan -n` / `-q` | dry-run / ポート表なし |
 
 ```bash
-case-set startup && target-set 10.49.140.156
+cases set startup && target-set 10.49.140.156
 scout             # 偵察初手（scan → プローブ → dirs BG → dirs 完了まで自動 watch）
 scout -r          # 偵察サマリ（ポート + プローブ + PATHS、再実行なし）
 scout --force     # スキャン・dirs を再実行（DB は消さず上書き）
@@ -181,7 +181,7 @@ scan              # ポートだけ（定番 1000）
 scan -f           # 65535 完了まで自動
 scan -f -j 4      # 並列 4（THM では 2–4 推奨。Ctrl+C で途中停止可）
 scan -r           # ポート表だけ再表示（軽い）
-case-reset -y     # ルーム全消去（複数 IP・lineage 含む）
+cases reset -y    # ルーム全消去（複数 IP・lineage 含む）
 ```
 
 coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキップ）。ポート偵察は **`scan` / `scan -f` / `scan -r`** のみ。
@@ -405,7 +405,7 @@ http://www.example.com/
 
 ## ヒント / メモ（recon DB）
 
-ページから拾った文字列・codeword・「あとで調べる」メモを **ルーム（`CASE`）単位**で DB に保存。`case-set` 済みなら IP 不要。`scout -r` の **HINTS** セクションにも出る。
+ページから拾った文字列・codeword・「あとで調べる」メモを **ルーム（`CASE`）単位**で DB に保存。`cases set` 済みなら IP 不要。`scout -r` の **HINTS** セクションにも出る。
 
 | コマンド | 説明 |
 |----------|------|
@@ -414,7 +414,7 @@ http://www.example.com/
 | `hint-rm <id>` | 削除（alias: `hr`） |
 
 ```bash
-case-set lianyu
+cases set lianyu
 hint-add go!go!go!
 hint-add -t codeword vigilante
 hint-add -t island-page 'The Code Word is: </p><h2 style="color:white"> vigilante</style><'
@@ -432,7 +432,7 @@ hint-rm 3         # id=3 を削除
 | コマンド | 説明 |
 |----------|------|
 | `creds-add [-c comment] [ip] <user> <pass>` | 手動登録（alias: `ca`。`-c` で用途メモ。`???` 等は `noglob` 付き） |
-| `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`case-set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
+| `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`cases set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
 | `hash-list [--json] [ip]` | ハッシュ一覧（`user<TAB>stored<TAB>state`）。alias: `hlist` |
 | `hash-add [ip] <user hash-line>` | 手動登録（alias: `hxa`） |
@@ -557,7 +557,7 @@ msfr -m exploit/... -u user --creds --stay
 
 ### ケース別設定
 
-`cases/<room>/ftp-shell`（`case-set` で自動読込）:
+`cases/<room>/ftp-shell`（`cases set` で自動読込）:
 
 ```bash
 REMOTE_DIR=ftp
@@ -569,7 +569,7 @@ WEB_PREFIX=/files
 設定なしの既定: `ftp://$IP/shell.php` → `http://$IP/shell.php`
 
 ```bash
-case-set startup
+cases set startup
 listen 4444          # 別ターミナル
 ftp-revshell
 # または
@@ -604,7 +604,7 @@ ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
 
 | コマンド | 説明 |
 |----------|------|
-| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | mirror clone → 全 ref のコミットを時系列で列挙（**case-set 必須**） |
+| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | mirror clone → 全 ref のコミットを時系列で列挙（**cases set 必須**） |
 | `repolog -f <url-list>` | 複数リポを一括（`github_repos.txt` など 1 行 1 URL） |
 | `repolog -u <user>` / `@user` / `repolog <user>` | GitHub API でユーザのリポ一覧取得 → 一括 scan（`--user` と同じ） |
 | `repolog -M [-S] [-R] -f <url-list>` | 全リポからユニークな名前+メール一覧（`-S` 個人メール疑いのみ、`-R` でリポ名付き） |
@@ -632,7 +632,7 @@ mirror は常に `cases/<room>/exports/repolog/<host>_<owner>_<repo>.git` に保
 出力: `cases/<room>/exports/<repo>_repolog_<ts>.md`（refs 一覧・コミット表・ユニークメール）
 
 ```bash
-cs sakura
+cases set sakura
 repolog -u sakurasnowangelaiko             # 一覧取得 → mirror → レポート
 repolog @sakurasnowangelaiko -l            # 一覧だけ（github_repos.txt）
 repolog sakurasnowangelaiko -M -S          # 同上（省略形）
@@ -658,7 +658,7 @@ repolog -M -f github_repos.txt             # 保存済み一覧で再実行
 | `exec-run [ip] <cmd...>` | コマンド実行を記録（alias: `x`） |
 | `exec-run -s [ip] <cmd...>` | サイレント（出力抑制寄り。alias: `xs`） |
 | `exec-cache [ip] <cmd...>` | キャッシュ付き（同一 ip+cmd は再利用可。alias: `xc` / `xcs` は `-s` 付き） |
-| `exec-list [ip]` | 実行一覧。**`case-set` 済みなら lineage + 現在 IP**（reboot 継承）。`exec-list --all-case` でルーム内全 IP、`exec-list -l` で全ホスト（alias: `el`） |
+| `exec-list [ip]` | 実行一覧。**`cases set` 済みなら lineage + 現在 IP**（reboot 継承）。`exec-list --all-case` でルーム内全 IP、`exec-list -l` で全ホスト（alias: `el`） |
 | `exec-view <id> [--tail N]` | 出力表示（alias: `ev`） |
 | `exec-form <id> [--shell]` | 実行 stdout からアップロードフォーム解析 |
 | `artifact-add [ip] <kind> <value> [key]` | 成果物登録 |
@@ -701,7 +701,7 @@ DNS ワードリストの対話設定:
 | `gb-set-dns` | `GB_DNS_WORDLIST` を選択 |
 
 ```bash
-case-set overpass
+cases set overpass
 scout -d /admin -x php -w dirbuster-small
 scout -ds /admin
 scout -ds -p next /assets
@@ -734,7 +734,7 @@ borg-crack -u <user> <dir>
 borg-crack -p <passphrase> <dir>
 ```
 
-展開先: `exports/<repo名>/borg/`（`case-set` 必須）。`borg-crack` は `-u` 省略時 **creds-list の `borg`**（`RECON_BORG_CREDS_USER`）を優先。
+展開先: `exports/<repo名>/borg/`（`cases set` 必須）。`borg-crack` は `-u` 省略時 **creds-list の `borg`**（`RECON_BORG_CREDS_USER`）を優先。
 
 ---
 
@@ -818,7 +818,7 @@ upload-shell 63
 
 | フルコマンド | alias |
 |--------------|-------|
-| `case-set` | `cs` |
+| `cases` | `c` |
 | `target-set` | `ts` |
 | `scout` | `s` |
 | `creds-add` | `ca` |
@@ -905,7 +905,7 @@ hydrabasic -h
 
 フル名のみ。括弧内は alias。
 
-`case-set`（`cs`）`case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
+`cases set`（`c set`）`cases show` `cases clear` `cases reset` `cases open` `cases sync` `cases load` ·
 `target-set`（`ts`）`target-show` `target-clear` ·
 `scout`（`s`）`scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` ·

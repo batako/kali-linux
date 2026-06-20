@@ -20,7 +20,7 @@ _webrsh-resolve-url() {
   fi
 
   ip="$(_recon-ip-default 2>/dev/null)" || {
-    echo "[-] webrsh: no \$IP (target-set <ip> / case-set <room> first)" >&2
+    echo "[-] webrsh: no \$IP (target-set <ip> / cases set <room> first)" >&2
     return 1
   }
 

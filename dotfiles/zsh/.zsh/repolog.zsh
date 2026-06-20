@@ -10,7 +10,7 @@ usage: repolog [-o path] [-q] [-F] [-U] [-M] [-S] <repo-url> ...
        repolog <@github-user> ...
 
   Thorough commit enumeration: mirror clone (all refs) → git log --all --date-order.
-  Mirrors live under cases/<room>/exports/repolog/ (case-set required).
+  Mirrors live under cases/<room>/exports/repolog/ (cases set required).
   Re-run fetches into the existing mirror — no redundant full clone.
 
   <repo-url>  https://github.com/o/r , git@github.com:o/r.git , o/r (GitHub shorthand)
@@ -33,7 +33,7 @@ mirror path (always kept):
   cases/<room>/exports/repolog/<host>_<owner>_<repo>.git
 
 examples:
-  cs myroom
+  cases set myroom
   repolog -u sakurasnowangelaiko
   repolog @sakurasnowangelaiko -M -S
   repolog sakurasnowangelaiko -l
@@ -519,7 +519,7 @@ repolog() {
 
   if [[ -n "$gh_user" ]]; then
     _repolog-repolog-dir >/dev/null || {
-      echo "[-] repolog: case-set <room> required (mirror → cases/<room>/exports/repolog/)" >&2
+      echo "[-] repolog: cases set <room> required (mirror → cases/<room>/exports/repolog/)" >&2
       return 1
     }
 
@@ -569,7 +569,7 @@ repolog() {
   fi
 
   _repolog-repolog-dir >/dev/null || {
-    echo "[-] repolog: case-set <room> required (mirror → cases/<room>/exports/repolog/)" >&2
+    echo "[-] repolog: cases set <room> required (mirror → cases/<room>/exports/repolog/)" >&2
     return 1
   }
 

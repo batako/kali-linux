@@ -175,7 +175,7 @@ ssh-key-login() {
 
   if [[ -z "$_SSH_IP" ]]; then
     _SSH_IP="$(_recon-ip-default 2>/dev/null)" || {
-      echo "[-] no target ip (target-set or case-set <room> with target file)" >&2
+      echo "[-] no target ip (target-set or cases set <room> with target file)" >&2
       return 1
     }
   fi
@@ -332,7 +332,7 @@ ssh() {
 
   if [[ -n "${_SSH_USER:-}" ]]; then
     if [[ -z "$ip" ]]; then
-      echo "[-] ssh: no target ip (target-set <ip> or case-set <room>)" >&2
+      echo "[-] ssh: no target ip (target-set <ip> or cases set <room>)" >&2
       return 1
     fi
     if _recon-creds-for-user "$ip" "${_SSH_USER}" >/dev/null 2>&1; then
@@ -363,7 +363,7 @@ ssh() {
     host="$_SSH_IP"
     [[ -z "$host" ]] && host="$(_recon-ip-default 2>/dev/null)"
     user="${_SSH_USER:-session}"
-    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip (target-set/cs)" >&2; return 1; }
+    [[ -z "$host" ]] && { echo "[-] ssh --log: no target ip (target-set/cases set)" >&2; return 1; }
     logfile="$(_ssh-log-path "$host" "$user")" || return 1
     _ssh-run-session "$logfile" command ssh "${_SSH_ARGS[@]}"
     return $?
@@ -403,7 +403,7 @@ _ssh-get-default-dest() {
     echo "$base/scp"
     return 0
   fi
-  echo "[!] ssh-get: case unset — saving to . (cs <room> → cases/<room>/exports/scp/)" >&2
+  echo "[!] ssh-get: case unset — saving to . (cases set <room> → cases/<room>/exports/scp/)" >&2
   echo "."
 }
 
@@ -498,7 +498,7 @@ ssh-get() {
   user="${_SSH_GET_USER:-}"
   if [[ -z "$ip" ]]; then
     ip="$(_recon-ip-default 2>/dev/null)" || {
-      echo "[-] no target ip (target-set <ip> or case-set <room> with target file)" >&2
+      echo "[-] no target ip (target-set <ip> or cases set <room> with target file)" >&2
       return 1
     }
   fi
@@ -741,7 +741,7 @@ ssh-put() {
   user="${_SSH_PUT_USER:-}"
   if [[ -z "$ip" ]]; then
     ip="$(_recon-ip-default 2>/dev/null)" || {
-      echo "[-] no target ip (target-set <ip> or case-set <room> with target file)" >&2
+      echo "[-] no target ip (target-set <ip> or cases set <room> with target file)" >&2
       return 1
     }
   fi

@@ -18,7 +18,7 @@ _hint-add() {
   local -a text_parts=()
 
   if [[ -z "${CASE:-}" ]]; then
-    echo "[-] case-set <room> first" >&2
+    echo "[-] cases set <room> first" >&2
     return 1
   fi
 
@@ -65,7 +65,7 @@ hint-list() {
     return 0
   fi
   if [[ -z "${CASE:-}" ]]; then
-    echo "[-] case-set <room> first" >&2
+    echo "[-] cases set <room> first" >&2
     return 1
   fi
   python3 "$RECON_APP" hint-list

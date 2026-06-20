@@ -15,7 +15,7 @@ recon-init() {
 
   echo "[+] recon initialized"
   echo "[+] db: $RECON_DB"
-  echo "[*] file outputs (logs, exports): cs <name> first (or CASE_LOOSE=1)"
+  echo "[*] file outputs (logs, exports): cases set <name> first (or CASE_LOOSE=1)"
 }
 
 net-scan() {

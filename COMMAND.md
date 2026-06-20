@@ -10,8 +10,8 @@ For flag details, each command's `-h` / `--help` is the source of truth.
 
 | Variable / Concept | Description |
 |------------|------|
-| `$IP` | Target IP (`target-set` / `cases/<room>/.target`, auto-restored by `case-set`) |
-| `case-set <room>` | Prepare and select `cases/<room>/` for a room (see "Rooms" below. alias: `cs`) |
+| `$IP` | Target IP (`target-set` / `cases/<room>/.target`, auto-restored by `cases sync`) |
+| `cases set <room>` | Prepare and select `cases/<room>/` for a room (see "Rooms" below. short: `c set <room>`) |
 | Recon CLI | `recon/` (inside container: `/opt/recon/recon.py`). Use through zsh wrappers |
 | `recon.db` | Recon CLI database (`/opt/recon/data/recon.db`, host `recon/data/recon.db`) |
 | `RECON_PASSLIST` | Default wordlist for john / hydra / stegcracker |
@@ -29,10 +29,10 @@ For flag details, each command's `-h` / `--help` is the source of truth.
 | `RECON_DB` / `RECON_DB_PATH` | `/opt/recon/data/recon.db` |
 
 ```bash
-case-set startup
+cases set startup
 target-set 10.49.140.156
 # In another tab (if cwd is cases/startup/):
-case-sync                 # or just target-set (reload .target)
+cases sync                # or just target-set (reload .target)
 target-show
 ```
 
@@ -56,9 +56,9 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 
 ## Rooms (`cases/`)
 
-`case-set` is **not only cd**. It **creates and selects** a working directory for one TryHackMe room (or one scope) (alias: `cs`).
+`cases set` is **not only cd**. It **creates and selects** a working directory for one TryHackMe room (or one scope). Short form: `c set`.
 
-### What `case-set <room>` does
+### What `cases set <room>` does
 
 1. **Create directories** - if missing, `mkdir -p`
    `/workspace/cases/<room>/`
@@ -72,22 +72,22 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 **Not auto-created** (place manually if needed): `.target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
 Those can be placed directly under `CASE_HOME`.
 
-**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/.hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/.hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `cases ips` for the list.
 
 ```bash
-case-set startup
+cases set startup
 # [+] case: startup
 # [+] path: /workspace/cases/startup
 # [+] target: 10.49.140.156  (.../.target)   # if .target exists
 # [+] ftp-shell: .../ftp-shell               # if it exists
 ```
 
-### Directory example (after first `case-set startup`)
+### Directory example (after first `cases set startup`)
 
 ```
 /workspace/cases/startup/
-├── logs/          # always created by case-set (listen -l, ssh -l, etc.)
-├── exports/       # always created by case-set (steg-extract, john output, etc.)
+├── logs/          # always created by cases set (listen -l, ssh -l, etc.)
+├── exports/       # always created by cases set (steg-extract, john output, etc.)
 ├── .target        # created by target-set (optional but recommended)
 ├── .hosts         # hosts command (THM vhost → auto-apply /etc/hosts)
 ├── ftp-shell      # optional (room-specific FTP/HTTP path)
@@ -98,12 +98,12 @@ case-set startup
 
 | Command | Description |
 |----------|------|
-| `case-show` | Current `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
-| `case-ips` | Case IP list (lineage / scope / activity; `+` = in lineage, `*` = load_from) |
-| `case-load <ip\|--new\|--pick>` | Keep current IP, change inherit source (lineage) only |
-| `case-clear` | Unset `CASE` / `CASE_HOME` (does not delete directories) |
-| `case-reset [-y] [<room>]` | **Wipe room** — delete all files under `cases/<room>/` (recreate empty `logs/` `exports/`) + recon DB rows for the room |
-| `case-open` | Re-enter `CASE_HOME` without changing room |
+| `cases show` | Current `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
+| `cases ips` | Case IP list (lineage / scope / activity; `+` = in lineage, `*` = load_from) |
+| `cases load <ip\|--new\|--pick>` | Keep current IP, change inherit source (lineage) only |
+| `cases clear` | Unset `CASE` / `CASE_HOME` (does not delete directories) |
+| `cases reset [-y] [<room>]` | **Wipe room** — delete all files under `cases/<room>/` (recreate empty `logs/` `exports/`) + recon DB rows for the room |
+| `cases open` | Re-enter `CASE_HOME` without changing room |
 
 ### Room naming rules
 
@@ -119,7 +119,7 @@ If unset -> error. With `export CASE_LOOSE=1`, output falls back to `cases/_unsc
 
 ## exploit (PoC runner)
 
-Select an exploit per room and run it inside an **isolated venv**. Requires `case-set`. State in `cases/<room>/exploit` (shared across tabs).
+Select an exploit per room and run it inside an **isolated venv**. Requires `cases set`. State in `cases/<room>/exploit` (shared across tabs).
 
 Wrapper meta (short forms). Exploit args like `-u` pass through unchanged.
 
@@ -154,13 +154,13 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 | `target-set` | Reload `$IP` from `.target` (can infer room if cwd is under `cases/<room>/`) |
 | `target-set <ip> --new` | Pivot — no load_from, no hosts IP rewrite (do not inherit old IP scan/dirs) |
 | `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |
-| `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
+| `cases sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
 | `target-show` | Current target IP (RHOST) |
 | `lhost` | Print attacker IP only (LHOST: tun0 → eth0) |
 | `target-clear` | Clear IP |
 | `hosts <host> [aliases...]` | Upsert `cases/<room>/.hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
 | `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
-| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (`case-set` auto-applies; `target-set` rewrites old IP lines) |
+| `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (`cases set` auto-applies; `target-set` rewrites old IP lines) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
 | `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
 | `scan -f` / `scan --full` | **TCP 1-65535 automatically to completion** (single command end-to-end) |
@@ -170,7 +170,7 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 | `scan -n` / `-q` | dry-run / hide port table |
 
 ```bash
-case-set startup && target-set 10.49.140.156
+cases set startup && target-set 10.49.140.156
 scout             # first recon action (scan -> probes -> dirs BG -> auto watch until dirs done)
 scout -r          # recon summary (ports + probes + PATHS, no re-run)
 scout --force     # rescan / re-dispatch dirs (overwrite DB, no wipe)
@@ -181,7 +181,7 @@ scan              # ports only (classic top 1000)
 scan -f           # auto through all 65535
 scan -f -j 4      # 4-way parallel (2-4 recommended on THM, can stop with Ctrl+C)
 scan -r           # print only port table again (lightweight)
-case-reset -y     # wipe whole room (all IPs + lineage)
+cases reset -y    # wipe whole room (all IPs + lineage)
 ```
 
 coverage is **per port number** (`scan`-covered ports are skipped even in `scan -f`). Port recon is only via **`scan` / `scan -f` / `scan -r`**.
@@ -392,7 +392,7 @@ For manual gobuster runs, use **`scout -ds`** (parallel) or **`scout -d`** (sing
 
 ## Hints / Notes (recon DB)
 
-Save strings, codewords, and "investigate later" notes from pages into DB **per room (`CASE`)**. If `case-set` is done, IP is not required. Also appears in **HINTS** section of `scout -r`.
+Save strings, codewords, and "investigate later" notes from pages into DB **per room (`CASE`)**. If `cases set` is done, IP is not required. Also appears in **HINTS** section of `scout -r`.
 
 | Command | Description |
 |----------|------|
@@ -401,7 +401,7 @@ Save strings, codewords, and "investigate later" notes from pages into DB **per 
 | `hint-rm <id>` | Delete hint (alias: `hr`) |
 
 ```bash
-case-set lianyu
+cases set lianyu
 hint-add go!go!go!
 hint-add -t codeword vigilante
 hint-add -t island-page 'The Code Word is: </p><h2 style="color:white"> vigilante</style><'
@@ -419,7 +419,7 @@ hint-rm 3         # delete id=3
 | Command | Description |
 |----------|------|
 | `creds-add [-c comment] [ip] <user> <pass>` | Manual add (alias: `ca`. `-c` sets usage hint) |
-| `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `case-set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
+| `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `cases set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
 | `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
 | `hash-list [--json] [ip]` | Hash list (`user<TAB>stored<TAB>state`). alias: `hlist` |
 | `hash-add [ip] <user hash-line>` | Manual add (alias: `hxa`) |
@@ -544,7 +544,7 @@ Before `ftp-revshell`, start `listen` in **another terminal**.
 
 ### Per-room settings
 
-`cases/<room>/ftp-shell` (auto-loaded by `case-set`):
+`cases/<room>/ftp-shell` (auto-loaded by `cases set`):
 
 ```bash
 REMOTE_DIR=ftp
@@ -556,7 +556,7 @@ Example (Startup): `http://$IP/files/ftp/shell.php`
 Default without config: `ftp://$IP/shell.php` -> `http://$IP/shell.php`
 
 ```bash
-case-set startup
+cases set startup
 listen 4444          # another terminal
 ftp-revshell
 # or
@@ -591,7 +591,7 @@ Manual commands -> [CHEATSHEET.md](CHEATSHEET.md)
 
 | Command | Description |
 |---------|-------------|
-| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | Mirror clone -> all refs (**case-set required**) |
+| `repolog [-o path] [-F] [-U] [-M] <repo-url> ...` | Mirror clone -> all refs (**cases set required**) |
 | `repolog -f <url-list>` | Batch repos (one URL per line, e.g. `MEMO.md`) |
 | `repolog -M [-S] [-R] -f <url-list>` | Unique name+email pairs across repos (`-S` suspect only, `-R` repo prefix) |
 | `repolog -u <user>` / `@user` | GitHub API repo list -> batch scan (same as `--user`) |
@@ -630,7 +630,7 @@ Output: `cases/<room>/exports/<repo>_repolog_<ts>.md`
 | `exec-run [ip] <cmd...>` | Run command with record (alias: `x`) |
 | `exec-run -s [ip] <cmd...>` | Silent mode (suppressed output bias. alias: `xs`) |
 | `exec-cache [ip] <cmd...>` | With cache (same ip+cmd can be reused. alias: `xc` / `xcs` is with `-s`) |
-| `exec-list [ip]` | Execution list. **If `case-set` is active: load_from + current IP** (reboot inheritance). `exec-list --all-case` lists all room IPs, `exec-list -l` all hosts (alias: `el`) |
+| `exec-list [ip]` | Execution list. **If `cases set` is active: load_from + current IP** (reboot inheritance). `exec-list --all-case` lists all room IPs, `exec-list -l` all hosts (alias: `el`) |
 | `exec-view <id> [--tail N]` | Show output (alias: `ev`) |
 | `exec-form <id> [--shell]` | Parse upload form from execution stdout |
 | `artifact-add [ip] <kind> <value> [key]` | Add artifact |
@@ -673,7 +673,7 @@ Interactive DNS wordlist selection:
 | `gb-set-dns` | Select `GB_DNS_WORDLIST` |
 
 ```bash
-case-set overpass
+cases set overpass
 scout -d /admin -x php -w dirbuster-small
 scout -ds /admin
 scout -ds -p next /assets
@@ -706,7 +706,7 @@ borg-crack -u <user> <dir>
 borg-crack -p <passphrase> <dir>
 ```
 
-Extraction target: `exports/<repo_name>/borg/` (`case-set` required). If `-u` is omitted, `borg-crack` prioritizes **`borg` from creds-list** (`RECON_BORG_CREDS_USER`).
+Extraction target: `exports/<repo_name>/borg/` (`cases set` required). If `-u` is omitted, `borg-crack` prioritizes **`borg` from creds-list** (`RECON_BORG_CREDS_USER`).
 
 ---
 
@@ -790,7 +790,7 @@ If no repair is needed, exits with `[=] ok`. Supports PNG / JPEG / GIF.
 
 | Full command | alias |
 |--------------|-------|
-| `case-set` | `cs` |
+| `cases` | `c` |
 | `target-set` | `ts` |
 | `scout` | `s` |
 | `creds-add` | `ca` |
@@ -877,7 +877,7 @@ hydrabasic -h
 
 Full names only. Alias is shown in parentheses.
 
-`case-set` (`cs`) `case-show` `case-clear` `case-reset` `case-open` `case-sync` `case-load` ·
+`cases set` (`c set`) `cases show` `cases clear` `cases reset` `cases open` `cases sync` `cases load` ·
 `target-set` (`ts`) `target-show` `target-clear` ·
 `scout` (`s`) `scout -r` `scout -rp` `scout -re` `scout -ep` `scout -rt` `scout -se` `scout -d` `scout -ds` `scout -s` `scout -ws` ·
 `scan` ·

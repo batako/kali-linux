@@ -2,7 +2,7 @@
 # /etc/hosts per case (THM vhosts)
 # ========================
 #
-# cases/<room>/.hosts  →  managed block in /etc/hosts on case-set / hosts --apply
+# cases/<room>/.hosts  →  managed block in /etc/hosts on cases set / hosts --apply
 
 RECON_HOSTS_BEGIN='# BEGIN recon-hosts'
 RECON_HOSTS_END='# END recon-hosts'
@@ -217,7 +217,7 @@ _hosts-usage() {
   --off                  /etc/hosts の recon ブロックだけ削除
   -e, --edit             cases/<room>/.hosts を編集してから適用
 
-  case-set で部屋を切り替えると、cases/<room>/.hosts があれば自動適用
+  cases set で部屋を切り替えると、cases/<room>/.hosts があれば自動適用
   target-set <new-ip> では、前の target IP の行を新 IP へ書き換える
 
 例:
@@ -241,7 +241,7 @@ usage: hosts [-h] [<hostname> [aliases...]]
   --off                  remove recon block from /etc/hosts only
   -e, --edit             edit cases/<room>/.hosts, then apply
 
-  case-set switches rooms → hosts auto-applies when cases/<room>/.hosts exists
+  cases set switches rooms → hosts auto-applies when cases/<room>/.hosts exists
   target-set <new-ip>      rewrites lines with the previous target IP to the new IP
 
 examples:
@@ -325,7 +325,7 @@ _hosts-register-line() {
   local rc=$?
   if (( rc != 0 )); then
     if (( rc == 2 )); then
-      echo "[-] no target IP — target-set <ip> or case-set <room> first" >&2
+      echo "[-] no target IP — target-set <ip> or cases set <room> first" >&2
     else
       _hosts-usage >&2
     fi
@@ -344,7 +344,7 @@ _hosts-register-line() {
   }
 
   f="$(_hosts-case-file)" || {
-    echo "[-] case not set — case-set <room> first" >&2
+    echo "[-] case not set — cases set <room> first" >&2
     return 1
   }
 
@@ -412,7 +412,7 @@ _hosts-edit() {
   local ed path
   ed="$(_hosts-editor)"
   path="$(_hosts-case-file)" || {
-    echo "[-] case not set — case-set <room> first" >&2
+    echo "[-] case not set — cases set <room> first" >&2
     return 1
   }
   "$(_recon-bin touch)" "$path"
@@ -492,7 +492,7 @@ hosts() {
         return 1
       }
       [[ -n "${CASE_HOME:-}" ]] || {
-        echo "[-] case not set — case-set <room> first" >&2
+        echo "[-] case not set — cases set <room> first" >&2
         return 1
       }
       _recon-hosts-apply

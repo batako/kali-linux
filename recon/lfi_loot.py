@@ -122,7 +122,7 @@ class SuccessResult:
 def case_home() -> Path:
     raw = (os.environ.get("CASE_HOME") or "").strip()
     if not raw:
-        raise LfiLootError("CASE_HOME not set — case-set <room> first")
+        raise LfiLootError("CASE_HOME not set — cases set <room> first")
     return Path(raw)
 
 

@@ -24,8 +24,8 @@ scan() {
   -q, --quiet       最後のポート表を省略
   -j, --jobs N      --full 時のみ: 並列ワーカー数 (1-${SCAN_FULL_JOBS_MAX:-8}, 既定 1)
 
-事前準備: case-set <room>  &&  target-set <ip>
-関連: scout -r  （偵察サマリ）  |  case-reset  （ルーム消去）
+事前準備: cases set <room>  &&  target-set <ip>
+関連: scout -r  （偵察サマリ）  |  cases reset  （ルーム消去）
 EOF
         else
           cat <<EOF
@@ -43,8 +43,8 @@ options:
   -q, --quiet       no port tables at end
   -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)
 
-prep: case-set <room>  &&  target-set <ip>
-more: scout -r  (recon summary)  |  case-reset  (wipe room)
+prep: cases set <room>  &&  target-set <ip>
+more: scout -r  (recon summary)  |  cases reset  (wipe room)
 EOF
         fi
         return 0
@@ -108,7 +108,7 @@ EOF
 
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
-      echo "[-] no target (target-set <ip> / case-set <room>)" >&2
+      echo "[-] no target (target-set <ip> / cases set <room>)" >&2
       return 1
     }
   fi

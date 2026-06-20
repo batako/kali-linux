@@ -30,7 +30,7 @@ def case_name_from_env() -> str | None:
 def case_name_required() -> str:
     case = case_name_from_env()
     if not case:
-        raise ValueError("CASE not set — case-set <room> first")
+        raise ValueError("CASE not set — cases set <room> first")
     return case
 
 
@@ -66,7 +66,7 @@ def read_load_from() -> str | None:
 def write_load_from(ip: str | None) -> None:
     path = load_from_path()
     if path is None:
-        raise ValueError("CASE_HOME not set — case-set <room> first")
+        raise ValueError("CASE_HOME not set — cases set <room> first")
     ip = (ip or "").strip()
     if not ip:
         if path.is_file():
@@ -107,7 +107,7 @@ def read_lineage() -> list[str]:
 def write_lineage(ips: list[str]) -> None:
     path = lineage_path()
     if path is None:
-        raise ValueError("CASE_HOME not set — case-set <room> first")
+        raise ValueError("CASE_HOME not set — cases set <room> first")
     deduped: list[str] = []
     seen: set[str] = set()
     for raw in ips:
@@ -182,7 +182,7 @@ def update_lineage_on_target_set(
 
 
 def update_lineage_on_load_from(load_from: str | None) -> list[str]:
-    """Change inherit source without changing target IP (case-load)."""
+    """Change inherit source without changing target IP (cases load)."""
     if load_from:
         merge_lineage([load_from])
     else:
@@ -204,7 +204,7 @@ def read_target_ip() -> str | None:
 def write_target_ip(ip: str | None) -> None:
     path = case_home_from_env()
     if path is None:
-        raise ValueError("CASE_HOME not set — case-set <room> first")
+        raise ValueError("CASE_HOME not set — cases set <room> first")
     target = path / TARGET_FILE
     ip = (ip or "").strip()
     if not ip:

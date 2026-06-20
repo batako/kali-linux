@@ -91,7 +91,7 @@ def _case_exports_dir() -> str:
         base = Path(os.environ.get("CASE_ROOT", "/workspace/cases")) / "_unscoped" / "exports"
         base.mkdir(parents=True, exist_ok=True)
         return str(base)
-    raise RuntimeError("case not set — cs <name> first (or export CASE_LOOSE=1)")
+    raise RuntimeError("case not set — cases set <name> first (or export CASE_LOOSE=1)")
 
 
 def _origin_mirror_root(exports: Path, origin: str) -> Path:
@@ -620,4 +620,3 @@ def run_paths_tree_fetch(ip: str, *, dry_run: bool = False) -> int:
         + (f", {external} external image(s)" if external else "")
     )
     return 0
-

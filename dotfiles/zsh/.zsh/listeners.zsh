@@ -57,7 +57,7 @@ listen() {
       -h|--help)
         _toolkit-echo "usage: listen [-l|-d] [port]" "使い方: listen [-l|-d] [port]"
         _toolkit-echo "  start netcat listener (default: 4444)" "  netcat リスナーを開始（既定: 4444）"
-        _toolkit-echo "  -l  record to cases/<name>/logs/ (requires cs <name>, or CASE_LOOSE=1)" "  -l  cases/<name>/logs/ に記録（cs <name> が必要。もしくは CASE_LOOSE=1）"
+        _toolkit-echo "  -l  record to cases/<name>/logs/ (requires cases set <name>, or CASE_LOOSE=1)" "  -l  cases/<name>/logs/ に記録（cases set <name> が必要。もしくは CASE_LOOSE=1）"
         _toolkit-echo "  -d  receive a tar stream and extract it under cases/<room>/exports/listen_<ts>/" "  -d  tar ストリームを受信して cases/<room>/exports/listen_<ts>/ に展開"
         _toolkit-echo "      sender example:" "      送信側の例:"
         _listen-download-send-example "${port}"

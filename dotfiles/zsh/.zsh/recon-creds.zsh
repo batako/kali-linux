@@ -111,7 +111,7 @@ creds-list() {
     _toolkit-echo "usage: creds-list [ip]" "使い方: creds-list [ip]"
     _toolkit-echo "  alias: cl" "  alias: cl"
     _toolkit-echo "  columns: user<TAB>pass<TAB>comment  (case scope: ip<TAB>user<TAB>pass<TAB>comment)" "  列: user<TAB>pass<TAB>comment  （case 範囲では ip<TAB>user<TAB>pass<TAB>comment）"
-    _toolkit-echo "  or: case-set <room> first (load_from + current IP)" "  または先に case-set <room>（load_from + 現在 IP 範囲）"
+    _toolkit-echo "  or: cases set <room> first (load_from + current IP)" "  または先に cases set <room>（load_from + 現在 IP 範囲）"
     return 0
   fi
   if [[ -n "${1:-}" ]]; then
@@ -121,7 +121,7 @@ creds-list() {
   if [[ -z "${CASE:-}" && -z "${IP:-}" ]]; then
     echo "usage: creds-list [ip]" >&2
     echo "  alias: cl" >&2
-    echo "  or: case-set <room> first" >&2
+    echo "  or: cases set <room> first" >&2
     return 1
   fi
   python3 "$RECON_APP" creds-list

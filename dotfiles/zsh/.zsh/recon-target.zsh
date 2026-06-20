@@ -67,7 +67,7 @@ _case-on-enter() {
 _target-set-session() {
   local ip="$1"
   export IP="$ip"
-  echo "[+] target set: $ip  (session only — case-set <room> to persist)"
+  echo "[+] target set: $ip  (session only — cases set <room> to persist)"
 }
 
 _target-auto-room-host() {
@@ -153,7 +153,7 @@ target-set() {
     return 0
   fi
 
-  echo "usage: target-set <ip>  |  target-set  (case-set <room> or cwd under cases/<room>/)" >&2
+  echo "usage: target-set <ip>  |  target-set  (cases set <room> or cwd under cases/<room>/)" >&2
   return 1
 }
 
@@ -165,7 +165,7 @@ target-show() {
     [[ -n "$f" && -f "$f" ]] && echo "[*] file: $f"
     return 0
   fi
-  echo "(no target — target-set <ip> or case-set <room> with cases/<room>/.target)"
+  echo "(no target — target-set <ip> or cases set <room> with cases/<room>/.target)"
   return 1
 }
 

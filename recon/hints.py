@@ -12,10 +12,10 @@ HINT_KIND = "hint"
 
 
 def hint_scope() -> str:
-    """Current case name from CASE env (set by cs)."""
+    """Current case name from CASE env (set by cases set / c set)."""
     case = (os.environ.get("CASE") or "").strip()
     if not case:
-        raise ValueError("CASE not set — case-set <room> first")
+        raise ValueError("CASE not set — cases set <room> first")
     return case
 
 

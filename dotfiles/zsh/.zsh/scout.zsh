@@ -658,7 +658,7 @@ EOF
 
   if [[ -z "$ip" ]]; then
     ip="$(target-current 2>/dev/null)" || {
-      echo "[-] no target (target-set <ip> / case-set <room>)" >&2
+      echo "[-] no target (target-set <ip> / cases set <room>)" >&2
       return 1
     }
   fi
