@@ -1050,17 +1050,21 @@ def _looks_like_file(path: str) -> bool:
 def _normalize_dir_path(path_part: str, full_line: str) -> Optional[str]:
     redir_m = GOBUSTER_REDIRECT_RE.search(full_line)
     if redir_m:
-        parsed = urlparse(redir_m.group(1))
-        p = parsed.path or "/"
-        if p == "/":
-            return None
-        if not p.startswith("/"):
-            p = f"/{p}"
-        if _looks_like_file(p):
-            return p.rstrip("/")
-        if not p.endswith("/"):
-            p = f"{p}/"
-        return p
+        try:
+            parsed = urlparse(redir_m.group(1))
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            p = parsed.path or "/"
+            if p == "/":
+                return None
+            if not p.startswith("/"):
+                p = f"/{p}"
+            if _looks_like_file(p):
+                return p.rstrip("/")
+            if not p.endswith("/"):
+                p = f"{p}/"
+            return p
 
     if _is_gobuster_noise(path_part):
         return None
