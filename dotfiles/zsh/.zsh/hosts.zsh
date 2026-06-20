@@ -2,13 +2,24 @@
 # /etc/hosts per case (THM vhosts)
 # ========================
 #
-# cases/<room>/hosts  →  managed block in /etc/hosts on case-set / hosts --apply
+# cases/<room>/.hosts  →  managed block in /etc/hosts on case-set / hosts --apply
 
 RECON_HOSTS_BEGIN='# BEGIN recon-hosts'
 RECON_HOSTS_END='# END recon-hosts'
 
-_hosts-case-file() {
+_hosts-case-file-legacy() {
   [[ -n "${CASE_HOME:-}" ]] && echo "$CASE_HOME/hosts"
+}
+
+_hosts-case-file() {
+  local path legacy
+  [[ -n "${CASE_HOME:-}" ]] || return 1
+  path="$CASE_HOME/.hosts"
+  legacy="$(_hosts-case-file-legacy)"
+  if [[ ! -e "$path" && -e "$legacy" ]]; then
+    mv "$legacy" "$path"
+  fi
+  echo "$path"
 }
 
 _hosts-valid-line() {
@@ -199,14 +210,14 @@ _hosts-usage() {
        hosts --apply | --off | -e|--edit
 
   （引数なし）             case ファイルと /etc/hosts の recon ブロックを表示
-  <host> [names]         cases/<room>/hosts に upsert（同名は置換）
+  <host> [names]         cases/<room>/.hosts に upsert（同名は置換）
   <ip> <host> [names]    明示 IP で追記
   -r, --replace          case の hosts ファイルを 1 行で置換して適用
-  --apply                cases/<room>/hosts を /etc/hosts に反映
+  --apply                cases/<room>/.hosts を /etc/hosts に反映
   --off                  /etc/hosts の recon ブロックだけ削除
-  -e, --edit             cases/<room>/hosts を編集してから適用
+  -e, --edit             cases/<room>/.hosts を編集してから適用
 
-  case-set で部屋を切り替えると、cases/<room>/hosts があれば自動適用
+  case-set で部屋を切り替えると、cases/<room>/.hosts があれば自動適用
   target-set <new-ip> では、前の target IP の行を新 IP へ書き換える
 
 例:
@@ -223,14 +234,14 @@ usage: hosts [-h] [<hostname> [aliases...]]
        hosts --apply | --off | -e|--edit
 
   (no args)              show case file + /etc/hosts recon block
-  <host> [names]         upsert cases/<room>/hosts (same name replaces line)
+  <host> [names]         upsert cases/<room>/.hosts (same name replaces line)
   <ip> <host> [names]    append with explicit IP
   -r, --replace          replace case hosts file with one line, then apply
-  --apply                apply cases/<room>/hosts to /etc/hosts
+  --apply                apply cases/<room>/.hosts to /etc/hosts
   --off                  remove recon block from /etc/hosts only
-  -e, --edit             edit cases/<room>/hosts, then apply
+  -e, --edit             edit cases/<room>/.hosts, then apply
 
-  case-set switches rooms → hosts auto-applies when cases/<room>/hosts exists
+  case-set switches rooms → hosts auto-applies when cases/<room>/.hosts exists
   target-set <new-ip>      rewrites lines with the previous target IP to the new IP
 
 examples:

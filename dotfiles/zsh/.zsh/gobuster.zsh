@@ -435,11 +435,11 @@ _gb-vhost-register-hosts() {
   done
 
   if (( ! ${#new_names[@]} )); then
-    echo "[=] all vhosts already in cases/${CASE:-?}/hosts"
+    echo "[=] all vhosts already in cases/${CASE:-?}/.hosts"
     return 0
   fi
 
-  echo "[*] registering ${#new_names[@]} vhost(s) → cases/${CASE:-?}/hosts"
+  echo "[*] registering ${#new_names[@]} vhost(s) → cases/${CASE:-?}/.hosts"
   if (( ${#new_names[@]} == 1 )); then
     _hosts-register-line append "${new_names[1]}"
   else
@@ -634,7 +634,7 @@ _scout-vhosts-help() {
   echo "  match:    ffuf -mc auxiliary (default: ${GB_VHOST_MATCH_CODES}; GB_VHOST_NO_MC=1 to omit)"
   echo "  http:     always runs ffuf; redirect-only port 80 → advisory (GB_VHOST_SKIP_HTTP_REDIRECT=1 to skip)"
   echo "  logs:     cases/<room>/logs/vhost_<domain>_<scheme>_<ts>.json"
-  echo "  hosts:    ヒットを cases/<room>/hosts に自動追記（http/https マージ）"
+  echo "  hosts:    ヒットを cases/<room>/.hosts に自動追記（http/https マージ）"
   echo ""
   echo "  見つけた vhost で dir: s -d -H www.lookup.thm"
 }

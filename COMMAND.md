@@ -10,7 +10,7 @@ For flag details, each command's `-h` / `--help` is the source of truth.
 
 | Variable / Concept | Description |
 |------------|------|
-| `$IP` | Target IP (`target-set` / `cases/<room>/target`, auto-restored by `case-set`) |
+| `$IP` | Target IP (`target-set` / `cases/<room>/.target`, auto-restored by `case-set`) |
 | `case-set <room>` | Prepare and select `cases/<room>/` for a room (see "Rooms" below. alias: `cs`) |
 | Recon CLI | `recon/` (inside container: `/opt/recon/recon.py`). Use through zsh wrappers |
 | `recon.db` | Recon CLI database (`/opt/recon/data/recon.db`, host `recon/data/recon.db`) |
@@ -32,7 +32,7 @@ For flag details, each command's `-h` / `--help` is the source of truth.
 case-set startup
 target-set 10.49.140.156
 # In another tab (if cwd is cases/startup/):
-case-sync                 # or just target-set (reload target)
+case-sync                 # or just target-set (reload .target)
 target-show
 ```
 
@@ -66,19 +66,19 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 2. **Session variables** - `CASE=<room>`, `CASE_HOME=/workspace/cases/<room>`
 3. **Working directory** - `cd "$CASE_HOME"`
 4. **On-enter hook** (`_case-on-enter`)
-   - If `cases/<room>/target` exists -> load `$IP`
+   - If `cases/<room>/.target` exists -> load `$IP`
    - If `cases/<room>/ftp-shell` exists -> load path for `ftp-revshell` (with message)
 
-**Not auto-created** (place manually if needed): `target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
+**Not auto-created** (place manually if needed): `.target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
 Those can be placed directly under `CASE_HOME`.
 
-**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/.hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `case-ips` for the list.
 
 ```bash
 case-set startup
 # [+] case: startup
 # [+] path: /workspace/cases/startup
-# [+] target: 10.49.140.156  (.../target)   # if target exists
+# [+] target: 10.49.140.156  (.../.target)   # if .target exists
 # [+] ftp-shell: .../ftp-shell               # if it exists
 ```
 
@@ -88,8 +88,8 @@ case-set startup
 /workspace/cases/startup/
 ├── logs/          # always created by case-set (listen -l, ssh -l, etc.)
 ├── exports/       # always created by case-set (steg-extract, john output, etc.)
-├── target         # created by target-set (optional but recommended)
-├── hosts          # hosts command (THM vhost → auto-apply /etc/hosts)
+├── .target        # created by target-set (optional but recommended)
+├── .hosts         # hosts command (THM vhost → auto-apply /etc/hosts)
 ├── ftp-shell      # optional (room-specific FTP/HTTP path)
 └── ...            # downloaded files, MEMO.md, locks.txt, etc. can be placed at root
 ```
@@ -98,7 +98,7 @@ case-set startup
 
 | Command | Description |
 |----------|------|
-| `case-show` | Current `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
+| `case-show` | Current `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
 | `case-ips` | Case IP list (lineage / scope / activity; `+` = in lineage, `*` = load_from) |
 | `case-load <ip\|--new\|--pick>` | Keep current IP, change inherit source (lineage) only |
 | `case-clear` | Unset `CASE` / `CASE_HOME` (does not delete directories) |
@@ -150,15 +150,15 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 
 | Command | Description |
 |----------|------|
-| `target-set <ip>` | Save to `cases/<room>/target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target; **applies `hosts <room>.thm`** and **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
-| `target-set` | Reload `$IP` from `target` (can infer room if cwd is under `cases/<room>/`) |
+| `target-set <ip>` | Save to `cases/<room>/.target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target; **applies `hosts <room>.thm`** and **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
+| `target-set` | Reload `$IP` from `.target` (can infer room if cwd is under `cases/<room>/`) |
 | `target-set <ip> --new` | Pivot — no load_from, no hosts IP rewrite (do not inherit old IP scan/dirs) |
 | `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |
 | `case-sync` | If `$PWD` is under `cases/<room>/`, restore `CASE` + `$IP` (for another tab) |
 | `target-show` | Current target IP (RHOST) |
 | `lhost` | Print attacker IP only (LHOST: tun0 → eth0) |
 | `target-clear` | Clear IP |
-| `hosts <host> [aliases...]` | Upsert `cases/<room>/hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
+| `hosts <host> [aliases...]` | Upsert `cases/<room>/.hosts` (same hostname replaces line; IP from `$IP` / `target`), apply `/etc/hosts` |
 | `hosts <ip> <host> [aliases...]` | Append with explicit IP (`hosts -h`) |
 | `hosts` / `hosts --off` / `hosts -e` | Show / remove recon block / edit (`case-set` auto-applies; `target-set` rewrites old IP lines) |
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |

@@ -61,8 +61,8 @@ case-show() {
     else
       echo "lineage: (none)"
     fi
-    if [[ -f "${CASE_HOME}/hosts" ]]; then
-      echo "hosts: $(head -1 "${CASE_HOME}/hosts" | sed 's/[[:space:]]*$//')"
+    if [[ -f "${CASE_HOME}/.hosts" ]]; then
+      echo "hosts: $(head -1 "${CASE_HOME}/.hosts" | sed 's/[[:space:]]*$//')"
     else
       echo "hosts: (none)"
     fi

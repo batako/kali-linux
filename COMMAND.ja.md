@@ -10,7 +10,7 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 
 | 変数・概念 | 説明 |
 |------------|------|
-| `$IP` | 調査対象 IP（`target-set` / `cases/<room>/target`、`case-set` で自動復元） |
+| `$IP` | 調査対象 IP（`target-set` / `cases/<room>/.target`、`case-set` で自動復元） |
 | `case-set <room>` | ルーム用 `cases/<room>/` を用意して選択（下記「ルーム」参照。alias: `cs`） |
 | Recon CLI | `recon/`（コンテナ内 `/opt/recon/recon.py`）。zsh ラッパ経由で使用 |
 | `recon.db` | Recon CLI の DB（`/opt/recon/data/recon.db`、ホスト `recon/data/recon.db`） |
@@ -32,7 +32,7 @@ Kali コンテナの zsh に載っている **自作ラッパ** の使い方。
 case-set startup
 target-set 10.49.140.156
 # 別タブ（cwd が cases/startup/ なら）:
-case-sync                 # または target-set だけ（target 再読込）
+case-sync                 # または target-set だけ（.target 再読込）
 target-show
 ```
 
@@ -66,19 +66,19 @@ target-show
 2. **セッション変数** — `CASE=<room>`, `CASE_HOME=/workspace/cases/<room>`
 3. **作業ディレクトリ** — `cd "$CASE_HOME"`
 4. **入場時フック**（`_case-on-enter`）
-   - `cases/<room>/target` があれば → `$IP` を読み込み
+   - `cases/<room>/.target` があれば → `$IP` を読み込み
    - `cases/<room>/ftp-shell` があれば → `ftp-revshell` 用パスを読み込み（メッセージ表示）
 
-**自動では作らないもの**（必要なら自分で置く）: `target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
+**自動では作らないもの**（必要なら自分で置く）: `.target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは `CASE_HOME` 直下に直接置いてよい。
 
-**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `case-ips` で一覧。
+**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/.hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `case-ips` で一覧。
 
 ```bash
 case-set startup
 # [+] case: startup
 # [+] path: /workspace/cases/startup
-# [+] target: 10.49.140.156  (.../target)   # target がある場合
+# [+] target: 10.49.140.156  (.../.target)   # .target がある場合
 # [+] ftp-shell: .../ftp-shell               # ある場合
 ```
 
@@ -88,8 +88,8 @@ case-set startup
 /workspace/cases/startup/
 ├── logs/          # case-set で必ず作成（listen -l, ssh -l など）
 ├── exports/       # case-set で必ず作成（steg-extract, john 出力など）
-├── target         # target-set で作成（任意だが推奨）
-├── hosts          # hosts コマンドで作成（THM vhost → /etc/hosts 自動適用）
+├── .target        # target-set で作成（任意だが推奨）
+├── .hosts         # hosts コマンドで作成（THM vhost → /etc/hosts 自動適用）
 ├── ftp-shell      # 任意（ルーム別 FTP/HTTP パス）
 └── …              # 取得ファイル・MEMO.md・locks.txt 等はルートに直接置いてよい
 ```
@@ -98,7 +98,7 @@ case-set startup
 
 | コマンド | 説明 |
 |----------|------|
-| `case-show` | 現在の `CASE` / `CASE_HOME` / `target` / `load_from` / `lineage` |
+| `case-show` | 現在の `CASE` / `CASE_HOME` / `.target` / `load_from` / `lineage` |
 | `case-ips` | ルーム内 IP 一覧（lineage / scope / 活動サマリ。`+` = lineage、`*` = load_from） |
 | `case-load <ip\|--new\|--pick>` | 現在 IP はそのまま、継承元（lineage）だけ変更 |
 | `case-clear` | `CASE` / `CASE_HOME` を unset（ディレクトリは削除しない） |
@@ -150,15 +150,15 @@ exploit -u https://target/
 
 | コマンド | 説明 |
 |----------|------|
-| `target-set <ip>` | `cases/<room>/target` に保存し `$IP` 設定。IP 変更時は直前 target に recon データがあれば **自動継承**し、**`hosts <room>.thm` 相当も自動適用**（alias: `ts`） |
-| `target-set` | `target` から `$IP` を再読込（`cases/<room>/` 以下の cwd からルーム推定可） |
+| `target-set <ip>` | `cases/<room>/.target` に保存し `$IP` 設定。IP 変更時は直前 target に recon データがあれば **自動継承**し、**`hosts <room>.thm` 相当も自動適用**（alias: `ts`） |
+| `target-set` | `.target` から `$IP` を再読込（`cases/<room>/` 以下の cwd からルーム推定可） |
 | `target-set <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
 | `target-set <ip> --pick` | 継承元 IP を番号で選択（last_seen + open/dirs 件数） |
 | `case-sync` | `$PWD` が `cases/<room>/` 以下なら `CASE` + `$IP` を復元（別タブ向け） |
 | `target-show` | 現在のターゲット IP（RHOST） |
 | `lhost` | 攻撃マシン側 IP のみ出力（LHOST: tun0 → eth0） |
 | `target-clear` | クリア |
-| `hosts <host> [aliases...]` | `cases/<room>/hosts` に upsert（同一 hostname は行を上書き。IP は `$IP` / `target`）して `/etc/hosts` に適用 |
+| `hosts <host> [aliases...]` | `cases/<room>/.hosts` に upsert（同一 hostname は行を上書き。IP は `$IP` / `target`）して `/etc/hosts` に適用 |
 | `hosts <ip> <host> [aliases...]` | 明示 IP で追記（`hosts -h`） |
 | `hosts` / `hosts --off` / `hosts -e` | 表示・recon ブロック削除・手編集（`case-set` でも自動適用） |
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
