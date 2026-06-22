@@ -2,8 +2,11 @@
 Port scan: nmap -sC -sV with port_scan_coverage (scan = top 1000, scan -f = TCP 1-65535).
 """
 
+import os
+import shlex
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
@@ -34,6 +37,16 @@ FULL_CHUNK_PORTS = 1000
 NMAP_PORT_ARG_MAX = 800
 DEFAULT_FULL_JOBS = 1
 MAX_FULL_JOBS = 8
+NMAP_HOST_TIMEOUT = os.environ.get("NMAP_HOST_TIMEOUT", "15m")
+
+
+def _nmap_scan_options() -> str:
+    """Flags for CTF/THM targets: skip discovery/DNS, bound scan time, show progress on stderr."""
+    return f"-n -Pn -T4 --host-timeout {NMAP_HOST_TIMEOUT} --max-retries 2"
+
+
+def _nmap_xml_suffix(xml_path: str) -> str:
+    return f"-oX {shlex.quote(xml_path)}"
 
 
 def clamp_full_jobs(jobs):
@@ -110,7 +123,7 @@ def _nmap_cmd(
     strategy=None,
     allow_large_port_list=False,
 ):
-    base = "nmap -sC -sV"
+    base = f"nmap {_nmap_scan_options()} -sC -sV"
     top_set = set(nmap_top1000_tcp())
 
     if force and profile == PROFILE_BASIC:
@@ -134,7 +147,7 @@ def _nmap_cmd(
         if not p_arg:
             return None
         port_sel = f"-p {p_arg}"
-    return f"{base} {port_sel} {ip} -oX -"
+    return f"{base} {port_sel} {ip}"
 
 
 def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
@@ -425,25 +438,39 @@ def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
 def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
     """Run one planned nmap command; return 0 ok, 1 error."""
     ports_run = info.get("ports_run") or []
-    _print_plan_header(ip, profile, info, cmd)
+    _print_plan_header(ip, profile, info, f"{cmd} {_nmap_xml_suffix('<tmp>')}")
+    print("[i] nmap progress below (Ctrl+C to cancel)", flush=True)
     sys.stdout.flush()
 
+    xml_path = ""
     try:
-        proc = subprocess.Popen(
-            cmd,
-            shell=True,
-            stdout=subprocess.PIPE,
-            stderr=None,  # inherit — nmap progress on stderr
-            text=True,
-        )
-        out, _ = proc.communicate()
+        with tempfile.NamedTemporaryFile(
+            prefix="nmap-",
+            suffix=".xml",
+            delete=False,
+        ) as tf:
+            xml_path = tf.name
+        full_cmd = f"{cmd} {_nmap_xml_suffix(xml_path)}"
+        rc = subprocess.call(full_cmd, shell=True)
     except OSError as exc:
         print(f"[-] nmap failed to start: {exc}")
         return 1
 
-    if proc.returncode != 0:
-        print(f"[-] nmap exit code {proc.returncode}")
-        if out and out.strip():
+    out = ""
+    try:
+        if os.path.isfile(xml_path):
+            with open(xml_path, encoding="utf-8", errors="replace") as fh:
+                out = fh.read()
+    finally:
+        if xml_path:
+            try:
+                os.unlink(xml_path)
+            except OSError:
+                pass
+
+    if rc != 0:
+        print(f"[-] nmap exit code {rc}")
+        if out.strip():
             return _ingest_chunk_result(ip, profile, out, ports_run)
         return 1
 
@@ -462,8 +489,29 @@ def _nmap_subprocess_task(ip: str, profile: str, ports_run):
     )
     if not cmd:
         return {"ok": False, "error": "no command", "ports": ports_run, "xml": ""}
-    out = subprocess.getoutput(cmd)
-    return {"ok": True, "xml": out, "ports": ports_run, "cmd": cmd}
+    xml_path = ""
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="nmap-",
+            suffix=".xml",
+            delete=False,
+        ) as tf:
+            xml_path = tf.name
+        full_cmd = f"{cmd} {_nmap_xml_suffix(xml_path)}"
+        rc = subprocess.call(full_cmd, shell=True)
+        if rc != 0:
+            return {"ok": False, "error": f"nmap exit {rc}", "ports": ports_run, "xml": ""}
+        with open(xml_path, encoding="utf-8", errors="replace") as fh:
+            out = fh.read()
+        return {"ok": True, "xml": out, "ports": ports_run, "cmd": full_cmd}
+    except OSError as exc:
+        return {"ok": False, "error": str(exc), "ports": ports_run, "xml": ""}
+    finally:
+        if xml_path:
+            try:
+                os.unlink(xml_path)
+            except OSError:
+                pass
 
 
 def _run_parallel_wave(ip: str, profile: str, port_chunks) -> int:
