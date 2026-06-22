@@ -216,6 +216,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -d /path/file.ext` | **通常 gobuster** |
 | `scout -d -w <id>` | カタログ id（例: `dirbuster-small`）または絶対 path |
 | `scout -d`（`-w` 省略） | catalog default（`common` 等） |
+| `scout -d`（URL 省略） | DB 上の全 web ポートを対象。既定では **24 個** まで（`SCOUT_DIRS_AUTO_MAX`）。**running/done/failed** の job は再 dispatch しない |
 | `scout -d -w` | 対話ピッカー（`-x` で dirs / dirs-ext） |
 | `scout -d -w browse` | 全カテゴリ browse |
 | `scout -ds` / `-ds [path]` | **並列 dir** — **standard** tier まで（累積 3 本） |
@@ -919,7 +920,7 @@ hydrabasic -h
 `creds-add`（`ca`）`creds-list`（`cl`）`creds-rm`（`cr`）`hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add`（`ha`）`hint-list`（`hl`）`hint-rm`（`hr`） ·
 `hash-list`（`hlist`）`hash-add`（`hxa`）`hash-rm`（`hxr`） ·
-`ssh` `ssh-list` `ssh-get`（`sget`）`ssh-put`（`sput`）· `ftp` · `listen` `webrsh` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
+`ssh` `ssh-list` `ssh-get`（`sget`）`ssh-put`（`sput`）· `ftp` · `listen` `webrsh` `lfish` · `ftp-revshell`（`ftprsh`）`ftp-put-shell` ·
 `steg-extract`（`stegx`）`imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run`（`x`）`exec-cache`（`xc`）`exec-list`（`el`）`exec-view`（`ev`）`exec-form` ·
 `artifact-add` `artifact-list`（`al`）`artifact-del` `lfi-loot` ·

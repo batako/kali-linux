@@ -892,7 +892,7 @@ Full names only. Alias is shown in parentheses.
 `creds-add` (`ca`) `creds-list` (`cl`) `creds-rm` (`cr`) `hydrassh` `hydraftp` `hydraweb` `hydrabasic` ·
 `hint-add` (`ha`) `hint-list` (`hl`) `hint-rm` (`hr`) ·
 `hash-list` (`hlist`) `hash-add` (`hxa`) `hash-rm` (`hxr`) ·
-`ssh` `ssh-list` `ssh-get` (`sget`) `ssh-put` (`sput`) · `ftp` · `listen` `webrsh` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
+`ssh` `ssh-list` `ssh-get` (`sget`) `ssh-put` (`sput`) · `ftp` · `listen` `webrsh` `lfish` · `ftp-revshell` (`ftprsh`) `ftp-put-shell` ·
 `steg-extract` (`stegx`) `imgrpt` `imgmap` `imgsearch` `repolog` · `recon-init` `net-scan` `net-view` ·
 `exec-run` (`x`) `exec-cache` (`xc`) `exec-list` (`el`) `exec-view` (`ev`) `exec-form` ·
 `artifact-add` `artifact-list` (`al`) `artifact-del` `lfi-loot` ·
