@@ -198,6 +198,7 @@ def main():
         dry_run = False
         quiet_ports = False
         jobs = DEFAULT_FULL_JOBS
+        quick = False
 
         while args:
             a = args[0]
@@ -206,6 +207,9 @@ def main():
                 args = args[1:]
             elif a in ("-r", "--report"):
                 report = True
+                args = args[1:]
+            elif a == "--quick":
+                quick = True
                 args = args[1:]
             elif a == "--force":
                 force = True
@@ -229,7 +233,7 @@ def main():
                 print(f"unknown option: {a}")
                 print(
                     "usage: recon.py scan [options] <ip>"
-                    "  (-f|--full, -r|--report, --force, -n, -q, -j N)"
+                    "  (-f|--full, -r|--report, --quick, --force, -n, -q, -j N)"
                 )
                 sys.exit(1)
             elif a in ("full", "report"):
@@ -269,6 +273,7 @@ def main():
             dry_run=dry_run,
             quiet_ports=quiet_ports,
             jobs=jobs,
+            quick=quick,
         )
         sys.exit(0 if rc == 0 else 1)
 
@@ -362,6 +367,7 @@ def main():
         dry_run = False
         quiet_ports = False
         full_ports = False
+        quick_scan = False
         scan_jobs = DEFAULT_FULL_JOBS
         dirs_only = False
         dirs_multi = False
@@ -504,6 +510,9 @@ def main():
                 args = args[1:]
             elif a in ("-fp", "--full-ports"):
                 full_ports = True
+                args = args[1:]
+            elif a == "--quick":
+                quick_scan = True
                 args = args[1:]
             elif a in ("-j", "--jobs"):
                 if len(args) < 2:
@@ -765,6 +774,7 @@ def main():
             no_plan=no_plan,
             dirs_ext_fuzz=dirs_ext_fuzz,
             ext_fuzz_wordlist=ext_fuzz_wordlist,
+            quick_scan=quick_scan,
         )
         sys.exit(0 if rc == 0 else 1)
 

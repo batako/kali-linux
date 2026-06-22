@@ -154,7 +154,7 @@ def _done_wordlist_paths(
     want_path = url_path_key(url)
     done: set[str] = set()
     case = case_name_from_env()
-    for status in ("running", "done"):
+    for status in ("running", "done", "failed"):
         if case:
             rows = list_scout_jobs_for_case(case, kind="dirs", status=status, limit=500)
         else:

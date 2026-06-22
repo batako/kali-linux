@@ -23,6 +23,7 @@ from urllib.parse import urlparse
 
 from db import connect
 from db import dirs_command_host_header
+from db import find_cached_scout_job
 from db import find_done_scout_job
 from db import find_running_scout_job
 from db import format_scan_snapshot_lines
@@ -60,6 +61,19 @@ DEFAULT_GB_THREADS = int(os.environ.get("GB_THREADS", "40"))
 DEFAULT_GB_DIR_THREADS = int(os.environ.get("GB_DIR_THREADS", "10"))
 DEFAULT_DIRS_MULTI_THREADS = int(os.environ.get("GB_DIRS_THREADS", "15"))
 DEFAULT_GB_TIMEOUT_SEC = int(os.environ.get("GB_TIMEOUT", "30"))
+SCOUT_DIRS_AUTO_MAX = max(1, int(os.environ.get("SCOUT_DIRS_AUTO_MAX", "24")))
+DIRS_PRIORITY_PORTS = (
+    80,
+    443,
+    8080,
+    8443,
+    8000,
+    8888,
+    8008,
+    3000,
+    5000,
+    9000,
+)
 
 # Webmin and similar: nmap may say "http" but the service speaks HTTPS on this port.
 HTTPS_ONLY_PORTS = frozenset({10000})
@@ -288,6 +302,20 @@ def discover_web_targets(ip: str) -> list[tuple[int, str]]:
     return targets
 
 
+def _prioritize_web_targets(
+    targets: list[tuple[int, str]], limit: int
+) -> list[tuple[int, str]]:
+    if len(targets) <= limit:
+        return targets
+    priority = {p: i for i, p in enumerate(DIRS_PRIORITY_PORTS)}
+
+    def _sort_key(item: tuple[int, str]) -> tuple[int, int]:
+        port, _url = item
+        return (priority.get(port, len(DIRS_PRIORITY_PORTS)), port)
+
+    return sorted(targets, key=_sort_key)[:limit]
+
+
 def plan_vhost_schemes(ip: str, *, override: str | None = None) -> list[str]:
     """
     Schemes for scout -v, in execution order (HTTPS before HTTP when both).
@@ -327,6 +355,14 @@ def resolve_dirs_targets(
     if urls:
         return [(None, resolve_dirs_target(ip, raw)) for raw in urls]
     targets = discover_web_targets(ip)
+    if targets and len(targets) > SCOUT_DIRS_AUTO_MAX:
+        total = len(targets)
+        targets = _prioritize_web_targets(targets, SCOUT_DIRS_AUTO_MAX)
+        print(
+            f"[!] {total} web targets in DB — auto dirs capped at {len(targets)}"
+            f" (SCOUT_DIRS_AUTO_MAX={SCOUT_DIRS_AUTO_MAX}; pass a URL or :port/path)",
+            file=sys.stderr,
+        )
     if targets:
         return targets
     if (host_header or "").strip():
@@ -1218,6 +1254,14 @@ def reconcile_scout_job(job_id: int) -> None:
                 hits_summary="wildcard — retrying with exclude-length",
                 ended_at=datetime.now().isoformat(timespec="seconds"),
             )
+            if find_running_scout_job(
+                row["ip"],
+                row["kind"] or "dirs",
+                row["url"] or "",
+                row["wordlist"] or "",
+                host_header=_command_header_value(row["command"] or "", "Host"),
+            ):
+                return
             try:
                 plan = build_dirs_plan(
                     row["url"] or "",
@@ -1261,30 +1305,30 @@ def _dispatch_dirs_job(
         print("    [i] --force: re-dispatch dirs")
 
     if not force:
-        running = find_running_scout_job(
+        cached, cached_status = find_cached_scout_job(
             ip, "dirs", plan.url, plan.wordlist, host_header=plan.host_header
         )
-        if running:
+        if cached:
             where = (
-                f" on lineage {running['ip']}"
-                if running["ip"] != ip
+                f" on lineage {cached['ip']}"
+                if cached["ip"] != ip
                 else ""
             )
-            print(
-                f"    -> skip (running{where} job id={running['id']} pid={running['pid']})"
-                " — use --force to start another"
-            )
-            return None
-
-        done = find_done_scout_job(
-            ip, "dirs", plan.url, plan.wordlist, host_header=plan.host_header
-        )
-        if done:
-            where = f" on lineage {done['ip']}" if done["ip"] != ip else ""
-            print(
-                f"    -> skip (done{where} job id={done['id']})"
-                " — use --force to rerun"
-            )
+            if cached_status == "running":
+                print(
+                    f"    -> skip (running{where} job id={cached['id']} pid={cached['pid']})"
+                    " — use --force to start another"
+                )
+            elif cached_status == "done":
+                print(
+                    f"    -> skip (done{where} job id={cached['id']})"
+                    " — use --force to rerun"
+                )
+            else:
+                print(
+                    f"    -> skip (failed{where} job id={cached['id']})"
+                    " — use --force to rerun"
+                )
             return None
 
     print(f"    -> dirs {plan.url}")
@@ -1350,30 +1394,30 @@ def _dispatch_ext_fuzz_job(
         print("    [i] --force: re-dispatch ext-fuzz")
 
     if not force:
-        running = find_running_scout_job(
+        cached, cached_status = find_cached_scout_job(
             ip, kind, plan.url, plan.wordlist, host_header=plan.host_header
         )
-        if running:
+        if cached:
             where = (
-                f" on lineage {running['ip']}"
-                if running["ip"] != ip
+                f" on lineage {cached['ip']}"
+                if cached["ip"] != ip
                 else ""
             )
-            print(
-                f"    -> skip (running{where} job id={running['id']} pid={running['pid']})"
-                " — use --force to start another"
-            )
-            return None
-
-        done = find_done_scout_job(
-            ip, kind, plan.url, plan.wordlist, host_header=plan.host_header
-        )
-        if done:
-            where = f" on lineage {done['ip']}" if done["ip"] != ip else ""
-            print(
-                f"    -> skip (done{where} job id={done['id']})"
-                " — use --force to rerun"
-            )
+            if cached_status == "running":
+                print(
+                    f"    -> skip (running{where} job id={cached['id']} pid={cached['pid']})"
+                    " — use --force to start another"
+                )
+            elif cached_status == "done":
+                print(
+                    f"    -> skip (done{where} job id={cached['id']})"
+                    " — use --force to rerun"
+                )
+            else:
+                print(
+                    f"    -> skip (failed{where} job id={cached['id']})"
+                    " — use --force to rerun"
+                )
             return None
 
     stem = ext_fuzz_stem_label(raw_path, dx=dx)
@@ -2292,6 +2336,7 @@ def run_scout(
     no_plan: bool = False,
     dirs_ext_fuzz: bool = False,
     ext_fuzz_wordlist: Optional[str] = None,
+    quick_scan: bool = False,
 ):
     upsert_host(ip, status="up")
 
@@ -2309,12 +2354,20 @@ def run_scout(
         print("========================")
 
         skip_scan = False
-        if not force_scan and not dry_run and is_profile_coverage_complete(ip, PROFILE_FULL):
-            print("[*] full port scan skipped (TCP 1-65535 already complete on {ip})".format(ip=ip))
+        if not force_scan and not dry_run and is_profile_coverage_complete(
+            ip, PROFILE_FULL, quick=quick_scan
+        ):
+            label = "quick " if quick_scan else ""
+            print(
+                f"[*] {label}full port scan skipped (TCP 1-65535 already complete on {ip})"
+            )
             print("[i] use scout -fp --force to rescan")
             skip_scan = True
         else:
-            print("[*] port scan (full TCP 1-65535, -sC -sV)")
+            if quick_scan:
+                print("[*] port scan (full TCP 1-65535, quick -sS)")
+            else:
+                print("[*] port scan (full TCP 1-65535, -sC -sV)")
             if scan_jobs > 1:
                 print(f"[*] parallel workers: {scan_jobs}")
         print("")
@@ -2328,9 +2381,13 @@ def run_scout(
             dry_run=dry_run,
             quiet_ports=quiet_ports,
             jobs=scan_jobs,
+            quick=quick_scan,
         )
         if scan_rc != 0:
             return scan_rc
+
+        if quick_scan:
+            return 0
 
         from scout_exploit import run_exploit_phase
 
@@ -2444,17 +2501,21 @@ def run_scout(
     scan_profile = PROFILE_BASIC
     skip_scan = False
     if not force_scan and not dry_run:
-        if is_profile_coverage_complete(ip, scan_profile):
-            print(f"[*] phase 1: port scan skipped (top 1000 already complete on {ip})")
+        if is_profile_coverage_complete(ip, scan_profile, quick=quick_scan):
+            label = "quick " if quick_scan else ""
+            print(f"[*] phase 1: {label}port scan skipped (top 1000 already complete on {ip})")
             print("[i] use scout --force to rescan this target")
             skip_scan = True
-        elif case and case_has_basic_scan(case, current_ip=ip):
+        elif not quick_scan and case and case_has_basic_scan(case, current_ip=ip):
             print("[*] phase 1: port scan skipped (case already has basic scan on a prior IP)")
             print("[i] use scout --force to rescan this target")
             skip_scan = True
 
     if not skip_scan:
-        print("[*] phase 1: port scan (top 1000, -sC -sV)")
+        if quick_scan:
+            print("[*] phase 1: port scan (top 1000, quick -sS)")
+        else:
+            print("[*] phase 1: port scan (top 1000, -sC -sV)")
         sys.stdout.flush()
     print("")
 
@@ -2468,9 +2529,16 @@ def run_scout(
             dry_run=dry_run,
             quiet_ports=quiet_ports,
             jobs=1,
+            quick=quick_scan,
         )
         if rc != 0:
             return rc
+
+    if quick_scan:
+        from scan_run import _print_quick_hint
+
+        _print_quick_hint()
+        return 0
 
     from scout_os import run_os_detect_phase
 

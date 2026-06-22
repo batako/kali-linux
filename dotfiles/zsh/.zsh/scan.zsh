@@ -3,7 +3,7 @@
 # ========================
 
 scan() {
-  local ip="" profile="" report="" force="" dry="" quiet="" jobs=""
+  local ip="" profile="" report="" force="" dry="" quiet="" jobs="" quick=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -22,6 +22,7 @@ scan() {
   --force           再スキャン（top 1000、または --full 時は -p-）
   -n, --dry-run     nmap コマンドだけ表示
   -q, --quiet       最後のポート表を省略
+  --quick           簡易スキャン（-sS のみ。-sC -sV なし）
   -j, --jobs N      --full 時のみ: 並列ワーカー数 (1-${SCAN_FULL_JOBS_MAX:-8}, 既定 1)
 
 事前準備: cases set <room>  &&  target-set <ip>
@@ -41,6 +42,7 @@ options:
   --force           rescan (top 1000 or -p- with --full)
   -n, --dry-run     print nmap command only
   -q, --quiet       no port tables at end
+  --quick           light scan (-sS only; no -sC -sV)
   -j, --jobs N      --full only: parallel workers (1-${SCAN_FULL_JOBS_MAX:-8}, default 1)
 
 prep: cases set <room>  &&  target-set <ip>
@@ -67,6 +69,10 @@ EOF
         ;;
       -q|--quiet)
         quiet="-q"
+        shift
+        ;;
+      --quick)
+        quick="--quick"
         shift
         ;;
       -j|--jobs)
@@ -124,6 +130,7 @@ EOF
     [[ -n "$force" ]] && args+=("$force")
     [[ -n "$dry" ]] && args+=(-n)
     [[ -n "$quiet" ]] && args+=(-q)
+    [[ -n "$quick" ]] && args+=(--quick)
     [[ -n "$jobs" ]] && args+=(-j "$jobs")
   fi
 
@@ -140,6 +147,7 @@ _scan() {
     '--force[rescan]' \
     '-n[dry-run]' \
     '-q[no port tables]' \
+    '--quick[light -sS scan]' \
     '-j[parallel workers (--full)]::jobs:' \
     '*:ip:($IP)'
 }

@@ -164,6 +164,7 @@ exploit -u https://target/
 | `scout [ip]` | **偵察の初手**（司令塔）。下記「偵察（scout）」 |
 | `scan [ip]` | nmap **top 1000**（`-sC -sV`）→ DB、終了時 **OPEN + CLOSED** |
 | `scan -f` / `scan --full` | **TCP 1–65535 を自動で最後まで**（1 コマンドで完走） |
+| `scan --quick` / `scan -f --quick` | **簡易スキャン**（`-sS` のみ。`-sC -sV` なし。大量 open 対策） |
 | `scan -f -j 4` | full を **4 並列**（1 wave あたり最大 4000 ポート、`recon.db.lock` でマージ） |
 | `scan --force` | 再スキャン（basic=top 1000、full=`-p-`） |
 | `scan -r` / `scan --report` | DB の OPEN + CLOSED（`scan` 終了時と同型・nmap なし） |
@@ -203,6 +204,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 | `scout -se` / `--search-exploits [ip]` | searchsploit を実行してキャッシュ |
 | `scout -r -se [ip]` | search してからフルレポート |
 | `scout -fp` / `--full-ports [ip]` | **TCP 1–65535**（`-sC -sV`）のみ。完了後 **自動で `-se`**（`searchsploit -u` 後は手動で `-se`） |
+| `scout -fp --quick` / `scout --quick` | **簡易スキャン**（`-sS` のみ）。`--quick` はポートのみ（probe/dirs なし）、`-fp --quick` は `-se` も省略 |
 | `scout -fp -j N` | 上記を N 並列 nmap で実行 |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir のみ。`-d /admin` → `http://$IP/admin/`。**完了まで自動 watch** |
 | `scout -d -x <ext> [path]` | gobuster 拡張子 fuzz（`-x` のみなら catalog **dirs-ext** の default: `common`） |

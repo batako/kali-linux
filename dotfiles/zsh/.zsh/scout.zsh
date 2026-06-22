@@ -32,7 +32,7 @@ scout() {
     fi
   fi
 
-  local ip="" force="" dry="" quiet="" full_ports="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
+  local ip="" force="" dry="" quiet="" full_ports="" quick_scan="" scan_jobs="" dirs_only="" dirs_multi="" dirs_preset="" scout_status="" wait_dirs="" wait_iv=""
   local plan_only="" no_plan=""
   local vhosts_only="" vhosts_target="" vhost_scheme=""
   local wordlist="" threads="" ext="" host_header="" dirs_ext_fuzz="" cookie=""
@@ -76,6 +76,7 @@ exploit 除外（手動で N/A を確認した後だけ）:
 ポート（scan のみ）:
   -fp, --full-ports              TCP 1-65535 の後に searchsploit (-se)
   -j, --jobs N                   -fp と併用: 並列 full scan（例: -fp -j 4）
+  --quick                        簡易スキャン（-sS のみ。-sC -sV なし。大量 open 対策）
 
 vhost 発見（THM / IP）:
   -v, --vhosts [domain|ip]       Host: FUZZ.domain（ffuf）または IP 向け gobuster vhost
@@ -97,7 +98,7 @@ vhost 発見（THM / IP）:
   strike -l                      タスク一覧
 
 dirs ジョブキャッシュ（-d / -ds）:
-  同じ ip + url + wordlist + Host が running / done ならスキップ
+  同じ ip + url + wordlist + Host が running / done / failed ならスキップ
   -x（拡張子）はキャッシュキーに含まれない。-x を変えて再実行するなら --force
   -n, --dry-run                  実行予定コマンドのみ表示
   -q, --quiet                    scan 後のポート表を省略
@@ -158,6 +159,8 @@ scout -ds -p（wordlist tier: light → standard → wide → deep）
   s -rtf -n                     # 予定 URL のみ
   s -fp                         # full port scan（65535）+ exploit search
   s -fp -j 4                    # 同上、nmap 4 並列
+  s -fp --quick -j 4            # 簡易 full scan（悪あがき大量 open 向け）
+  s --quick                     # top 1000 簡易スキャンのみ（probe/dirs なし）
 EOF
         else
           echo "usage: scout [options] [ip|path|url...]"
@@ -190,6 +193,7 @@ EOF
           echo "ports (scan only — like -d for gobuster):"
           echo "  -fp, --full-ports              TCP 1-65535 then searchsploit (-se)"
           echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
+          echo "  --quick                        light scan (-sS only; no -sC -sV; mass-open hosts)"
           echo ""
           echo "vhost discovery (THM / IP):"
           echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
@@ -481,6 +485,10 @@ EOF
         full_ports="--full-ports"
         shift
         ;;
+      --quick)
+        quick_scan="--quick"
+        shift
+        ;;
       -j|--jobs)
         scan_jobs="-j $2"
         shift 2
@@ -698,6 +706,7 @@ EOF
   [[ -n "$dry" ]] && args+=(-n)
   [[ -n "$quiet" ]] && args+=(-q)
   [[ -n "$full_ports" ]] && args+=("$full_ports")
+  [[ -n "$quick_scan" ]] && args+=("$quick_scan")
   [[ -n "$scan_jobs" ]] && args+=(${=scan_jobs})
   args+=("${extra_urls[@]}")
   [[ -n "$threads" ]] && args+=(${=threads})
@@ -732,6 +741,7 @@ _scout() {
     '--preset[preset with -ds]:preset:(light standard wide deep next)' \
     '--force[rescan ports / re-dispatch dirs]' \
     '-fp[full TCP 1-65535 scan + exploit search]' '--full-ports[full TCP 1-65535 scan + exploit search]' \
+    '--quick[light -sS scan; skips probes on s]' \
     '-j[parallel full scan workers with -fp]:jobs:' '--jobs[parallel full scan workers with -fp]:jobs:' \
     '-n[dry-run]' \
     '-q[no port tables after scan]' \

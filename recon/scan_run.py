@@ -31,6 +31,11 @@ from port_sets import profile_port_set
 
 PROFILE_BASIC = "basic"
 PROFILE_FULL = "full"
+PROFILE_QUICK = "quick"
+
+SATISFIES_BASIC = frozenset({PROFILE_BASIC, PROFILE_FULL})
+SATISFIES_FULL = frozenset({PROFILE_FULL})
+SATISFIES_QUICK = frozenset({PROFILE_QUICK, PROFILE_BASIC, PROFILE_FULL})
 
 INCREMENTAL_P_MAX = 50
 FULL_CHUNK_PORTS = 1000
@@ -38,6 +43,19 @@ NMAP_PORT_ARG_MAX = 800
 DEFAULT_FULL_JOBS = 1
 MAX_FULL_JOBS = 8
 NMAP_HOST_TIMEOUT = os.environ.get("NMAP_HOST_TIMEOUT", "15m")
+NMAP_QUICK_MIN_RATE = os.environ.get("NMAP_QUICK_MIN_RATE", "2000")
+
+
+def coverage_profiles(*, profile: str, quick: bool) -> frozenset[str]:
+    if quick:
+        return SATISFIES_QUICK
+    if profile == PROFILE_FULL:
+        return SATISFIES_FULL
+    return SATISFIES_BASIC
+
+
+def storage_profile(*, profile: str, quick: bool) -> str:
+    return PROFILE_QUICK if quick else profile
 
 
 def _nmap_scan_options() -> str:
@@ -76,22 +94,24 @@ def split_ports_across_workers(ports, workers, max_per_worker=FULL_CHUNK_PORTS):
     return chunks
 
 
-def _unscanned_in_set(ip, port_iter, force: bool):
+def _unscanned_in_set(ip, port_iter, force: bool, *, profiles=None):
     if force:
         return sorted(port_iter)
     seed_coverage_from_ports(ip)
-    scanned = set(get_scanned_ports(ip))
+    scanned = set(get_scanned_ports(ip, profiles=profiles))
     return sorted(p for p in port_iter if p not in scanned)
 
 
-def is_profile_coverage_complete(ip, profile: str) -> bool:
-    scanned = set(get_scanned_ports(ip))
+def is_profile_coverage_complete(ip, profile: str, *, quick: bool = False) -> bool:
+    satisfies = coverage_profiles(profile=profile, quick=quick)
     if profile == PROFILE_BASIC:
-        return all(p in scanned for p in nmap_top1000_tcp())
+        return count_tcp_coverage_in_ports(
+            ip, nmap_top1000_tcp(), profiles=satisfies
+        ) >= profile_port_count(PROFILE_BASIC)
     if profile == PROFILE_FULL:
-        return count_tcp_coverage_in_ports(ip, full_tcp_ports()) >= profile_port_count(
-            PROFILE_FULL
-        )
+        return count_tcp_coverage_in_ports(
+            ip, full_tcp_ports(), profiles=satisfies
+        ) >= profile_port_count(PROFILE_FULL)
     return False
 
 
@@ -122,8 +142,12 @@ def _nmap_cmd(
     *,
     strategy=None,
     allow_large_port_list=False,
+    quick: bool = False,
 ):
-    base = f"nmap {_nmap_scan_options()} -sC -sV"
+    if quick:
+        base = f"nmap {_nmap_scan_options()} --min-rate {NMAP_QUICK_MIN_RATE} -sS"
+    else:
+        base = f"nmap {_nmap_scan_options()} -sC -sV"
     top_set = set(nmap_top1000_tcp())
 
     if force and profile == PROFILE_BASIC:
@@ -150,14 +174,22 @@ def _nmap_cmd(
     return f"{base} {port_sel} {ip}"
 
 
-def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
+def plan_scan(
+    ip: str,
+    profile: str = PROFILE_BASIC,
+    force: bool = False,
+    *,
+    quick: bool = False,
+):
     """
     Returns (cmd_or_none, info dict).
     Each scan --full invocation scans at most FULL_CHUNK_PORTS unscanned ports.
     """
     total = profile_port_count(profile)
     port_set = profile_port_set(profile)
-    unscanned = _unscanned_in_set(ip, port_set, force=force)
+    satisfies = coverage_profiles(profile=profile, quick=quick)
+    store_as = storage_profile(profile=profile, quick=quick)
+    unscanned = _unscanned_in_set(ip, port_set, force=force, profiles=satisfies)
     covered = total - len(unscanned)
 
     if force:
@@ -167,10 +199,14 @@ def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
         else:
             ports_run = list(nmap_top1000_tcp())
             strategy = "force-top1000"
-        cmd = _nmap_cmd(ip, ports_run, profile, force=True, strategy=strategy)
+        cmd = _nmap_cmd(
+            ip, ports_run, profile, force=True, strategy=strategy, quick=quick
+        )
         return cmd, {
             "mode": "force",
             "profile": profile,
+            "quick": quick,
+            "storage_profile": store_as,
             "covered": 0,
             "remaining": len(unscanned) if unscanned else total,
             "total": total,
@@ -183,12 +219,14 @@ def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
         return None, {
             "mode": "skip",
             "profile": profile,
+            "quick": quick,
+            "storage_profile": store_as,
             "covered": covered,
             "remaining": 0,
             "total": total,
         }
 
-    scanned = set(get_scanned_ports(ip))
+    scanned = set(get_scanned_ports(ip, profiles=satisfies))
     top_set = set(nmap_top1000_tcp())
     scanned_in_profile = sorted(scanned & top_set) if profile == PROFILE_BASIC else sorted(scanned)
 
@@ -225,10 +263,13 @@ def plan_scan(ip: str, profile: str = PROFILE_BASIC, force: bool = False):
         scanned_in_profile=scanned_in_profile,
         strategy=strategy,
         allow_large_port_list=(strategy == "chunk"),
+        quick=quick,
     )
     return cmd, {
         "mode": "incremental",
         "profile": profile,
+        "quick": quick,
+        "storage_profile": store_as,
         "covered": covered,
         "remaining": len(unscanned),
         "total": total,
@@ -295,11 +336,17 @@ def _record_chunk_range(ip, profile: str, ports_run):
     add_scan_range(ip, profile, min(ports_run), max(ports_run))
 
 
-def _print_skip_summary(ip, profile: str):
-    covered = count_port_scan_coverage(ip)
+def _print_skip_summary(ip, profile: str, *, quick: bool = False):
+    satisfies = coverage_profiles(profile=profile, quick=quick)
+    if profile == PROFILE_FULL:
+        covered = count_tcp_coverage_in_ports(ip, full_tcp_ports(), profiles=satisfies)
+    else:
+        covered = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp(), profiles=satisfies)
     total = profile_port_count(profile)
     label = "top 1000" if profile == PROFILE_BASIC else "TCP 1-65535"
-    print(f"[*] {label} already covered ({covered} tcp port(s) in DB, profile complete)")
+    if quick:
+        label = f"quick {label}"
+    print(f"[*] {label} already covered ({covered}/{total} in DB)")
     print("[*] nmap skipped — ports from recon.db below")
 
 
@@ -315,14 +362,16 @@ def _print_scan_banner(ip: str, profile: str, subtitle: str = ""):
 _live_snapshot_lines = 0
 
 
-def _profile_progress_line(ip: str, profile: str, jobs: int = 1) -> str:
+def _profile_progress_line(ip: str, profile: str, jobs: int = 1, *, quick: bool = False):
+    satisfies = coverage_profiles(profile=profile, quick=quick)
     if profile == PROFILE_FULL:
-        cov = count_tcp_coverage_in_ports(ip, full_tcp_ports())
+        cov = count_tcp_coverage_in_ports(ip, full_tcp_ports(), profiles=satisfies)
         total = profile_port_count(PROFILE_FULL)
     else:
-        cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp())
+        cov = count_tcp_coverage_in_ports(ip, nmap_top1000_tcp(), profiles=satisfies)
         total = profile_port_count(PROFILE_BASIC)
-    line = f"[*] {cov}/{total}"
+    label = "quick " if quick else ""
+    line = f"[*] {label}{cov}/{total}"
     if profile == PROFILE_FULL and jobs > 1:
         line = f"{line}  ({jobs} workers)"
     return line
@@ -333,13 +382,15 @@ def _reset_live_snapshot():
     _live_snapshot_lines = 0
 
 
-def _refresh_live_snapshot(ip, profile, quiet_ports=False, jobs: int = 1):
+def _refresh_live_snapshot(ip, profile, quiet_ports=False, jobs: int = 1, *, quick: bool = False):
     """Rewrite progress + OPEN/CLOSED in place (TTY). Append if not a terminal."""
     global _live_snapshot_lines
     if quiet_ports:
         return
 
-    lines = format_scan_snapshot_lines(ip, _profile_progress_line(ip, profile, jobs=jobs))
+    lines = format_scan_snapshot_lines(
+        ip, _profile_progress_line(ip, profile, jobs=jobs, quick=quick)
+    )
 
     if not sys.stdout.isatty():
         if _live_snapshot_lines:
@@ -364,28 +415,42 @@ def _refresh_live_snapshot(ip, profile, quiet_ports=False, jobs: int = 1):
     sys.stdout.flush()
 
 
-def _print_scan_snapshot(ip, profile, quiet_ports=False):
+def _print_scan_snapshot(ip, profile, quiet_ports=False, *, quick: bool = False):
     if quiet_ports:
         return
-    lines = format_scan_snapshot_lines(ip, _profile_progress_line(ip, profile))
+    lines = format_scan_snapshot_lines(
+        ip, _profile_progress_line(ip, profile, quick=quick)
+    )
     for line in lines:
         print(line)
 
 
-def _finish_scan_output(ip, quiet_ports=False, profile=None):
+def _finish_scan_output(ip, quiet_ports=False, profile=None, *, quick: bool = False):
     reconcile_scan_ranges(ip)
-    _print_scan_snapshot(ip, profile, quiet_ports=quiet_ports)
+    _print_scan_snapshot(ip, profile, quiet_ports=quiet_ports, quick=quick)
+
+
+def _print_quick_hint() -> None:
+    print(
+        "[i] quick scan done — scout -rp for ports;"
+        " s / s --force for -sC -sV on uncovered ports"
+    )
 
 
 def _print_plan_header(ip, profile: str, info: dict, cmd):
     print("========================")
-    print(f"[SCAN] {ip}  profile={profile}")
+    quick = bool(info.get("quick"))
+    profile_label = f"{profile}{'+quick' if quick else ''}"
+    print(f"[SCAN] {ip}  profile={profile_label}")
     mode = info.get("mode")
 
     if mode == "skip":
-        _print_skip_summary(ip, profile)
+        _print_skip_summary(ip, profile, quick=quick)
         print("========================")
         return
+
+    if quick:
+        print("[*] quick scan: -sS only (no -sC -sV; for deceptive mass-open hosts)")
 
     if mode == "force":
         print("[*] --force: rescan (ignoring coverage)")
@@ -412,7 +477,7 @@ def _print_plan_header(ip, profile: str, info: dict, cmd):
     print("========================")
 
 
-def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
+def _ingest_chunk_result(ip: str, storage_profile: str, xml_out: str, ports_run) -> int:
     if not xml_out.strip():
         print("[-] nmap produced no output")
         return 1
@@ -421,10 +486,10 @@ def _ingest_chunk_result(ip: str, profile: str, xml_out: str, ports_run) -> int:
             ingest_nmap_ports_xml(
                 xml_out,
                 ip,
-                profile,
+                storage_profile,
                 ports_planned=ports_run,
             )
-            _record_chunk_range(ip, profile, ports_run)
+            _record_chunk_range(ip, storage_profile, ports_run)
             reconcile_scan_ranges(ip)
     except ET.ParseError as e:
         print(f"[-] failed to parse nmap XML: {e}")
@@ -471,13 +536,17 @@ def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
     if rc != 0:
         print(f"[-] nmap exit code {rc}")
         if out.strip():
-            return _ingest_chunk_result(ip, profile, out, ports_run)
+            return _ingest_chunk_result(
+                ip, info.get("storage_profile", profile), out, ports_run
+            )
         return 1
 
-    return _ingest_chunk_result(ip, profile, out or "", ports_run)
+    return _ingest_chunk_result(
+        ip, info.get("storage_profile", profile), out or "", ports_run
+    )
 
 
-def _nmap_subprocess_task(ip: str, profile: str, ports_run):
+def _nmap_subprocess_task(ip: str, profile: str, ports_run, *, quick: bool = False):
     """Worker: run nmap only (ingest in main thread under flock)."""
     cmd = _nmap_cmd(
         ip,
@@ -486,6 +555,7 @@ def _nmap_subprocess_task(ip: str, profile: str, ports_run):
         force=False,
         strategy="ports",
         allow_large_port_list=True,
+        quick=quick,
     )
     if not cmd:
         return {"ok": False, "error": "no command", "ports": ports_run, "xml": ""}
@@ -514,13 +584,14 @@ def _nmap_subprocess_task(ip: str, profile: str, ports_run):
                 pass
 
 
-def _run_parallel_wave(ip: str, profile: str, port_chunks) -> int:
+def _run_parallel_wave(ip: str, profile: str, port_chunks, *, quick: bool = False) -> int:
     if not port_chunks:
         return 0
+    storage = storage_profile(profile=profile, quick=quick)
     results = []
     with ThreadPoolExecutor(max_workers=len(port_chunks)) as pool:
         futures = [
-            pool.submit(_nmap_subprocess_task, ip, profile, chunk)
+            pool.submit(_nmap_subprocess_task, ip, profile, chunk, quick=quick)
             for chunk in port_chunks
         ]
         for fut in as_completed(futures):
@@ -530,14 +601,14 @@ def _run_parallel_wave(ip: str, profile: str, port_chunks) -> int:
         if not r.get("ok"):
             print(f"[-] worker failed: {r.get('error', 'unknown')}")
             return 1
-        if _ingest_chunk_result(ip, profile, r["xml"], r["ports"]) != 0:
+        if _ingest_chunk_result(ip, storage, r["xml"], r["ports"]) != 0:
             return 1
     return 0
 
 
-def _run_full_sequential(ip: str, force: bool, quiet_ports: bool) -> int:
+def _run_full_sequential(ip: str, force: bool, quiet_ports: bool, *, quick: bool = False) -> int:
     while True:
-        cmd, info = plan_scan(ip, profile=PROFILE_FULL, force=force)
+        cmd, info = plan_scan(ip, profile=PROFILE_FULL, force=force, quick=quick)
         if info.get("mode") == "skip":
             break
         if not cmd:
@@ -545,26 +616,31 @@ def _run_full_sequential(ip: str, force: bool, quiet_ports: bool) -> int:
             return 1
         if _run_nmap_chunk(ip, PROFILE_FULL, cmd, info) != 0:
             return 1
-        _refresh_live_snapshot(ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=1)
-        if is_profile_coverage_complete(ip, PROFILE_FULL):
+        _refresh_live_snapshot(
+            ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=1, quick=quick
+        )
+        if is_profile_coverage_complete(ip, PROFILE_FULL, quick=quick):
             break
     return 0
 
 
-def _run_full_parallel(ip: str, jobs: int, force: bool, quiet_ports: bool) -> int:
-    wave = 0
+def _run_full_parallel(ip: str, jobs: int, force: bool, quiet_ports: bool, *, quick: bool = False) -> int:
+    satisfies = coverage_profiles(profile=PROFILE_FULL, quick=quick)
     while True:
-        unscanned = _unscanned_in_set(ip, full_tcp_ports(), force=force)
+        unscanned = _unscanned_in_set(
+            ip, full_tcp_ports(), force=force, profiles=satisfies
+        )
         if not unscanned:
             break
         chunks = split_ports_across_workers(unscanned, jobs)
         if not chunks:
             break
-        wave += 1
-        if _run_parallel_wave(ip, PROFILE_FULL, chunks) != 0:
+        if _run_parallel_wave(ip, PROFILE_FULL, chunks, quick=quick) != 0:
             return 1
-        _refresh_live_snapshot(ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=jobs)
-        if is_profile_coverage_complete(ip, PROFILE_FULL):
+        _refresh_live_snapshot(
+            ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=jobs, quick=quick
+        )
+        if is_profile_coverage_complete(ip, PROFILE_FULL, quick=quick):
             break
     return 0
 
@@ -575,19 +651,28 @@ def _run_full_auto(
     quiet_ports: bool = False,
     jobs: int = 1,
     force: bool = False,
+    *,
+    quick: bool = False,
 ) -> int:
     """scan -f / --full: TCP 1-65535 until covered (sequential or parallel -j)."""
     jobs = clamp_full_jobs(jobs)
     _reset_live_snapshot()
     subtitle = "auto → 65535/65535"
+    if quick:
+        subtitle = f"quick {subtitle}"
     if jobs > 1:
         subtitle = f"{subtitle}  -j {jobs}"
     _print_scan_banner(ip, PROFILE_FULL, subtitle)
 
-    unscanned = _unscanned_in_set(ip, full_tcp_ports(), force=force)
+    satisfies = coverage_profiles(profile=PROFILE_FULL, quick=quick)
+    unscanned = _unscanned_in_set(
+        ip, full_tcp_ports(), force=force, profiles=satisfies
+    )
     if not unscanned:
         print("[*] nmap skipped (already complete)")
-        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=PROFILE_FULL)
+        _finish_scan_output(
+            ip, quiet_ports=quiet_ports, profile=PROFILE_FULL, quick=quick
+        )
         return 0
 
     if dry_run:
@@ -597,24 +682,40 @@ def _run_full_auto(
             print(f"[*] dry-run: ~{waves} wave(s) x {jobs} workers ({remaining} ports left)")
             chunks = split_ports_across_workers(unscanned, jobs)
             for i, ch in enumerate(chunks, 1):
-                cmd = _nmap_cmd(ip, ch, PROFILE_FULL, False, strategy="ports", allow_large_port_list=True)
+                cmd = _nmap_cmd(
+                    ip,
+                    ch,
+                    PROFILE_FULL,
+                    False,
+                    strategy="ports",
+                    allow_large_port_list=True,
+                    quick=quick,
+                )
                 print(f"[*] worker {i}: {cmd}")
         else:
             est = max(1, (remaining + FULL_CHUNK_PORTS - 1) // FULL_CHUNK_PORTS)
             print(f"[*] dry-run: ~{est} chunk(s) ({remaining} ports left)")
-            cmd, _ = plan_scan(ip, PROFILE_FULL, force=force)
+            cmd, _ = plan_scan(ip, PROFILE_FULL, force=force, quick=quick)
             if cmd:
                 print(f"[*] {cmd}")
-        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=PROFILE_FULL)
+        _finish_scan_output(
+            ip, quiet_ports=quiet_ports, profile=PROFILE_FULL, quick=quick
+        )
         return 0
 
     if jobs > 1:
-        rc = _run_full_parallel(ip, jobs, force=force, quiet_ports=quiet_ports)
+        rc = _run_full_parallel(
+            ip, jobs, force=force, quiet_ports=quiet_ports, quick=quick
+        )
     else:
-        rc = _run_full_sequential(ip, force=force, quiet_ports=quiet_ports)
+        rc = _run_full_sequential(
+            ip, force=force, quiet_ports=quiet_ports, quick=quick
+        )
 
     if sys.stdout.isatty():
         print("")
+    if rc == 0 and quick:
+        _print_quick_hint()
     return rc
 
 
@@ -625,6 +726,8 @@ def run_scan(
     dry_run: bool = False,
     quiet_ports: bool = False,
     jobs: int = 1,
+    *,
+    quick: bool = False,
 ):
     upsert_host(ip, status="up")
 
@@ -635,19 +738,20 @@ def run_scan(
             quiet_ports=quiet_ports,
             jobs=jobs,
             force=force,
+            quick=quick,
         )
 
-    cmd, info = plan_scan(ip, profile=profile, force=force)
+    cmd, info = plan_scan(ip, profile=profile, force=force, quick=quick)
     mode = info.get("mode")
 
     if mode == "skip":
         _print_plan_header(ip, profile, info, "")
-        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile)
+        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
         return 0
 
     if dry_run:
         _print_plan_header(ip, profile, info, cmd or "")
-        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile)
+        _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
         return 0
 
     if not cmd:
@@ -657,7 +761,9 @@ def run_scan(
     if _run_nmap_chunk(ip, profile, cmd, info) != 0:
         return 1
 
-    _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile)
+    _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
+    if quick:
+        _print_quick_hint()
     return 0
 
 

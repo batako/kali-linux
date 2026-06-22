@@ -801,6 +801,17 @@ def find_done_scout_job(ip, kind, url, wordlist, *, host_header=None):
     )
 
 
+def find_cached_scout_job(ip, kind, url, wordlist, *, host_header=None):
+    """Most recent dirs job that should block re-dispatch (running, done, or failed)."""
+    for status in ("running", "done", "failed"):
+        row = _find_scout_job(
+            ip, kind, url, wordlist, status=status, host_header=host_header
+        )
+        if row is not None:
+            return row, status
+    return None, None
+
+
 def get_scout_job(job_id):
     conn = connect()
     cur = conn.cursor()
@@ -891,24 +902,36 @@ def mark_port_scanned(ip, port, proto, state, scan_profile):
     conn.close()
 
 
-def get_scanned_ports(ip, proto="tcp"):
+def get_scanned_ports(ip, proto="tcp", *, profiles=None):
     conn = connect()
     cur = conn.cursor()
-    rows = cur.execute(
-        """
+    if profiles:
+        allowed = tuple(profiles)
+        placeholders = ",".join("?" for _ in allowed)
+        rows = cur.execute(
+            f"""
+        SELECT port FROM port_scan_coverage
+        WHERE ip = ? AND proto = ? AND scan_profile IN ({placeholders})
+        ORDER BY port
+        """,
+            (ip, proto, *allowed),
+        ).fetchall()
+    else:
+        rows = cur.execute(
+            """
         SELECT port FROM port_scan_coverage
         WHERE ip = ? AND proto = ?
         ORDER BY port
         """,
-        (ip, proto),
-    ).fetchall()
+            (ip, proto),
+        ).fetchall()
     conn.close()
     return [int(r["port"]) for r in rows]
 
 
-def count_tcp_coverage_in_ports(ip, port_iter):
+def count_tcp_coverage_in_ports(ip, port_iter, *, profiles=None):
     """How many ports from port_iter appear in port_scan_coverage."""
-    scanned = set(get_scanned_ports(ip))
+    scanned = set(get_scanned_ports(ip, profiles=profiles))
     return sum(1 for p in port_iter if p in scanned)
 
 

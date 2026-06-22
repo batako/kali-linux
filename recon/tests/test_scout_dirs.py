@@ -23,6 +23,7 @@ from scout_run import parse_wildcard_exclude_length
 from scout_run import probe_wildcard_exclude_length
 from scout_run import resolve_dirs_target
 from scout_run import resolve_dirs_targets
+import scout_run
 
 
 class ScoutDirsGobusterTest(unittest.TestCase):
@@ -111,6 +112,15 @@ class ScoutDirsGobusterTest(unittest.TestCase):
         self.assertFalse(looks_like_vhost_hostname("/admin"))
         self.assertFalse(is_dirs_path_arg("mafialive.thm"))
         self.assertTrue(is_dirs_path_arg("admin"))
+
+    def test_prioritize_web_targets_prefers_common_ports(self) -> None:
+        targets = [
+            (65535, "http://10.0.0.1:65535/"),
+            (8080, "http://10.0.0.1:8080/"),
+            (9999, "http://10.0.0.1:9999/"),
+        ]
+        picked = scout_run._prioritize_web_targets(targets, 2)
+        self.assertEqual(picked[0][0], 8080)
 
     @patch("scout_run.discover_web_targets", return_value=[])
     def test_resolve_dirs_targets_vhost_fallback(self, _mock_discover) -> None:

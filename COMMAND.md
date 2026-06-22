@@ -164,6 +164,7 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 | `scout [ip]` | **First recon action** (orchestrator). See "Recon (scout)" below |
 | `scan [ip]` | nmap **top 1000** (`-sC -sV`) -> DB, prints **OPEN + CLOSED** at end |
 | `scan -f` / `scan --full` | **TCP 1-65535 automatically to completion** (single command end-to-end) |
+| `scan --quick` / `scan -f --quick` | **Light scan** (`-sS` only, no `-sC -sV`) — for deceptive mass-open hosts |
 | `scan -f -j 4` | Run full scan in **4 parallel jobs** (up to 4000 ports per wave, merged with `recon.db.lock`) |
 | `scan --force` | Re-scan (basic=top 1000, full=`-p-`) |
 | `scan -r` / `scan --report` | Print DB OPEN + CLOSED only (same shape as post-`scan`, no nmap) |
@@ -203,11 +204,13 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 | `scout -se` / `--search-exploits [ip]` | Run and cache searchsploit |
 | `scout -r -se [ip]` | Search first, then full report |
 | `scout -fp` / `--full-ports [ip]` | **TCP 1-65535** (`-sC -sV`) only. **Auto `-se`** after scan (after `searchsploit -u`, run `-se` manually) |
+| `scout -fp --quick` / `scout --quick` | **Light scan** (`-sS` only). `--quick` stops after ports (no probes/dirs); `-fp --quick` skips `-se` |
 | `scout -fp -j N` | Same with N parallel nmap workers |
 | `scout -d` / `scout --dirs [path] [ip]` | gobuster dir only. `-d /admin` -> `http://$IP/admin/`. **Auto-watch to completion** |
 | `scout -d -x <ext> [path]` | Extension fuzz (`-x` only uses catalog **dirs-ext** default: `common`) |
 | `scout -d -w <id>` | Catalog id (e.g. `dirbuster-small`) or absolute path |
 | `scout -d` (`-w` omitted) | Catalog default (`common`, etc.) |
+| `scout -d` (no URL) | All DB web ports — capped at **24** by default (`SCOUT_DIRS_AUTO_MAX`); **running/done/failed** jobs skip re-dispatch |
 | `scout -d -w` | Interactive picker (`-x` switches dirs / dirs-ext) |
 | `scout -d -w browse` | Browse all categories |
 | `scout -ds` / `-ds [path]` | **Parallel dir** - up to **standard** tier (3 jobs cumulative) |
