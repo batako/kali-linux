@@ -1,0 +1,3 @@
+[submodule "workspace/third-party/php_filter_chain_generator"]
+	path = workspace/third-party/php_filter_chain_generator
+	url = https://github.com/synacktiv/php_filter_chain_generator.git

