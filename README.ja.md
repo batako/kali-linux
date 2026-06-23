@@ -25,6 +25,11 @@ docker compose exec kali zsh -lc 'ip a show tun0'   # VPN 確認
 docker compose exec -it kali zsh
 ```
 
+**FoxyProxy（ホストブラウザ）** — `host/foxyproxy/profiles.json` を FoxyProxy に import すると、ホストブラウザから Kali コンテナ経由でアクセスできる。
+
+- `SOCKS5 via Kali VPN`: 通常ブラウジング用。`localhost:1080` の SOCKS5 を使って、コンテナの VPN 経由で接続する
+- `Burp via Kali VPN`: Burp 使用時用。`localhost:8080` の Burp を使う
+
 | 用途 | 接続先 |
 |------|--------|
 | Shell（推奨） | `docker compose exec -it kali zsh` |
@@ -77,6 +82,7 @@ ssh / ssh -i <key>           # creds-list 経由で接続
 ├── docker-compose.yml
 ├── kali/                  Dockerfile, entrypoint
 ├── config/openvpn/        tryhackme.ovpn（手動配置）
+├── host/foxyproxy/        ホストブラウザ用 FoxyProxy 設定
 ├── dotfiles/zsh/          ラッパ（/home/kali/.zsh にマウント）
 ├── recon/                 Recon CLI（ソース `/opt/recon` :ro、`data/recon.db` `/opt/recon/data` :rw）
 └── workspace/             上記 Workspace

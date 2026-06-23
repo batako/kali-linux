@@ -25,6 +25,11 @@ docker compose exec kali zsh -lc 'ip a show tun0'   # verify VPN
 docker compose exec -it kali zsh
 ```
 
+**FoxyProxy (host browser)** — Import `host/foxyproxy/profiles.json` into FoxyProxy to route the host browser through the Kali container.
+
+- `SOCKS5 via Kali VPN`: default browsing profile. Uses the SOCKS5 proxy on `localhost:1080` so traffic goes through the container VPN
+- `Burp via Kali VPN`: use this when browsing through Burp on `localhost:8080`
+
 | Use | Endpoint |
 |-----|----------|
 | Shell (recommended) | `docker compose exec -it kali zsh` |
@@ -77,6 +82,7 @@ Playbooks → [CHEATSHEET.md](CHEATSHEET.md). Command reference → [COMMAND.md]
 ├── docker-compose.yml
 ├── kali/                  Dockerfile, entrypoint
 ├── config/openvpn/        tryhackme.ovpn (place manually)
+├── host/foxyproxy/        FoxyProxy profiles for the host browser
 ├── dotfiles/zsh/          wrappers (mounted to /home/kali/.zsh)
 ├── recon/                 Recon CLI (code `/opt/recon` :ro, `data/recon.db` `/opt/recon/data` :rw)
 └── workspace/             workspace above
