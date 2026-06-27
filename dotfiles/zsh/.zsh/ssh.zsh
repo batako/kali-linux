@@ -407,6 +407,20 @@ _ssh-get-default-dest() {
   echo "."
 }
 
+# Undo local tilde expansion for remote scp paths.
+_ssh-remote-path-normalize() {
+  local path="$1"
+  if [[ -n "${HOME:-}" && "$path" == "$HOME" ]]; then
+    echo "~"
+    return 0
+  fi
+  if [[ -n "${HOME:-}" && "$path" == "$HOME/"* ]]; then
+    echo "~/${path#$HOME/}"
+    return 0
+  fi
+  echo "$path"
+}
+
 # True when name is a saved cred user for ip (not a remote filename).
 _ssh-get-is-cred-user() {
   local ip="$1" name="$2"
@@ -582,7 +596,7 @@ ssh-get() {
   $recursive && scp_args+=(-r)
 
   for r in "${_SSH_GET_REMOTES[@]}"; do
-    remote_specs+=("${user}@${ip}:${r}")
+    remote_specs+=("${user}@${ip}:$(_ssh-remote-path-normalize "$r")")
   done
 
   if [[ -n "$identity" ]]; then
@@ -603,11 +617,11 @@ ssh-get() {
       "${scp_args[@]}" \
       "${remote_specs[@]}" \
       "$dest/"
-    local status=$?
-    if (( status == 0 )); then
+    local rc=$?
+    if (( rc == 0 )); then
       echo "[+] saved to: $dest/"
     fi
-    return $status
+    return $rc
   fi
 
   sshpass -p "$pass" "$(_scp-bin)" \
@@ -618,11 +632,11 @@ ssh-get() {
     "${scp_args[@]}" \
     "${remote_specs[@]}" \
     "$dest/"
-  local status=$?
-  if (( status == 0 )); then
+  local rc=$?
+  if (( rc == 0 )); then
     echo "[+] saved to: $dest/"
   fi
-  return $status
+  return $rc
 }
 
 alias sget='ssh-get'
