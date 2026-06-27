@@ -1,4 +1,4 @@
-"""Open-port service enumeration via nmap -sC -sV for scout."""
+"""Light UDP service check via nmap -sU --top-ports for scout."""
 
 from __future__ import annotations
 
@@ -13,45 +13,31 @@ from typing import Optional
 from db import add_artifact
 from db import add_execution
 from db import connect
-from db import fetch_merged_open_ports
-from db import find_done_execution
 from db import finish_execution
 from db import upsert_port
 from scan_run import _nmap_output_base_suffix
 from scan_run import _nmap_scan_options
 from scan_run import _nmap_xml_suffix
 from scan_run import _render_nmap_command
-from scan_run import ports_to_nmap_arg
 
-ENUM_KIND = "port_enum"
-ENUM_TASK = "scout-enum"
-ENUM_TIMEOUT_SEC = int(os.environ.get("SCOUT_ENUM_TIMEOUT", "300"))
-
-
-def build_enum_command(ip: str) -> Optional[str]:
-    rows = sorted(fetch_merged_open_ports(ip, proto="tcp"), key=lambda r: int(r[0]))
-    if not rows:
-        return None
-    port_arg = ports_to_nmap_arg(int(row[0]) for row in rows)
-    if not port_arg:
-        return None
-    return f"nmap {_nmap_scan_options()} -sC -sV -p {port_arg} {ip}"
+UDP_KIND = "udp_scan"
+UDP_TASK = "scout-udp"
+UDP_TIMEOUT_SEC = int(os.environ.get("SCOUT_UDP_TIMEOUT", "300"))
+UDP_TOP_PORTS = int(os.environ.get("SCOUT_UDP_TOP_PORTS", "20"))
 
 
-def _clear_enum_artifacts(ip: str) -> None:
+def build_udp_command(ip: str) -> str:
+    return f"nmap {_nmap_scan_options()} -sU --top-ports {UDP_TOP_PORTS} -sV {ip}"
+
+
+def _clear_udp_artifacts(ip: str) -> None:
     conn = connect()
-    conn.execute("DELETE FROM artifacts WHERE ip = ? AND kind = ?", (ip, ENUM_KIND))
+    conn.execute("DELETE FROM artifacts WHERE ip = ? AND kind = ?", (ip, UDP_KIND))
     conn.commit()
     conn.close()
 
 
-def _normalize_script_output(output: str) -> str:
-    lines = [(line or "").strip() for line in (output or "").splitlines()]
-    lines = [line for line in lines if line]
-    return "\n".join(lines).strip()
-
-
-def parse_nmap_enum_xml(xml_data: str) -> dict:
+def parse_nmap_udp_xml(xml_data: str) -> dict:
     text = (xml_data or "").strip()
     if not text:
         return {"ports": []}
@@ -74,8 +60,10 @@ def parse_nmap_enum_xml(xml_data: str) -> dict:
         if ports_el is None:
             continue
         for port_el in ports_el.findall("port"):
+            proto = (port_el.attrib.get("protocol") or "").strip().lower()
+            if proto != "udp":
+                continue
             portid = int(port_el.attrib.get("portid") or 0)
-            proto = (port_el.attrib.get("protocol") or "tcp").strip() or "tcp"
             state_el = port_el.find("state")
             state = (
                 (state_el.attrib.get("state") or "unknown").strip()
@@ -94,60 +82,48 @@ def parse_nmap_enum_xml(xml_data: str) -> dict:
                 ver = (service_el.attrib.get("version") or "").strip()
                 extra = (service_el.attrib.get("extrainfo") or "").strip()
                 version = " ".join(part for part in (product, ver, extra) if part).strip()
-
-            scripts: list[dict] = []
-            for script_el in port_el.findall("script"):
-                script_id = (script_el.attrib.get("id") or "").strip()
-                script_output = _normalize_script_output(
-                    (script_el.attrib.get("output") or "").strip()
-                )
-                if not script_id and not script_output:
-                    continue
-                scripts.append({"id": script_id or "script", "output": script_output})
-
             ports.append(
                 {
                     "port": portid,
-                    "proto": proto,
+                    "proto": "udp",
                     "state": state,
                     "service": service,
                     "version": version,
-                    "scripts": scripts,
                 }
             )
 
-    ports.sort(key=lambda item: (int(item.get("port") or 0), item.get("proto") or "tcp"))
+    ports.sort(key=lambda item: int(item.get("port") or 0))
     return {"ports": ports}
 
 
-def store_port_enum(ip: str, parsed: dict, *, execution_id: Optional[int] = None) -> None:
-    _clear_enum_artifacts(ip)
+def store_udp_scan(ip: str, parsed: dict, *, execution_id: Optional[int] = None) -> None:
+    _clear_udp_artifacts(ip)
     for item in parsed.get("ports") or []:
         port = int(item.get("port") or 0)
-        proto = (item.get("proto") or "tcp").strip() or "tcp"
+        proto = "udp"
         state = (item.get("state") or "unknown").strip() or "unknown"
         service = (item.get("service") or "").strip()
         version = (item.get("version") or "").strip()
         upsert_port(ip, port, proto, state, service, version)
         add_artifact(
             ip,
-            ENUM_KIND,
+            UDP_KIND,
             f"{port}/{proto}",
             json.dumps(item, ensure_ascii=False),
             execution_id,
         )
 
 
-def load_port_enum(ip: str) -> list[dict]:
+def load_udp_scan(ip: str) -> list[dict]:
     conn = connect()
     rows = conn.execute(
         """
-        SELECT key, value
+        SELECT value
         FROM artifacts
         WHERE ip = ? AND kind = ?
         ORDER BY id ASC
         """,
-        (ip, ENUM_KIND),
+        (ip, UDP_KIND),
     ).fetchall()
     conn.close()
 
@@ -159,50 +135,29 @@ def load_port_enum(ip: str) -> list[dict]:
             continue
         if isinstance(item, dict):
             out.append(item)
-    out.sort(key=lambda item: (int(item.get("port") or 0), item.get("proto") or "tcp"))
+    out.sort(key=lambda item: int(item.get("port") or 0))
     return out
 
 
-def _compact_script_output(output: str, *, max_len: int = 220) -> str:
-    text = " | ".join(part.strip() for part in (output or "").splitlines() if part.strip())
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3].rstrip() + "..."
-
-
-def format_port_enum_report_lines(ip: str) -> list[str]:
-    rows = load_port_enum(ip)
+def format_udp_report_lines(ip: str) -> list[str]:
+    rows = load_udp_scan(ip)
     if not rows:
-        return ["(none — run scout to enumerate)"]
+        return ["(none — run scout to check UDP)"]
 
     lines: list[str] = []
-    shown = 0
     for item in rows:
-        scripts = item.get("scripts") or []
-        if not scripts:
-            continue
         port = int(item.get("port") or 0)
-        proto = (item.get("proto") or "tcp").strip() or "tcp"
+        state = (item.get("state") or "unknown").strip() or "unknown"
         service = (item.get("service") or "-").strip() or "-"
         version = (item.get("version") or "").strip()
-        header = f"{port}/{proto}  service={service}"
+        line = f"{port}/udp  state={state}  service={service}"
         if version:
-            header += f"  ({version})"
-        lines.append(header)
-        for script in scripts:
-            sid = (script.get("id") or "script").strip() or "script"
-            output = _compact_script_output(script.get("output") or "")
-            if output:
-                lines.append(f"  {sid}: {output}")
-            else:
-                lines.append(f"  {sid}")
-        shown += 1
-    if shown == 0:
-        return ["(no NSE highlights)"]
-    return lines
+            line += f"  ({version})"
+        lines.append(line)
+    return lines or ["(none — run scout to check UDP)"]
 
 
-def run_port_enum_phase(
+def run_udp_phase(
     ip: str,
     *,
     dry_run: bool = False,
@@ -210,31 +165,19 @@ def run_port_enum_phase(
     output_base: str | None = None,
 ) -> int:
     print("")
-    print("[*] phase 1b: service enumeration (nmap -sC -sV on open ports)")
+    print(f"[*] phase 1d: UDP check (nmap -sU --top-ports {UDP_TOP_PORTS} -sV)")
 
-    cmd = build_enum_command(ip)
-    if not cmd:
-        print("[*] no open ports — skip")
-        return 0
-
-    display_cmd = _render_nmap_command(cmd, xml_path="-", output_base=output_base)
-    print(f"    $ {display_cmd}")
+    cmd = build_udp_command(ip)
+    print(f"    $ {_render_nmap_command(cmd, xml_path='-', output_base=output_base)}")
 
     if dry_run:
         print("")
         return 0
 
-    cached_exec = None if force else find_done_execution(ip, cmd)
-    cached_rows = load_port_enum(ip) if cached_exec else []
-    if cached_exec and cached_rows:
-        print(f"    -> exec_id={cached_exec['id']} (cached)  ev {cached_exec['id']}")
-        print("")
-        return 0
-
     if force:
-        _clear_enum_artifacts(ip)
+        _clear_udp_artifacts(ip)
 
-    exec_id = add_execution(None, ip, ENUM_TASK, cmd, cwd="/", status="running")
+    exec_id = add_execution(None, ip, UDP_TASK, cmd, cwd="/", status="running")
     xml_path = ""
     try:
         if output_base:
@@ -244,7 +187,7 @@ def run_port_enum_phase(
             xml_path = f"{output_base}.xml"
         else:
             with tempfile.NamedTemporaryFile(
-                prefix="scout-enum-",
+                prefix="scout-udp-",
                 suffix=".xml",
                 delete=False,
             ) as tf:
@@ -259,7 +202,7 @@ def run_port_enum_phase(
             shell=True,
             capture_output=True,
             text=True,
-            timeout=ENUM_TIMEOUT_SEC,
+            timeout=UDP_TIMEOUT_SEC,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -299,10 +242,8 @@ def run_port_enum_phase(
         stderr=(proc.stderr or "")[-20000:],
     )
 
-    parsed = parse_nmap_enum_xml(xml_text)
-    if parsed.get("ports"):
-        store_port_enum(ip, parsed, execution_id=exec_id)
-
+    parsed = parse_nmap_udp_xml(xml_text)
+    store_udp_scan(ip, parsed, execution_id=exec_id)
     tag = "ran" if proc.returncode == 0 else f"failed rc={proc.returncode}"
     print(f"    -> exec_id={exec_id} ({tag})  ev {exec_id}")
     print("")

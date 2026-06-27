@@ -437,6 +437,26 @@ def _fetch_ports(ip, state=None, closed_with_service=False):
     return rows
 
 
+def _fetch_reportable_open_ports(ip):
+    conn = connect()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """
+        SELECT port, proto, state, service, version
+        FROM ports
+        WHERE ip = ?
+          AND (
+            state = 'open'
+            OR (proto = 'udp' AND state = 'open|filtered')
+          )
+        ORDER BY port, proto
+        """,
+        (ip,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def _port_group_heading(name):
     """Section title distinct from tabular column header."""
     return f"--- {name} ---"
@@ -455,13 +475,15 @@ def format_port_section_lines(label, rows, group=True, show_coverage=False, ip=N
     else:
         for p in rows:
             lines.append(f"{p[0]}\t{p[1]}\t{p[2]}\t{p[3]}\t{p[4]}")
+        if any((p[2] or "").strip() == "open|filtered" for p in rows):
+            lines.append("[i] open|filtered is tentative (common on UDP); verify manually before acting on it")
     return lines
 
 
 def format_scan_snapshot_lines(ip, progress_line):
     """Lines for live-updating scan UI (progress + OPEN + CLOSED)."""
     lines = [progress_line]
-    lines.extend(format_port_section_lines("OPEN", _fetch_ports(ip, "open")))
+    lines.extend(format_port_section_lines("OPEN", _fetch_reportable_open_ports(ip)))
     lines.extend(
         format_port_section_lines("CLOSED", _fetch_ports(ip, closed_with_service=True))
     )
@@ -625,7 +647,7 @@ def list_scout_jobs_for_case(
     return rows
 
 
-def fetch_merged_open_ports(current_ip: str):
+def fetch_merged_open_ports(current_ip: str, *, proto: str | None = None):
     """Union open ports across load_from + current target; prefer current_ip service info."""
     case = _current_case_name()
     order: list[str] = []
@@ -638,11 +660,34 @@ def fetch_merged_open_ports(current_ip: str):
     elif current_ip in order:
         order = [ip for ip in order if ip != current_ip] + [current_ip]
 
-    merged: dict[int, tuple] = {}
+    merged: dict[tuple[int, str], tuple] = {}
     for ip in order:
         for row in _fetch_ports(ip, "open"):
-            merged[int(row[0])] = row
-    return [merged[p] for p in sorted(merged)]
+            row_proto = (row[1] or "").strip()
+            if proto and row_proto != proto:
+                continue
+            merged[(int(row[0]), row_proto)] = row
+    return [merged[key] for key in sorted(merged, key=lambda item: (item[0], item[1]))]
+
+
+def fetch_merged_reportable_open_ports(current_ip: str):
+    case = _current_case_name()
+    order: list[str] = []
+    if case:
+        order.extend(_recon_scope_ips(current_ip))
+    elif current_ip:
+        order.append(current_ip)
+    if current_ip and current_ip not in order:
+        order.append(current_ip)
+    elif current_ip in order:
+        order = [ip for ip in order if ip != current_ip] + [current_ip]
+
+    merged: dict[tuple[int, str], tuple] = {}
+    for ip in order:
+        for row in _fetch_reportable_open_ports(ip):
+            row_proto = (row[1] or "").strip()
+            merged[(int(row[0]), row_proto)] = row
+    return [merged[key] for key in sorted(merged, key=lambda item: (item[0], item[1]))]
 
 
 def fetch_merged_closed_ports(current_ip: str):
@@ -667,7 +712,7 @@ def fetch_merged_closed_ports(current_ip: str):
 def format_scan_snapshot_case_lines(case_name: str, current_ip: str, progress_line: str):
     """Case-scoped port snapshot (union across room IPs, same machine config)."""
     lines = [progress_line]
-    lines.extend(format_port_section_lines("OPEN", fetch_merged_open_ports(current_ip)))
+    lines.extend(format_port_section_lines("OPEN", fetch_merged_reportable_open_ports(current_ip)))
     lines.extend(
         format_port_section_lines("CLOSED", fetch_merged_closed_ports(current_ip))
     )

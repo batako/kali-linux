@@ -78,6 +78,7 @@ exploit 除外（手動で N/A を確認した後だけ）:
   -j, --jobs N                   -fp と併用: 並列 full scan（例: -fp -j 4）
   --quick                        簡易スキャン（-sS のみ。-sC -sV なし。大量 open 対策）
   --save-scan                    nmap 成果物を logs/ に保存
+  通常の scout は open TCP の詳細列挙に加えて UDP top 20 も確認
 
 vhost 発見（THM / IP）:
   -v, --vhosts [domain|ip]       Host: FUZZ.domain（ffuf）または IP 向け gobuster vhost
@@ -163,6 +164,7 @@ scout -ds -p（wordlist tier: light → standard → wide → deep）
   s -fp --quick -j 4            # 簡易 full scan（悪あがき大量 open 向け）
   s --save-scan                 # top 1000 の nmap 成果物を logs/ports.* に保存
   s -fp --save-scan             # full scan の chunk 成果物を logs/full-ports.* に保存
+  s --save-scan                 # 詳細列挙は logs/enumeration.*、UDP は logs/udp.* に保存
   s --quick                     # top 1000 簡易スキャンのみ（probe/dirs なし）
 EOF
         else
@@ -198,6 +200,7 @@ EOF
           echo "  -j, --jobs N                   with -fp: parallel full scan (e.g. -fp -j 4)"
           echo "  --quick                        light scan (-sS only; no -sC -sV; mass-open hosts)"
           echo "  --save-scan                    save nmap artifacts under logs/"
+          echo "  normal scout also checks UDP top 20 after TCP enumeration"
           echo ""
           echo "vhost discovery (THM / IP):"
           echo "  -v, --vhosts [domain|ip]       Host: FUZZ.domain (ffuf) or gobuster vhost on IP"
@@ -282,6 +285,7 @@ EOF
           echo "  s -fp -j 4                    # same, 4 parallel nmap workers"
           echo "  s --save-scan                 # save top-1000 nmap artifacts to logs/ports.*"
           echo "  s -fp --save-scan             # save full-scan chunk artifacts to logs/full-ports.*"
+          echo "  s --save-scan                 # save TCP enum to logs/enumeration.* and UDP to logs/udp.*"
         fi
         return 0
         ;;

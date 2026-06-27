@@ -1667,7 +1667,7 @@ def _run_dirs_phase(
 
 def _probe_open_rows(ip: str):
     """All open ports; resolve_probe_plan filters by service (ssh / web / ftp)."""
-    return sorted(fetch_merged_open_ports(ip), key=lambda r: int(r[0]))
+    return sorted(fetch_merged_open_ports(ip, proto="tcp"), key=lambda r: int(r[0]))
 
 
 def _format_port_row(row) -> str:
@@ -2420,6 +2420,17 @@ def run_scout(
         if enum_rc != 0:
             return enum_rc
 
+        from scout_udp import run_udp_phase
+
+        udp_rc = run_udp_phase(
+            ip,
+            dry_run=dry_run,
+            force=force_scan,
+            output_base="logs/udp" if save_scan else None,
+        )
+        if udp_rc != 0:
+            return udp_rc
+
         from scout_exploit import run_exploit_phase
 
         return run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
@@ -2591,6 +2602,17 @@ def run_scout(
     os_rc = run_os_detect_phase(ip, dry_run=dry_run, force=force_scan)
     if os_rc != 0:
         return os_rc
+
+    from scout_udp import run_udp_phase
+
+    udp_rc = run_udp_phase(
+        ip,
+        dry_run=dry_run,
+        force=force_scan,
+        output_base="logs/udp" if save_scan else None,
+    )
+    if udp_rc != 0:
+        return udp_rc
 
     rc = _run_probe_phase(ip, dry_run=dry_run)
     if rc != 0:

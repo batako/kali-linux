@@ -154,7 +154,7 @@ def match_auth_plans(
 
 def resolve_auth_task_plans(ip: str) -> list[AuthTaskPlan]:
     plans: list[AuthTaskPlan] = []
-    for row in fetch_merged_open_ports(ip):
+    for row in fetch_merged_open_ports(ip, proto="tcp"):
         port = int(row[0])
         service = row[3] or ""
         version = row[4] or ""

@@ -121,7 +121,7 @@ def _fetch_execution_output(exec_id: int) -> str:
 
 
 def _has_open_ports(ip: str) -> bool:
-    return any(True for _ in fetch_merged_open_ports(ip))
+    return any(True for _ in fetch_merged_open_ports(ip, proto="tcp"))
 
 
 def format_os_report_lines(ip: str) -> list[str]:
