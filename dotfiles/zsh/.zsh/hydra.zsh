@@ -627,14 +627,15 @@ _hydra-parse-args() {
   [[ -n "$_HYDRA_TARGET" && -n "$_HYDRA_USER" ]]
 }
 
-_hydra-run-service() {
+_hydra-run-auth-service() {
   local service="$1"
   local target="$2"
-  local user="$3"
-  local wordlist="$4"
-  local threads="$5"
-  local log_prefix="$6"
-  local port="${7:-}"
+  local user_flag="$3"   # -l or -L
+  local user_arg="$4"
+  local wordlist="$5"
+  local threads="$6"
+  local log_prefix="$7"
+  local port="${8:-}"
 
   if [[ ! -f "$wordlist" ]]; then
     echo "wordlist not found: $wordlist"
@@ -643,14 +644,18 @@ _hydra-run-service() {
 
   local target_label="${service}://$target"
   [[ -n "$port" ]] && target_label="${target_label}:$port"
-  echo "[*] target: $target_label  user: $user"
+  if [[ "$user_flag" == -L ]]; then
+    echo "[*] target: $target_label  -L ${user_arg:t}"
+  else
+    echo "[*] target: $target_label  user: $user_arg"
+  fi
   echo "[*] wordlist: $wordlist"
 
   local log rc
   log="$(mktemp "${TMPDIR:-/tmp}/${log_prefix}.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
-  local -a hydra_cmd=(hydra -l "$user" -P "$wordlist" -t "$threads" -f -V)
+  local -a hydra_cmd=(hydra "$user_flag" "$user_arg" -P "$wordlist" -t "$threads" -f -V)
   [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
   hydra_cmd+=("$target" "$service")
 
@@ -662,20 +667,30 @@ _hydra-run-service() {
   return $rc
 }
 
-_hydrassh-usage() {
-  echo "usage: hydrassh [-p port] [target] <user> [wordlist]"
-  echo "  default wordlist: \$RECON_PASSLIST"
-  echo "  omit target when \$IP is set (target-set <ip>)"
-  echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
-  echo
-  echo "examples:"
-  echo "  hydrassh root"
-  echo "  hydrassh -p 6498 boring"
-  echo "  hydrassh 10.10.10.10 admin ./wordlist.txt"
+_hydra-list-service-usage() {
+  local name="$1"
+  echo "usage: ${name} [-p port] [-t threads] [target] -L users.txt -P passes.txt"
+  echo "       ${name} [-p port] [-t threads] [target] <user> [wordlist]"
+  echo "  hits saved to creds-list via creds-import-hydra"
+  echo "  default wordlist: \$RECON_PASSLIST   default threads: 16"
+  echo "  examples:"
+  echo "    ${name} -L users.txt -P passes.txt"
+  echo "    ${name} -p 143 -L users.txt -P passes.txt"
+  echo "    ${name} seina \$RECON_PASSLIST"
 }
 
-hydrassh() {
-  local port="" threads=32
+_hydra-service-core() {
+  local name="$1"
+  local service="$2"
+  local default_user="$3"
+  local default_threads="$4"
+  local allow_list_mode="$5"
+  local usage_fn="$6"
+  local require_user="$7"
+  shift 7
+
+  local port="" threads="$default_threads"
+  local userfile="" passfile="" target=""
   local -a args=()
 
   while [[ $# -gt 0 ]]; do
@@ -692,8 +707,16 @@ hydrassh() {
         threads="$2"
         shift 2
         ;;
+      -L)
+        userfile="$2"
+        shift 2
+        ;;
+      -P)
+        passfile="$2"
+        shift 2
+        ;;
       -h|--help)
-        _hydrassh-usage
+        "$usage_fn" "$name"
         return 0
         ;;
       *)
@@ -703,17 +726,53 @@ hydrassh() {
     esac
   done
 
-  if [[ ${#args[@]} -eq 0 ]]; then
-    _hydrassh-usage >&2
+  (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
+
+  if [[ -n "$userfile" || -n "$passfile" ]]; then
+    if [[ "$allow_list_mode" != true || -z "$userfile" || -z "$passfile" ]]; then
+      "$usage_fn" "$name" >&2
+      return 1
+    fi
+    if [[ ! -f "$userfile" || ! -f "$passfile" ]]; then
+      echo "[-] userlist or passlist not found" >&2
+      return 1
+    fi
+    target="${args[1]:-${IP:-}}"
+    [[ -z "$target" ]] && {
+      echo "[-] no target ip — target-set <ip> first" >&2
+      return 1
+    }
+    _hydra-run-auth-service "$service" "$target" -L "$userfile" "$passfile" "$threads" "$name" "$port"
+    return $?
+  fi
+
+  if [[ "$require_user" == true && ${#args[@]} -eq 0 ]]; then
+    "$usage_fn" "$name" >&2
     return 1
   fi
 
-  _hydra-parse-args "" "${args[@]}" || {
-    _hydrassh-usage >&2
+  _hydra-parse-args "$default_user" "${args[@]}" || {
+    "$usage_fn" "$name" >&2
     return 1
   }
 
-  _hydra-run-service ssh "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydrassh "$port"
+  _hydra-run-auth-service "$service" "$_HYDRA_TARGET" -l "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" "$name" "$port"
+}
+
+_hydrassh-usage() {
+  echo "usage: hydrassh [-p port] [-t threads] [target] <user> [wordlist]"
+  echo "  default wordlist: \$RECON_PASSLIST   default threads: 32"
+  echo "  omit target when \$IP is set (target-set <ip>)"
+  echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
+  echo
+  echo "examples:"
+  echo "  hydrassh root"
+  echo "  hydrassh -p 6498 boring"
+  echo "  hydrassh 10.10.10.10 admin ./wordlist.txt"
+}
+
+hydrassh() {
+  _hydra-service-core hydrassh ssh "" 32 false _hydrassh-usage true "$@"
 }
 
 _hydraftp-usage() {
@@ -732,150 +791,15 @@ _hydraftp-usage() {
 }
 
 hydraftp() {
-  local port="" threads=16
-  local -a args=()
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -p[0-9]*)
-        port="${1#-p}"
-        shift
-        ;;
-      -p)
-        port="$2"
-        shift 2
-        ;;
-      -t)
-        threads="$2"
-        shift 2
-        ;;
-      -h|--help)
-        _hydraftp-usage
-        return 0
-        ;;
-      *)
-        args+=("$1")
-        shift
-        ;;
-    esac
-  done
-
-  _hydra-parse-args anonymous "${args[@]}" || {
-    _hydraftp-usage >&2
-    return 1
-  }
-
-  _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydraftp "$port"
-}
-
-_hydra-list-service-usage() {
-  local name="$1"
-  echo "usage: ${name} [target] -L users.txt -P passes.txt"
-  echo "       ${name} [target] <user> [wordlist]"
-  echo "  hits saved to creds-list via creds-import-hydra"
-  echo "  examples:"
-  echo "    ${name} -L users.txt -P passes.txt"
-  echo "    ${name} seina \$RECON_PASSLIST"
-}
-
-_hydra-run-list-service() {
-  local service="$1"
-  local target="$2"
-  local userfile="$3"
-  local passfile="$4"
-  local threads="$5"
-  local log_prefix="$6"
-  local port="${7:-}"
-
-  [[ -f "$userfile" && -f "$passfile" ]] || {
-    echo "[-] userlist or passlist not found" >&2
-    return 1
-  }
-
-  local target_label="${service}://${target}"
-  [[ -n "$port" ]] && target_label="${target_label}:$port"
-  echo "[*] target: ${target_label}  -L ${userfile:t}  -P ${passfile:t}" >&2
-  local log rc
-  log="$(mktemp "${TMPDIR:-/tmp}/${log_prefix}.XXXXXX")"
-  trap 'rm -f "$log"' EXIT INT TERM
-  local -a hydra_cmd=(hydra -L "$userfile" -P "$passfile" -t "$threads" -f -V)
-  [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
-  hydra_cmd+=("$target" "$service")
-  "${hydra_cmd[@]}" \
-    2>&1 | tee "$log"
-  rc=${pipestatus[1]}
-  python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
-  return $rc
-}
-
-# usage: hydrapop3 [target] -L users.txt -P passes.txt
-#        hydrapop3 [target] <user> [wordlist]   (single user, like hydrassh)
-_hydra-mail-service() {
-  local service="$1"
-  local name="$2"
-  shift 2
-  local target="" userfile="" passfile="" threads=16 port=""
-  local -a args=()
-
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -p[0-9]*)
-        port="${1#-p}"
-        shift
-        ;;
-      -p)
-        port="$2"
-        shift 2
-        ;;
-      -L)
-        userfile="$2"
-        shift 2
-        ;;
-      -P)
-        passfile="$2"
-        shift 2
-        ;;
-      -t)
-        threads="$2"
-        shift 2
-        ;;
-      -h|--help)
-        _hydra-list-service-usage "$name"
-        return 0
-        ;;
-      *)
-        args+=("$1")
-        shift
-        ;;
-    esac
-  done
-
-  (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
-
-  if [[ -n "$userfile" && -n "$passfile" ]]; then
-    target="${args[1]:-${IP:-}}"
-    [[ -z "$target" ]] && {
-      echo "[-] no target ip — target-set <ip> first" >&2
-      return 1
-    }
-    _hydra-run-list-service "$service" "$target" "$userfile" "$passfile" "$threads" "$name" "$port"
-    return $?
-  fi
-
-  _hydra-parse-args "" "${args[@]}" || {
-    _hydra-list-service-usage "$name" >&2
-    return 1
-  }
-
-  _hydra-run-service "$service" "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" "$name" "$port"
+  _hydra-service-core hydraftp ftp anonymous 16 false _hydraftp-usage false "$@"
 }
 
 hydrapop3() {
-  _hydra-mail-service pop3 hydrapop3 "$@"
+  _hydra-service-core hydrapop3 pop3 "" 16 true _hydra-list-service-usage false "$@"
 }
 
 hydraimap() {
-  _hydra-mail-service imap hydraimap "$@"
+  _hydra-service-core hydraimap imap "" 16 true _hydra-list-service-usage false "$@"
 }
 
 _hydra-run-http-get() {
