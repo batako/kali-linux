@@ -768,14 +768,65 @@ hydraftp() {
   _hydra-run-service ftp "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydraftp "$port"
 }
 
+_hydra-list-service-usage() {
+  local name="$1"
+  echo "usage: ${name} [target] -L users.txt -P passes.txt"
+  echo "       ${name} [target] <user> [wordlist]"
+  echo "  hits saved to creds-list via creds-import-hydra"
+  echo "  examples:"
+  echo "    ${name} -L users.txt -P passes.txt"
+  echo "    ${name} seina \$RECON_PASSLIST"
+}
+
+_hydra-run-list-service() {
+  local service="$1"
+  local target="$2"
+  local userfile="$3"
+  local passfile="$4"
+  local threads="$5"
+  local log_prefix="$6"
+  local port="${7:-}"
+
+  [[ -f "$userfile" && -f "$passfile" ]] || {
+    echo "[-] userlist or passlist not found" >&2
+    return 1
+  }
+
+  local target_label="${service}://${target}"
+  [[ -n "$port" ]] && target_label="${target_label}:$port"
+  echo "[*] target: ${target_label}  -L ${userfile:t}  -P ${passfile:t}" >&2
+  local log rc
+  log="$(mktemp "${TMPDIR:-/tmp}/${log_prefix}.XXXXXX")"
+  trap 'rm -f "$log"' EXIT INT TERM
+  local -a hydra_cmd=(hydra -L "$userfile" -P "$passfile" -t "$threads" -f -V)
+  [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
+  hydra_cmd+=("$target" "$service")
+  "${hydra_cmd[@]}" \
+    2>&1 | tee "$log"
+  rc=${pipestatus[1]}
+  python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
+  return $rc
+}
+
 # usage: hydrapop3 [target] -L users.txt -P passes.txt
 #        hydrapop3 [target] <user> [wordlist]   (single user, like hydrassh)
-hydrapop3() {
-  local target="" userfile="" passfile="" threads=16
+_hydra-mail-service() {
+  local service="$1"
+  local name="$2"
+  shift 2
+  local target="" userfile="" passfile="" threads=16 port=""
   local -a args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -p[0-9]*)
+        port="${1#-p}"
+        shift
+        ;;
+      -p)
+        port="$2"
+        shift 2
+        ;;
       -L)
         userfile="$2"
         shift 2
@@ -789,12 +840,7 @@ hydrapop3() {
         shift 2
         ;;
       -h|--help)
-        echo "usage: hydrapop3 [target] -L users.txt -P passes.txt"
-        echo "       hydrapop3 [target] <user> [wordlist]"
-        echo "  hits saved to creds-list via creds-import-hydra"
-        echo "  examples:"
-        echo "    hydrapop3 -L users.txt -P passes.txt"
-        echo "    hydrapop3 seina \$RECON_PASSLIST"
+        _hydra-list-service-usage "$name"
         return 0
         ;;
       *)
@@ -812,28 +858,24 @@ hydrapop3() {
       echo "[-] no target ip — target-set <ip> first" >&2
       return 1
     }
-    [[ -f "$userfile" && -f "$passfile" ]] || {
-      echo "[-] userlist or passlist not found" >&2
-      return 1
-    }
-    echo "[*] target: pop3://$target  -L ${userfile:t}  -P ${passfile:t}" >&2
-    local log rc
-    log="$(mktemp "${TMPDIR:-/tmp}/hydrapop3.XXXXXX")"
-    trap 'rm -f "$log"' EXIT INT TERM
-    hydra -L "$userfile" -P "$passfile" -t "$threads" -f -V \
-      "$target" pop3 2>&1 | tee "$log"
-    rc=${pipestatus[1]}
-    python3 "$RECON_APP" creds-import-hydra "$target" --file "$log"
-    return $rc
+    _hydra-run-list-service "$service" "$target" "$userfile" "$passfile" "$threads" "$name" "$port"
+    return $?
   fi
 
   _hydra-parse-args "" "${args[@]}" || {
-    echo "usage: hydrapop3 [target] -L users.txt -P passes.txt" >&2
-    echo "       hydrapop3 [target] <user> [wordlist]" >&2
+    _hydra-list-service-usage "$name" >&2
     return 1
   }
 
-  _hydra-run-service pop3 "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" hydrapop3
+  _hydra-run-service "$service" "$_HYDRA_TARGET" "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" "$name" "$port"
+}
+
+hydrapop3() {
+  _hydra-mail-service pop3 hydrapop3 "$@"
+}
+
+hydraimap() {
+  _hydra-mail-service imap hydraimap "$@"
 }
 
 _hydra-run-http-get() {

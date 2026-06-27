@@ -60,6 +60,24 @@ class CredsHydraImportTest(unittest.TestCase):
             comment="FTP (hydra)",
         )
 
+    @patch("creds.creds_upsert", return_value="saved")
+    def test_import_imap(self, mock_upsert) -> None:
+        text = (
+            "[143][imap] host: 10.0.0.1   login: lazie   password: letmein\n"
+            "1 of 1 target successfully completed, 1 valid password found\n"
+        )
+        rows = import_hydra(text, ip="10.0.0.1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["username"], "lazie")
+        self.assertEqual(rows[0]["password"], "letmein")
+        mock_upsert.assert_called_once_with(
+            ip="10.0.0.1",
+            username="lazie",
+            password="letmein",
+            execution_id=None,
+            comment="IMAP (hydra)",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
