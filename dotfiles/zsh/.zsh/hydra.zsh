@@ -383,14 +383,19 @@ ffufweb() {
 
 _hydraweb-usage() {
   echo "usage:"
-  echo "  hydraweb [-H vhost] [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  hydraweb [-H vhost] [-w wordlist] [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  hydraweb [-H vhost] [-L userlist] [-w wordlist] [target] <path> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
   echo "  omit target when \$IP is set (target-set <ip>)"
   echo "  -H vhost: Host header (THM: hydraweb -H lookup.thm /login.php ...)"
+  echo "  -L userlist: username list for spray mode"
+  echo "  -w wordlist: password wordlist (default: \$RECON_PASSLIST)"
   echo "  cookie: sent as H=Cookie: ... (e.g. PHPSESSID=abc; security=low)"
   echo ""
   echo "examples:"
   echo "  hydraweb /login.php Rick F \"Invalid username or password\" username password"
+  echo "  hydraweb -L ./users.txt /login.php F \"Invalid username or password\" username password"
   echo "  hydraweb -H lookup.thm /login.php admin F \"Wrong password\" username password"
+  echo "  hydraweb -w ./passwords.txt /login.php admin F \"Wrong password\" username password"
   echo "  hydraweb /login.php admin F \"failed\" username password sub=Login \"PHPSESSID=abc; security=low\""
   echo ""
   echo "extra_post default: sub=Login  (matches login.php submit button)"
@@ -400,12 +405,33 @@ _hydraweb-usage() {
 }
 
 hydraweb() {
-  local target path user mode text userfield passfield extra_post cookie form host_header port=""
+  local target path user mode text userfield passfield extra_post cookie form host_header port="" wordlist="" passlist="" userlist=""
+  local user_flag="-l" user_arg=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -H)
+        if [[ -z "${2:-}" ]]; then
+          echo "[-] hydraweb: -H requires a value" >&2
+          return 1
+        fi
         host_header="$2"
+        shift 2
+        ;;
+      -w)
+        if [[ -z "${2:-}" ]]; then
+          echo "[-] hydraweb: -w requires a file" >&2
+          return 1
+        fi
+        wordlist="$2"
+        shift 2
+        ;;
+      -L)
+        if [[ -z "${2:-}" ]]; then
+          echo "[-] hydraweb: -L requires a file" >&2
+          return 1
+        fi
+        userlist="$2"
         shift 2
         ;;
       *)
@@ -414,7 +440,12 @@ hydraweb() {
     esac
   done
 
-  if [[ $# -lt 5 ]]; then
+  if [[ -n "$userlist" ]]; then
+    if [[ $# -lt 4 ]]; then
+      _hydraweb-usage
+      return 1
+    fi
+  elif [[ $# -lt 5 ]]; then
     _hydraweb-usage
     return 1
   fi
@@ -481,13 +512,35 @@ hydraweb() {
   fi
   [[ "$path" == /* ]] || path="/$path"
 
-  user="$1"
-  mode="$2"
-  text="$3"
-  userfield="$4"
-  passfield="${5:-password}"
-  extra_post="${6:-sub=Login}"
-  cookie="${7:-}"
+  if [[ -n "$userlist" ]]; then
+    mode="$1"
+    text="$2"
+    userfield="$3"
+    passfield="${4:-password}"
+    extra_post="${5:-sub=Login}"
+    cookie="${6:-}"
+    user_flag="-L"
+    user_arg="$userlist"
+  else
+    user="$1"
+    mode="$2"
+    text="$3"
+    userfield="$4"
+    passfield="${5:-password}"
+    extra_post="${6:-sub=Login}"
+    cookie="${7:-}"
+    user_arg="$user"
+  fi
+  passlist="${wordlist:-$RECON_PASSLIST}"
+
+  if [[ -n "$userlist" && ! -f "$userlist" ]]; then
+    echo "[-] hydraweb: userlist not found: $userlist" >&2
+    return 1
+  fi
+  if [[ ! -f "$passlist" ]]; then
+    echo "[-] hydraweb: wordlist not found: $passlist" >&2
+    return 1
+  fi
 
   form="${path}:${userfield}=^USER^&${passfield}=^PASS^"
   if [[ -n "$extra_post" ]]; then
@@ -504,14 +557,18 @@ hydraweb() {
   echo "[*] hydra form: ${form}"
   [[ -n "$host_header" ]] && echo "[*] vhost: ${host_header}"
   [[ -n "$cookie" ]] && echo "[*] cookie: ${cookie}"
-  echo "[*] target: http://${host_header:-$target}${port:+:$port}${path}  user: $user"
-  echo "[*] wordlist: $RECON_PASSLIST"
+  if [[ "$user_flag" == "-L" ]]; then
+    echo "[*] target: http://${host_header:-$target}${port:+:$port}${path}  userlist: ${userlist}"
+  else
+    echo "[*] target: http://${host_header:-$target}${port:+:$port}${path}  user: $user"
+  fi
+  echo "[*] wordlist: $passlist"
 
   local log rc
   log="$(/usr/bin/mktemp "${TMPDIR:-/tmp}/hydraweb.XXXXXX")"
   trap 'rm -f "$log"' EXIT INT TERM
 
-  local -a hydra_cmd=(/usr/bin/hydra -l "$user" -P "$RECON_PASSLIST" -t 32 -f -V)
+  local -a hydra_cmd=(/usr/bin/hydra "$user_flag" "$user_arg" -P "$passlist" -t 32 -f -V)
   [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
   hydra_cmd+=("$target" http-post-form "$form")
 
