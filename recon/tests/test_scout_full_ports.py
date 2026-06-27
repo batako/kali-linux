@@ -44,18 +44,101 @@ class ScoutFullPortsTests(unittest.TestCase):
 
     @patch("scout_exploit.run_exploit_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
-    def test_full_ports_runs_exploit_after_scan(self, mock_scan, mock_exploit) -> None:
+    def test_full_ports_does_not_save_artifacts_by_default(
+        self, mock_scan, mock_exploit
+    ) -> None:
         rc = self.scout_run.run_scout(self.ip, full_ports=True, dry_run=True)
         self.assertEqual(rc, 0)
-        mock_scan.assert_called_once()
+        mock_scan.assert_called_once_with(
+            self.ip,
+            profile=self.scout_run.PROFILE_FULL,
+            force=False,
+            dry_run=True,
+            quiet_ports=False,
+            jobs=1,
+            quick=False,
+            output_base=None,
+        )
         mock_exploit.assert_called_once_with(self.ip, dry_run=True, force=False)
+
+    @patch("scout_exploit.run_exploit_phase", return_value=0)
+    @patch("scout_run.run_scan", return_value=0)
+    def test_save_scan_writes_full_ports_artifacts(
+        self, mock_scan, mock_exploit
+    ) -> None:
+        rc = self.scout_run.run_scout(
+            self.ip,
+            full_ports=True,
+            dry_run=True,
+            save_scan=True,
+        )
+        self.assertEqual(rc, 0)
+        mock_scan.assert_called_once_with(
+            self.ip,
+            profile=self.scout_run.PROFILE_FULL,
+            force=False,
+            dry_run=True,
+            quiet_ports=False,
+            jobs=1,
+            quick=False,
+            output_base="logs/full-ports",
+        )
+        mock_exploit.assert_called_once_with(self.ip, dry_run=True, force=False)
+
+    @patch("scout_run.run_scan", return_value=0)
+    def test_quick_full_ports_uses_separate_output_base_when_saved(
+        self, mock_scan
+    ) -> None:
+        rc = self.scout_run.run_scout(self.ip, full_ports=True, quick_scan=True)
+        self.assertEqual(rc, 0)
+        mock_scan.assert_called_once_with(
+            self.ip,
+            profile=self.scout_run.PROFILE_FULL,
+            force=False,
+            dry_run=False,
+            quiet_ports=False,
+            jobs=1,
+            quick=True,
+            output_base=None,
+        )
+
+    @patch("scout_run.run_scan", return_value=0)
+    def test_quick_full_ports_uses_separate_output_base_when_save_scan(
+        self, mock_scan
+    ) -> None:
+        rc = self.scout_run.run_scout(
+            self.ip,
+            full_ports=True,
+            quick_scan=True,
+            save_scan=True,
+        )
+        self.assertEqual(rc, 0)
+        mock_scan.assert_called_once_with(
+            self.ip,
+            profile=self.scout_run.PROFILE_FULL,
+            force=False,
+            dry_run=False,
+            quiet_ports=False,
+            jobs=1,
+            quick=True,
+            output_base="logs/full-ports-quick",
+        )
 
     @patch("scout_exploit.run_exploit_phase")
     @patch("scout_run.run_scan", return_value=1)
     def test_full_ports_skips_exploit_on_scan_failure(self, mock_scan, mock_exploit) -> None:
         rc = self.scout_run.run_scout(self.ip, full_ports=True)
         self.assertEqual(rc, 1)
-        mock_scan.assert_called_once()
+        mock_scan.assert_called_once_with(
+            self.ip,
+            profile=self.scout_run.PROFILE_FULL,
+            force=False,
+            dry_run=False,
+            quiet_ports=False,
+            jobs=1,
+            quick=False,
+            output_base=None,
+        )
         mock_exploit.assert_not_called()
 
     @patch("scout_exploit.run_exploit_phase")

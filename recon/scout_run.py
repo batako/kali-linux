@@ -2337,6 +2337,7 @@ def run_scout(
     dirs_ext_fuzz: bool = False,
     ext_fuzz_wordlist: Optional[str] = None,
     quick_scan: bool = False,
+    save_scan: bool = False,
 ):
     upsert_host(ip, status="up")
 
@@ -2345,6 +2346,11 @@ def run_scout(
         return 1
 
     if full_ports:
+        full_output_base = None
+        if save_scan:
+            full_output_base = (
+                "logs/full-ports-quick" if quick_scan else "logs/full-ports"
+            )
         print("========================")
         case = _scout_case()
         if case:
@@ -2382,6 +2388,7 @@ def run_scout(
             quiet_ports=quiet_ports,
             jobs=scan_jobs,
             quick=quick_scan,
+            output_base=full_output_base,
         )
         if scan_rc != 0:
             return scan_rc
@@ -2522,6 +2529,9 @@ def run_scout(
     if skip_scan:
         rc = 0
     else:
+        basic_output_base = None
+        if save_scan and not quick_scan:
+            basic_output_base = "logs/ports"
         rc = run_scan(
             ip,
             profile=scan_profile,
@@ -2530,6 +2540,7 @@ def run_scout(
             quiet_ports=quiet_ports,
             jobs=1,
             quick=quick_scan,
+            output_base=basic_output_base,
         )
         if rc != 0:
             return rc

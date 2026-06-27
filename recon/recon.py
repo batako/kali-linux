@@ -368,6 +368,7 @@ def main():
         quiet_ports = False
         full_ports = False
         quick_scan = False
+        save_scan = False
         scan_jobs = DEFAULT_FULL_JOBS
         dirs_only = False
         dirs_multi = False
@@ -513,6 +514,9 @@ def main():
                 args = args[1:]
             elif a == "--quick":
                 quick_scan = True
+                args = args[1:]
+            elif a == "--save-scan":
+                save_scan = True
                 args = args[1:]
             elif a in ("-j", "--jobs"):
                 if len(args) < 2:
@@ -775,6 +779,7 @@ def main():
             dirs_ext_fuzz=dirs_ext_fuzz,
             ext_fuzz_wordlist=ext_fuzz_wordlist,
             quick_scan=quick_scan,
+            save_scan=save_scan,
         )
         sys.exit(0 if rc == 0 else 1)
 

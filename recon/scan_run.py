@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from glob import glob
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 
@@ -65,6 +66,44 @@ def _nmap_scan_options() -> str:
 
 def _nmap_xml_suffix(xml_path: str) -> str:
     return f"-oX {shlex.quote(xml_path)}"
+
+
+def _nmap_output_base_suffix(output_base: str) -> str:
+    return f"-oA {shlex.quote(output_base)}"
+
+
+def _full_chunk_output_base(output_base: str, ports_run) -> str:
+    if not ports_run:
+        return output_base
+    start = min(int(p) for p in ports_run)
+    end = max(int(p) for p in ports_run)
+    return f"{output_base}.{start:05d}-{end:05d}"
+
+
+def _clear_output_artifacts(output_base: str) -> None:
+    parent = os.path.dirname(output_base)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    for suffix in ("nmap", "gnmap", "xml"):
+        path = f"{output_base}.{suffix}"
+        if os.path.exists(path):
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+
+def _clear_full_chunk_artifacts(output_base: str) -> None:
+    parent = os.path.dirname(output_base)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    seen = set()
+    for path in glob(f"{output_base}.[0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9].*"):
+        base, _, _ = path.rpartition(".")
+        if not base or base in seen:
+            continue
+        seen.add(base)
+        _clear_output_artifacts(base)
 
 
 def clamp_full_jobs(jobs):
@@ -437,7 +476,22 @@ def _print_quick_hint() -> None:
     )
 
 
-def _print_plan_header(ip, profile: str, info: dict, cmd):
+def _render_nmap_command(cmd: str, *, xml_path: str | None = None, output_base: str | None = None) -> str:
+    if output_base:
+        return f"{cmd} {_nmap_output_base_suffix(output_base)}"
+    if xml_path:
+        return f"{cmd} {_nmap_xml_suffix(xml_path)}"
+    return cmd
+
+
+def _print_plan_header(
+    ip,
+    profile: str,
+    info: dict,
+    cmd,
+    *,
+    output_base: str | None = None,
+):
     print("========================")
     quick = bool(info.get("quick"))
     profile_label = f"{profile}{'+quick' if quick else ''}"
@@ -473,7 +527,7 @@ def _print_plan_header(ip, profile: str, info: dict, cmd):
         else:
             print(f"[*] scanning {chunk} port(s)")
 
-    print(f"[*] {cmd}")
+    print(f"[*] {_render_nmap_command(cmd, xml_path='<tmp>', output_base=output_base)}")
     print("========================")
 
 
@@ -500,22 +554,35 @@ def _ingest_chunk_result(ip: str, storage_profile: str, xml_out: str, ports_run)
     return 0
 
 
-def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
+def _run_nmap_chunk(
+    ip: str,
+    profile: str,
+    cmd: str,
+    info: dict,
+    *,
+    output_base: str | None = None,
+) -> int:
     """Run one planned nmap command; return 0 ok, 1 error."""
     ports_run = info.get("ports_run") or []
-    _print_plan_header(ip, profile, info, f"{cmd} {_nmap_xml_suffix('<tmp>')}")
+    _print_plan_header(ip, profile, info, cmd, output_base=output_base)
     print("[i] nmap progress below (Ctrl+C to cancel)", flush=True)
     sys.stdout.flush()
 
     xml_path = ""
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix="nmap-",
-            suffix=".xml",
-            delete=False,
-        ) as tf:
-            xml_path = tf.name
-        full_cmd = f"{cmd} {_nmap_xml_suffix(xml_path)}"
+        if output_base:
+            parent = os.path.dirname(output_base)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            xml_path = f"{output_base}.xml"
+        else:
+            with tempfile.NamedTemporaryFile(
+                prefix="nmap-",
+                suffix=".xml",
+                delete=False,
+            ) as tf:
+                xml_path = tf.name
+        full_cmd = _render_nmap_command(cmd, xml_path=xml_path, output_base=output_base)
         rc = subprocess.call(full_cmd, shell=True)
     except OSError as exc:
         print(f"[-] nmap failed to start: {exc}")
@@ -527,7 +594,7 @@ def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
             with open(xml_path, encoding="utf-8", errors="replace") as fh:
                 out = fh.read()
     finally:
-        if xml_path:
+        if xml_path and not output_base:
             try:
                 os.unlink(xml_path)
             except OSError:
@@ -546,7 +613,14 @@ def _run_nmap_chunk(ip: str, profile: str, cmd: str, info: dict) -> int:
     )
 
 
-def _nmap_subprocess_task(ip: str, profile: str, ports_run, *, quick: bool = False):
+def _nmap_subprocess_task(
+    ip: str,
+    profile: str,
+    ports_run,
+    *,
+    quick: bool = False,
+    output_base: str | None = None,
+):
     """Worker: run nmap only (ingest in main thread under flock)."""
     cmd = _nmap_cmd(
         ip,
@@ -561,13 +635,19 @@ def _nmap_subprocess_task(ip: str, profile: str, ports_run, *, quick: bool = Fal
         return {"ok": False, "error": "no command", "ports": ports_run, "xml": ""}
     xml_path = ""
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix="nmap-",
-            suffix=".xml",
-            delete=False,
-        ) as tf:
-            xml_path = tf.name
-        full_cmd = f"{cmd} {_nmap_xml_suffix(xml_path)}"
+        if output_base:
+            parent = os.path.dirname(output_base)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            xml_path = f"{output_base}.xml"
+        else:
+            with tempfile.NamedTemporaryFile(
+                prefix="nmap-",
+                suffix=".xml",
+                delete=False,
+            ) as tf:
+                xml_path = tf.name
+        full_cmd = _render_nmap_command(cmd, xml_path=xml_path, output_base=output_base)
         rc = subprocess.call(full_cmd, shell=True)
         if rc != 0:
             return {"ok": False, "error": f"nmap exit {rc}", "ports": ports_run, "xml": ""}
@@ -577,23 +657,39 @@ def _nmap_subprocess_task(ip: str, profile: str, ports_run, *, quick: bool = Fal
     except OSError as exc:
         return {"ok": False, "error": str(exc), "ports": ports_run, "xml": ""}
     finally:
-        if xml_path:
+        if xml_path and not output_base:
             try:
                 os.unlink(xml_path)
             except OSError:
                 pass
 
 
-def _run_parallel_wave(ip: str, profile: str, port_chunks, *, quick: bool = False) -> int:
+def _run_parallel_wave(
+    ip: str,
+    profile: str,
+    port_chunks,
+    *,
+    quick: bool = False,
+    output_bases=None,
+) -> int:
     if not port_chunks:
         return 0
     storage = storage_profile(profile=profile, quick=quick)
     results = []
     with ThreadPoolExecutor(max_workers=len(port_chunks)) as pool:
-        futures = [
-            pool.submit(_nmap_subprocess_task, ip, profile, chunk, quick=quick)
-            for chunk in port_chunks
-        ]
+        futures = []
+        for idx, chunk in enumerate(port_chunks):
+            base = output_bases[idx] if output_bases else None
+            futures.append(
+                pool.submit(
+                    _nmap_subprocess_task,
+                    ip,
+                    profile,
+                    chunk,
+                    quick=quick,
+                    output_base=base,
+                )
+            )
         for fut in as_completed(futures):
             results.append(fut.result())
 
@@ -606,7 +702,14 @@ def _run_parallel_wave(ip: str, profile: str, port_chunks, *, quick: bool = Fals
     return 0
 
 
-def _run_full_sequential(ip: str, force: bool, quiet_ports: bool, *, quick: bool = False) -> int:
+def _run_full_sequential(
+    ip: str,
+    force: bool,
+    quiet_ports: bool,
+    *,
+    quick: bool = False,
+    output_base: str | None = None,
+) -> int:
     while True:
         cmd, info = plan_scan(ip, profile=PROFILE_FULL, force=force, quick=quick)
         if info.get("mode") == "skip":
@@ -614,7 +717,17 @@ def _run_full_sequential(ip: str, force: bool, quiet_ports: bool, *, quick: bool
         if not cmd:
             print("[-] no nmap command planned")
             return 1
-        if _run_nmap_chunk(ip, PROFILE_FULL, cmd, info) != 0:
+        ports_run = info.get("ports_run") or []
+        chunk_output_base = (
+            _full_chunk_output_base(output_base, ports_run) if output_base else None
+        )
+        if _run_nmap_chunk(
+            ip,
+            PROFILE_FULL,
+            cmd,
+            info,
+            output_base=chunk_output_base,
+        ) != 0:
             return 1
         _refresh_live_snapshot(
             ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=1, quick=quick
@@ -624,7 +737,15 @@ def _run_full_sequential(ip: str, force: bool, quiet_ports: bool, *, quick: bool
     return 0
 
 
-def _run_full_parallel(ip: str, jobs: int, force: bool, quiet_ports: bool, *, quick: bool = False) -> int:
+def _run_full_parallel(
+    ip: str,
+    jobs: int,
+    force: bool,
+    quiet_ports: bool,
+    *,
+    quick: bool = False,
+    output_base: str | None = None,
+) -> int:
     satisfies = coverage_profiles(profile=PROFILE_FULL, quick=quick)
     while True:
         unscanned = _unscanned_in_set(
@@ -635,7 +756,19 @@ def _run_full_parallel(ip: str, jobs: int, force: bool, quiet_ports: bool, *, qu
         chunks = split_ports_across_workers(unscanned, jobs)
         if not chunks:
             break
-        if _run_parallel_wave(ip, PROFILE_FULL, chunks, quick=quick) != 0:
+        chunk_bases = None
+        if output_base:
+            chunk_bases = [
+                _full_chunk_output_base(output_base, chunk)
+                for chunk in chunks
+            ]
+        if _run_parallel_wave(
+            ip,
+            PROFILE_FULL,
+            chunks,
+            quick=quick,
+            output_bases=chunk_bases,
+        ) != 0:
             return 1
         _refresh_live_snapshot(
             ip, PROFILE_FULL, quiet_ports=quiet_ports, jobs=jobs, quick=quick
@@ -653,6 +786,7 @@ def _run_full_auto(
     force: bool = False,
     *,
     quick: bool = False,
+    output_base: str | None = None,
 ) -> int:
     """scan -f / --full: TCP 1-65535 until covered (sequential or parallel -j)."""
     jobs = clamp_full_jobs(jobs)
@@ -691,25 +825,48 @@ def _run_full_auto(
                     allow_large_port_list=True,
                     quick=quick,
                 )
-                print(f"[*] worker {i}: {cmd}")
+                if output_base:
+                    chunk_base = _full_chunk_output_base(output_base, ch)
+                    print(f"[*] worker {i}: {_render_nmap_command(cmd, output_base=chunk_base)}")
+                else:
+                    print(f"[*] worker {i}: {cmd}")
         else:
             est = max(1, (remaining + FULL_CHUNK_PORTS - 1) // FULL_CHUNK_PORTS)
             print(f"[*] dry-run: ~{est} chunk(s) ({remaining} ports left)")
-            cmd, _ = plan_scan(ip, PROFILE_FULL, force=force, quick=quick)
+            cmd, info = plan_scan(ip, PROFILE_FULL, force=force, quick=quick)
             if cmd:
-                print(f"[*] {cmd}")
+                if output_base:
+                    chunk_base = _full_chunk_output_base(
+                        output_base,
+                        info.get("ports_run") or [],
+                    )
+                    print(f"[*] {_render_nmap_command(cmd, output_base=chunk_base)}")
+                else:
+                    print(f"[*] {cmd}")
         _finish_scan_output(
             ip, quiet_ports=quiet_ports, profile=PROFILE_FULL, quick=quick
         )
         return 0
 
+    if output_base:
+        _clear_full_chunk_artifacts(output_base)
+
     if jobs > 1:
         rc = _run_full_parallel(
-            ip, jobs, force=force, quiet_ports=quiet_ports, quick=quick
+            ip,
+            jobs,
+            force=force,
+            quiet_ports=quiet_ports,
+            quick=quick,
+            output_base=output_base,
         )
     else:
         rc = _run_full_sequential(
-            ip, force=force, quiet_ports=quiet_ports, quick=quick
+            ip,
+            force=force,
+            quiet_ports=quiet_ports,
+            quick=quick,
+            output_base=output_base,
         )
 
     if sys.stdout.isatty():
@@ -728,6 +885,7 @@ def run_scan(
     jobs: int = 1,
     *,
     quick: bool = False,
+    output_base: str | None = None,
 ):
     upsert_host(ip, status="up")
 
@@ -739,18 +897,19 @@ def run_scan(
             jobs=jobs,
             force=force,
             quick=quick,
+            output_base=output_base,
         )
 
     cmd, info = plan_scan(ip, profile=profile, force=force, quick=quick)
     mode = info.get("mode")
 
     if mode == "skip":
-        _print_plan_header(ip, profile, info, "")
+        _print_plan_header(ip, profile, info, "", output_base=output_base)
         _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
         return 0
 
     if dry_run:
-        _print_plan_header(ip, profile, info, cmd or "")
+        _print_plan_header(ip, profile, info, cmd or "", output_base=output_base)
         _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
         return 0
 
@@ -758,7 +917,7 @@ def run_scan(
         print("[-] no nmap command planned")
         return 1
 
-    if _run_nmap_chunk(ip, profile, cmd, info) != 0:
+    if _run_nmap_chunk(ip, profile, cmd, info, output_base=output_base) != 0:
         return 1
 
     _finish_scan_output(ip, quiet_ports=quiet_ports, profile=profile, quick=quick)
