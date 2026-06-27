@@ -383,12 +383,21 @@ ffufweb() {
 
 _hydraweb-usage() {
   echo "usage:"
-  echo "  hydraweb [-H vhost] [-w wordlist] [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
-  echo "  hydraweb [-H vhost] [-L userlist] [-w wordlist] [target] <path> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  hydraweb [-n] [-H vhost] [-w wordlist] [target] <path> <user> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo "  hydraweb [-n] [-H vhost] [-L userlist] [-w wordlist] [target] <path> <F|S> <text> <user_field> [pass_field] [extra_post] [cookie]"
+  echo ""
+  echo "options:"
   echo "  omit target when \$IP is set (target-set <ip>)"
+  echo "  -n: print command only"
   echo "  -H vhost: Host header (THM: hydraweb -H lookup.thm /login.php ...)"
   echo "  -L userlist: username list for spray mode"
   echo "  -w wordlist: password wordlist (default: \$RECON_PASSLIST)"
+  echo "  <path>: login path such as /login.php"
+  echo "  <F|S>: failure or success matcher mode for hydra http-post-form"
+  echo "  <text>: text matched by the chosen mode"
+  echo "  <user_field>: username parameter name in POST body"
+  echo "  [pass_field]: password parameter name (default: password)"
+  echo "  [extra_post]: extra POST fields (default: sub=Login)"
   echo "  cookie: sent as H=Cookie: ... (e.g. PHPSESSID=abc; security=low)"
   echo ""
   echo "examples:"
@@ -405,11 +414,15 @@ _hydraweb-usage() {
 }
 
 hydraweb() {
-  local target path user mode text userfield passfield extra_post cookie form host_header port="" wordlist="" passlist="" userlist=""
+  local target path user mode text userfield passfield extra_post cookie form host_header port="" wordlist="" passlist="" userlist="" dry_run=0 cmd_str=""
   local user_flag="-l" user_arg=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -n)
+        dry_run=1
+        shift
+        ;;
       -H)
         if [[ -z "${2:-}" ]]; then
           echo "[-] hydraweb: -H requires a value" >&2
@@ -571,6 +584,14 @@ hydraweb() {
   local -a hydra_cmd=(/usr/bin/hydra "$user_flag" "$user_arg" -P "$passlist" -t 32 -f -V)
   [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
   hydra_cmd+=("$target" http-post-form "$form")
+  cmd_str="${(j: :)${(@q)hydra_cmd}}"
+
+  if (( dry_run )); then
+    echo "[*] cmd: $cmd_str"
+    /bin/rm -f "$log"
+    trap - EXIT INT TERM
+    return 0
+  fi
 
   "${hydra_cmd[@]}" 2>&1 | /usr/bin/tee "$log"
   rc=${pipestatus[1]:-$?}
@@ -636,6 +657,7 @@ _hydra-run-auth-service() {
   local threads="$6"
   local log_prefix="$7"
   local port="${8:-}"
+  local dry_run="${9:-0}"
 
   if [[ ! -f "$wordlist" ]]; then
     echo "wordlist not found: $wordlist"
@@ -658,6 +680,14 @@ _hydra-run-auth-service() {
   local -a hydra_cmd=(hydra "$user_flag" "$user_arg" -P "$wordlist" -t "$threads" -f -V)
   [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
   hydra_cmd+=("$target" "$service")
+  local cmd_str="${(j: :)${(@q)hydra_cmd}}"
+
+  if (( dry_run )); then
+    echo "[*] cmd: $cmd_str"
+    /bin/rm -f "$log"
+    trap - EXIT INT TERM
+    return 0
+  fi
 
   "${hydra_cmd[@]}" 2>&1 | tee "$log"
   rc=${pipestatus[1]}
@@ -669,10 +699,18 @@ _hydra-run-auth-service() {
 
 _hydra-list-service-usage() {
   local name="$1"
-  echo "usage: ${name} [-p port] [-t threads] [target] -L users.txt -P passes.txt"
-  echo "       ${name} [-p port] [-t threads] [target] <user> [wordlist]"
+  echo "usage: ${name} [-n] [-p port] [-t threads] [target] -L users.txt -P passes.txt"
+  echo "       ${name} [-n] [-p port] [-t threads] [target] <user> [wordlist]"
+  echo ""
+  echo "options:"
   echo "  hits saved to creds-list via creds-import-hydra"
   echo "  default wordlist: \$RECON_PASSLIST   default threads: 16"
+  echo "  -n: print command only"
+  echo "  -p port: connect to a non-default service port"
+  echo "  -t threads: hydra worker threads"
+  echo "  -L users.txt: username list mode"
+  echo "  -P passes.txt: password wordlist for -L mode"
+  echo "  omit target when \$IP is set (target-set <ip>)"
   echo "  examples:"
   echo "    ${name} -L users.txt -P passes.txt"
   echo "    ${name} -p 143 -L users.txt -P passes.txt"
@@ -689,12 +727,16 @@ _hydra-service-core() {
   local require_user="$7"
   shift 7
 
-  local port="" threads="$default_threads"
+  local port="" threads="$default_threads" dry_run=0
   local userfile="" passfile="" target=""
   local -a args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -n)
+        dry_run=1
+        shift
+        ;;
       -p[0-9]*)
         port="${1#-p}"
         shift
@@ -742,7 +784,7 @@ _hydra-service-core() {
       echo "[-] no target ip — target-set <ip> first" >&2
       return 1
     }
-    _hydra-run-auth-service "$service" "$target" -L "$userfile" "$passfile" "$threads" "$name" "$port"
+    _hydra-run-auth-service "$service" "$target" -L "$userfile" "$passfile" "$threads" "$name" "$port" "$dry_run"
     return $?
   fi
 
@@ -756,12 +798,17 @@ _hydra-service-core() {
     return 1
   }
 
-  _hydra-run-auth-service "$service" "$_HYDRA_TARGET" -l "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" "$name" "$port"
+  _hydra-run-auth-service "$service" "$_HYDRA_TARGET" -l "$_HYDRA_USER" "$_HYDRA_WORDLIST" "$threads" "$name" "$port" "$dry_run"
 }
 
 _hydrassh-usage() {
-  echo "usage: hydrassh [-p port] [-t threads] [target] <user> [wordlist]"
+  echo "usage: hydrassh [-n] [-p port] [-t threads] [target] <user> [wordlist]"
+  echo ""
+  echo "options:"
   echo "  default wordlist: \$RECON_PASSLIST   default threads: 32"
+  echo "  -n: print command only"
+  echo "  -p port: connect to a non-default SSH port"
+  echo "  -t threads: hydra worker threads"
   echo "  omit target when \$IP is set (target-set <ip>)"
   echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
   echo
@@ -776,9 +823,14 @@ hydrassh() {
 }
 
 _hydraftp-usage() {
-  echo "usage: hydraftp [-p port] [-t threads] [target] [user] [wordlist]"
+  echo "usage: hydraftp [-n] [-p port] [-t threads] [target] [user] [wordlist]"
+  echo ""
+  echo "options:"
   echo "  hydra FTP password spray (default user: anonymous)"
   echo "  default wordlist: \$RECON_PASSLIST   default threads: 16"
+  echo "  -n: print command only"
+  echo "  -p port: connect to a non-default FTP port"
+  echo "  -t threads: hydra worker threads"
   echo "  target: IPv4 or FQDN (team.thm); omit when \$IP is set (target-set <ip>)"
   echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
   echo
@@ -812,6 +864,7 @@ _hydra-run-http-get() {
   local url_path="$7"
   local user_flag="$8"   # -l or -L
   local user_arg="$9"
+  local dry_run="${10:-0}"
 
   url_path="${url_path:-/}"
   [[ "$url_path" != /* ]] && url_path="/${url_path}"
@@ -836,6 +889,14 @@ _hydra-run-http-get() {
   local -a hydra_cmd=(hydra "$user_flag" "$user_arg" -P "$wordlist" -t "$threads" -f -V)
   [[ -n "$port" ]] && hydra_cmd+=(-s "$port")
   hydra_cmd+=("$target" http-get "$url_path")
+  local cmd_str="${(j: :)${(@q)hydra_cmd}}"
+
+  if (( dry_run )); then
+    echo "[*] cmd: $cmd_str"
+    /bin/rm -f "$log"
+    trap - EXIT INT TERM
+    return 0
+  fi
 
   "${hydra_cmd[@]}" 2>&1 | tee "$log"
   rc=${pipestatus[1]}
@@ -846,10 +907,17 @@ _hydra-run-http-get() {
 }
 
 _hydrabasic-usage() {
-  echo "usage: hydrabasic [-p port] [target] <user> [path] [wordlist]"
-  echo "       hydrabasic [-p port] [target] -L users.txt [-P wordlist] [path]"
+  echo "usage: hydrabasic [-n] [-p port] [target] <user> [path] [wordlist]"
+  echo "       hydrabasic [-n] [-p port] [target] -L users.txt [-P wordlist] [path]"
+  echo ""
+  echo "options:"
   echo "  HTTP Basic Auth (hydra http-get)"
   echo "  default path: /   default wordlist: \$RECON_PASSLIST"
+  echo "  -n: print command only"
+  echo "  -p port: connect to a non-default HTTP port"
+  echo "  -t threads: hydra worker threads"
+  echo "  -L users.txt: username list mode"
+  echo "  -P wordlist: password wordlist for -L mode (default: \$RECON_PASSLIST)"
   echo "  omit target when \$IP is set (target-set <ip>)"
   echo "  on hit: creds saved to creds-list (creds-import-hydra → cl)"
   echo
@@ -861,12 +929,16 @@ _hydrabasic-usage() {
 }
 
 hydrabasic() {
-  local port="" threads=16
+  local port="" threads=16 dry_run=0
   local userfile="" passfile="" url_path="/"
   local -a args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
+      -n)
+        dry_run=1
+        shift
+        ;;
       -p[0-9]*)
         port="${1#-p}"
         shift
@@ -918,7 +990,7 @@ hydrabasic() {
     elif [[ ${#args[@]} -ge 1 && "${args[1]}" == /* ]]; then
       url_path="${args[1]}"
     fi
-    _hydra-run-http-get "$target" "" "$passfile" "$threads" hydrabasic "$port" "$url_path" -L "$userfile"
+    _hydra-run-http-get "$target" "" "$passfile" "$threads" hydrabasic "$port" "$url_path" -L "$userfile" "$dry_run"
     return $?
   fi
 
@@ -956,5 +1028,5 @@ hydrabasic() {
     url_path="${args[1]}"
   fi
 
-  _hydra-run-http-get "$target" "$user" "$wordlist" "$threads" hydrabasic "$port" "$url_path" -l "$user"
+  _hydra-run-http-get "$target" "$user" "$wordlist" "$threads" hydrabasic "$port" "$url_path" -l "$user" "$dry_run"
 }
