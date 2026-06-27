@@ -45,10 +45,12 @@ class ScoutScanOutputTests(unittest.TestCase):
     @patch("task_run.run_task_plan_phase", return_value=0)
     @patch("scout_run._run_probe_phase", return_value=0)
     @patch("scout_os.run_os_detect_phase", return_value=0)
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_default_scout_does_not_save_basic_scan_artifacts(
         self,
         mock_scan,
+        _mock_enum,
         _mock_os,
         _mock_probe,
         _mock_plan,
@@ -71,10 +73,12 @@ class ScoutScanOutputTests(unittest.TestCase):
     @patch("task_run.run_task_plan_phase", return_value=0)
     @patch("scout_run._run_probe_phase", return_value=0)
     @patch("scout_os.run_os_detect_phase", return_value=0)
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_save_scan_writes_basic_scan_to_logs_ports(
         self,
         mock_scan,
+        _mock_enum,
         _mock_os,
         _mock_probe,
         _mock_plan,

@@ -151,7 +151,7 @@ def format_os_report_lines(ip: str) -> list[str]:
 def run_os_detect_phase(ip: str, *, dry_run: bool = False, force: bool = False) -> int:
     """Run nmap OS fingerprint when open ports exist; store artifact."""
     print("")
-    print("[*] phase 1b: OS detection (nmap -O)")
+    print("[*] phase 1c: OS detection (nmap -O)")
 
     if not _has_open_ports(ip):
         print("[*] no open ports — skip")

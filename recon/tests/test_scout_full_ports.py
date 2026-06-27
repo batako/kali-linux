@@ -43,9 +43,10 @@ class ScoutFullPortsTests(unittest.TestCase):
         self._tmpdir.cleanup()
 
     @patch("scout_exploit.run_exploit_phase", return_value=0)
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_full_ports_does_not_save_artifacts_by_default(
-        self, mock_scan, mock_exploit
+        self, mock_scan, _mock_enum, mock_exploit
     ) -> None:
         rc = self.scout_run.run_scout(self.ip, full_ports=True, dry_run=True)
         self.assertEqual(rc, 0)
@@ -62,9 +63,10 @@ class ScoutFullPortsTests(unittest.TestCase):
         mock_exploit.assert_called_once_with(self.ip, dry_run=True, force=False)
 
     @patch("scout_exploit.run_exploit_phase", return_value=0)
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_save_scan_writes_full_ports_artifacts(
-        self, mock_scan, mock_exploit
+        self, mock_scan, _mock_enum, mock_exploit
     ) -> None:
         rc = self.scout_run.run_scout(
             self.ip,
@@ -85,9 +87,10 @@ class ScoutFullPortsTests(unittest.TestCase):
         )
         mock_exploit.assert_called_once_with(self.ip, dry_run=True, force=False)
 
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_quick_full_ports_uses_separate_output_base_when_saved(
-        self, mock_scan
+        self, mock_scan, _mock_enum
     ) -> None:
         rc = self.scout_run.run_scout(self.ip, full_ports=True, quick_scan=True)
         self.assertEqual(rc, 0)
@@ -102,9 +105,10 @@ class ScoutFullPortsTests(unittest.TestCase):
             output_base=None,
         )
 
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=0)
     def test_quick_full_ports_uses_separate_output_base_when_save_scan(
-        self, mock_scan
+        self, mock_scan, _mock_enum
     ) -> None:
         rc = self.scout_run.run_scout(
             self.ip,
@@ -125,8 +129,11 @@ class ScoutFullPortsTests(unittest.TestCase):
         )
 
     @patch("scout_exploit.run_exploit_phase")
+    @patch("scout_enum.run_port_enum_phase", return_value=0)
     @patch("scout_run.run_scan", return_value=1)
-    def test_full_ports_skips_exploit_on_scan_failure(self, mock_scan, mock_exploit) -> None:
+    def test_full_ports_skips_exploit_on_scan_failure(
+        self, mock_scan, _mock_enum, mock_exploit
+    ) -> None:
         rc = self.scout_run.run_scout(self.ip, full_ports=True)
         self.assertEqual(rc, 1)
         mock_scan.assert_called_once_with(

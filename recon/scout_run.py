@@ -2090,6 +2090,12 @@ def show_scout_ports(ip: str) -> int:
     for line in port_lines:
         print(line)
     print("")
+    print("--- ENUM ---")
+    from scout_enum import format_port_enum_report_lines
+
+    for line in format_port_enum_report_lines(ip):
+        print(line)
+    print("")
     return 0
 
 
@@ -2172,6 +2178,13 @@ def show_scout_report(ip: str) -> int:
     else:
         port_lines = format_scan_snapshot_lines(ip, progress)
     for line in port_lines:
+        print(line)
+    print("")
+
+    print("--- ENUM ---")
+    from scout_enum import format_port_enum_report_lines
+
+    for line in format_port_enum_report_lines(ip):
         print(line)
     print("")
 
@@ -2396,6 +2409,17 @@ def run_scout(
         if quick_scan:
             return 0
 
+        from scout_enum import run_port_enum_phase
+
+        enum_rc = run_port_enum_phase(
+            ip,
+            dry_run=dry_run,
+            force=force_scan,
+            output_base="logs/enumeration" if save_scan else None,
+        )
+        if enum_rc != 0:
+            return enum_rc
+
         from scout_exploit import run_exploit_phase
 
         return run_exploit_phase(ip, dry_run=dry_run, force=not dry_run)
@@ -2550,6 +2574,17 @@ def run_scout(
 
         _print_quick_hint()
         return 0
+
+    from scout_enum import run_port_enum_phase
+
+    enum_rc = run_port_enum_phase(
+        ip,
+        dry_run=dry_run,
+        force=force_scan,
+        output_base="logs/enumeration" if save_scan else None,
+    )
+    if enum_rc != 0:
+        return enum_rc
 
     from scout_os import run_os_detect_phase
 
