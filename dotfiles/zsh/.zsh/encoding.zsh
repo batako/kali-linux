@@ -984,6 +984,10 @@ _enc_hash_crack_pass() {
   fi
 
   case "$kind" in
+    bcrypt)
+      _enc_john_raw_crack "$hash_val" "$wordlist" bcrypt "$tier" bcrypt
+      return $?
+      ;;
     md4)
       _enc_john_raw_crack "$hash_val" "$wordlist" Raw-MD4 "$tier" md4
       return $?
@@ -1058,6 +1062,14 @@ _enc_hash_crack_tier() {
   local pass wl="${wordlist:-$RECON_PASSLIST}"
 
   case "$kind" in
+    bcrypt)
+      if _enc_hash_crack_pass "$hash_val" "$wl" bcrypt "$tier"; then
+        pass="$_ENC_HASH_CRACK_OUT"
+        _ENC_HASH_REVERSE_KIND=bcrypt
+        _ENC_HASH_REVERSE_OUT="$pass"
+        return 0
+      fi
+      ;;
     md4)
       if _enc_hash_crack_pass "$hash_val" "$wl" md4 "$tier"; then
         pass="$_ENC_HASH_CRACK_OUT"
@@ -1960,7 +1972,7 @@ enc() {
     case "$1" in
       -h|--help)
         echo "usage: enc -d|-e [input]          smart decode / encode"
-        echo "       enc -t b64|b32|b58|b62|b10|bin|hex|ascii|morse|md4|md5|ntlm|sha1|sha256 -d|-e [input]"
+        echo "       enc -t b64|b32|b58|b62|b10|bin|hex|ascii|morse|bcrypt|md4|md5|ntlm|sha1|sha256 -d|-e [input]"
         echo "       enc -d -C [--max-depth N] [input]"
         echo "       enc -d -f <file>  |  ... | enc -d"
         echo ""
@@ -1977,7 +1989,7 @@ enc() {
         echo "            repeat smart decode until stop condition"
         echo "  --max-depth N"
         echo "            limit chained decode depth (default 5)"
-        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md4 md5 ntlm sha1 sha256)"
+        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin hex ascii morse bcrypt md4 md5 ntlm sha1 sha256)"
         echo "  -f FILE   read input from file"
         echo "  -w FILE   wordlist for hash-crack (default: \$RECON_PASSLIST)"
         echo "  -y, --yes run heavy hash steps without prompt"
@@ -2070,9 +2082,9 @@ enc() {
       hex) type=hex ;;
       ascii) type=ascii ;;
       morse) type=morse ;;
-      md4|md5|ntlm|sha1|sha256) ;;
+      bcrypt|md4|md5|ntlm|sha1|sha256) ;;
       *)
-        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, hex, ascii, morse, md4, md5, ntlm, sha1, or sha256)" >&2
+        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, hex, ascii, morse, bcrypt, md4, md5, ntlm, sha1, or sha256)" >&2
         return 1
         ;;
     esac
@@ -2113,7 +2125,7 @@ enc() {
       hex) _hex_try_decode "$data" && print ;;
       ascii) _enc_ascii_dec_try_decode "$data" && print ;;
       morse) _enc_morse_try_decode "$data" && print ;;
-      md4|md5|ntlm|sha1|sha256)
+      bcrypt|md4|md5|ntlm|sha1|sha256)
         _enc_hash_decode "$data" "$offline" "$wordlist" "$no_crack" 1 "$type"
         ;;
     esac

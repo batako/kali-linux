@@ -781,8 +781,9 @@ upload-shell 63
 | `enc -t hex -d <str>` | hex のみ |
 | `enc -t ascii -d <list>` | ASCII 10進列のみ |
 | `enc -t morse -d <str>` | Morse のみ |
+| `enc -t bcrypt -d <hash> -w <wordlist>` | bcrypt を john でクラック |
 
-`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。online lookup は **既定で無効** で、`--online` 指定時のみ有効。`-C` / `--chain` で連鎖デコード、`--max-depth N` で段数上限（既定 5）。
+`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。online lookup は **既定で無効** で、`--online` 指定時のみ有効。`-w <file>` でハッシュ系クラック時の wordlist を上書きできる（既定: `RECON_PASSLIST`。bcrypt / md5 / ntlm / sha1 / sha256 など）。`-C` / `--chain` で連鎖デコード、`--max-depth N` で段数上限（既定 5）。
 旧名 `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` は alias。`enc -h`
 
 ## rot（Caesar / ROT）

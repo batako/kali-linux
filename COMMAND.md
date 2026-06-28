@@ -753,8 +753,9 @@ See `upload-shell -h`.
 | `enc -t hex -d <str>` | hex only |
 | `enc -t ascii -d <list>` | ASCII decimals only |
 | `enc -t morse -d <str>` | Morse only |
+| `enc -t bcrypt -d <hash> -w <wordlist>` | bcrypt crack with john |
 
-If `-t` is omitted, all types are tried. b10 works for input with **0-9 only**. `enc -d` (alias: `dec`). Online lookup is **off by default** and only enabled with `--online`. `-C` / `--chain` repeats decode, `--max-depth N` caps recursion depth (default 5).
+If `-t` is omitted, all types are tried. b10 works for input with **0-9 only**. `enc -d` (alias: `dec`). Online lookup is **off by default** and only enabled with `--online`. `-w <file>` overrides the cracking wordlist (default: `RECON_PASSLIST`) for hash types such as bcrypt / md5 / ntlm / sha1 / sha256. `-C` / `--chain` repeats decode, `--max-depth N` caps recursion depth (default 5).
 Legacy names `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` are aliases. `enc -h`
 
 ## rot (Caesar / ROT)
