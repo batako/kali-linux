@@ -742,6 +742,7 @@ See `upload-shell -h`.
 | Command | Description |
 |----------|------|
 | `enc -d <str>` / `... \| enc -d` | Try and decode b10 + b64 + b32 + b58 |
+| `enc -d -C <str>` / `... \| enc -d -C` | Repeat smart decode until unchanged / ambiguous / no match / max depth |
 | `enc -e <str>` | Encode in all formats |
 | `enc -t b10 -d <digits>` | decimal integer -> byte sequence (ASCII) |
 | `enc -t b10 -e <str>` | string -> decimal integer |
@@ -749,7 +750,7 @@ See `upload-shell -h`.
 | `enc -t b32 -d <str>` | Base32 only |
 | `enc -t b58 -d <str>` | Base58 only |
 
-If `-t` is omitted, all types are tried. b10 works for input with **0-9 only**. `enc -d` (alias: `dec`).
+If `-t` is omitted, all types are tried. b10 works for input with **0-9 only**. `enc -d` (alias: `dec`). `-C` / `--chain` repeats decode, `--max-depth N` caps recursion depth (default 5).
 Legacy names `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` are aliases. `enc -h`
 
 ## rot (Caesar / ROT)

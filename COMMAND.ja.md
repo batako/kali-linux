@@ -770,6 +770,7 @@ upload-shell 63
 | コマンド | 説明 |
 |----------|------|
 | `enc -d <str>` / `… \| enc -d` | b10 + b64 + b32 + b58 を試してデコード |
+| `enc -d -C <str>` / `… \| enc -d -C` | smart decode を、変化なし / 曖昧 / no match / 最大段数まで繰り返す |
 | `enc -e <str>` | 全形式でエンコード |
 | `enc -t b10 -d <digits>` | 10進整数 → バイト列（ASCII） |
 | `enc -t b10 -e <str>` | 文字列 → 10進整数 |
@@ -777,7 +778,7 @@ upload-shell 63
 | `enc -t b32 -d <str>` | Base32 のみ |
 | `enc -t b58 -d <str>` | Base58 のみ |
 
-`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。
+`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。`-C` / `--chain` で連鎖デコード、`--max-depth N` で段数上限（既定 5）。
 旧名 `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` は alias。`enc -h`
 
 ## rot（Caesar / ROT）

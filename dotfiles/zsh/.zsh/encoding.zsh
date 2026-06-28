@@ -530,10 +530,32 @@ typeset -g _ENC_UI_LINES=0
 typeset -g _ENC_UI_STATUS_LINES=0
 typeset -g _ENC_UI_STATUS_TEXT=""
 typeset -g _ENC_UI_INIT=0
+typeset -gi _ENC_UI_COMPACT=0
 typeset -g _ENC_CRACK_REPORT=""
+typeset -g _ENC_LAST_HIT_TAG=""
+typeset -g _ENC_LAST_HIT_VAL=""
+typeset -gi _ENC_HIT_COUNT=0
+typeset -gi _ENC_CHAIN_MODE=0
 
 _enc_set_crack_report() {
   typeset -g _ENC_CRACK_REPORT="$1"
+}
+
+_enc_set_decode_report() {
+  local tag="$1"
+  [[ -n "${_ENC_CRACK_REPORT:-}" ]] && return 0
+  case "${tag:l}" in
+    hex) _enc_set_crack_report "enc -t hex -d <input>" ;;
+    b64) _enc_set_crack_report "enc -t b64 -d <input>" ;;
+    b32) _enc_set_crack_report "enc -t b32 -d <input>" ;;
+    b58) _enc_set_crack_report "enc -t b58 -d <input>" ;;
+    b62) _enc_set_crack_report "enc -t b62 -d <input>" ;;
+    b10) _enc_set_crack_report "enc -t b10 -d <input>" ;;
+    bin) _enc_set_crack_report "enc -t bin -d <input>" ;;
+    ascii) _enc_set_crack_report "enc -t ascii -d <input>" ;;
+    morse) _enc_set_crack_report "enc -t morse -d <input>" ;;
+    rot##) _enc_set_crack_report "rot -n ${tag#rot} <input>" ;;
+  esac
 }
 
 _enc_print_crack_report() {
@@ -554,9 +576,6 @@ _enc_ui_format_row() {
     ng) printf '%-14s NG\n' "$label" >&2 ;;
     ok:*)
       val="${state#ok:}"
-      if _enc_flag_like_p "$val" 2>/dev/null; then
-        label=">>${label}"
-      fi
       printf '%-14s OK %s\n' "$label" "$(_enc_ui_disp_val "$val")" >&2
       ;;
   esac
@@ -565,7 +584,7 @@ _enc_ui_format_row() {
 _enc_ui_clear_block() {
   local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES ))
   if (( total > 0 )); then
-    printf '\e[%dA\e[J' "$total" >&2
+    printf '\r\e[%dA\e[J' "$total" >&2
   fi
 }
 
@@ -597,6 +616,11 @@ _enc_ui_status() {
 
 _enc_ui_status_inline() {
   _ENC_UI_STATUS_TEXT="$*"
+  if (( _ENC_UI_COMPACT )); then
+    printf '? %s' "$_ENC_UI_STATUS_TEXT" >&2
+    _ENC_UI_STATUS_LINES=1
+    return 0
+  fi
   _enc_ui_clear_block
   local n=0 key
   for key in "${_ENC_UI_KEYS[@]}"; do
@@ -613,10 +637,16 @@ _enc_ui_status_clear() {
 }
 
 _enc_ui_after_prompt() {
+  if (( _ENC_UI_COMPACT )); then
+    printf '\r\e[1A\e[2K' >&2
+    _ENC_UI_STATUS_TEXT=""
+    _ENC_UI_STATUS_LINES=0
+    return 0
+  fi
   _ENC_UI_STATUS_TEXT=""
   local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES + 1 )) n=0 key
   if (( total > 0 )); then
-    printf '\e[%dA\e[J' "$total" >&2
+    printf '\r\e[%dA\e[J' "$total" >&2
   fi
   _ENC_UI_STATUS_LINES=0
   for key in "${_ENC_UI_KEYS[@]}"; do
@@ -641,6 +671,13 @@ _enc_ui_finish() {
   _ENC_UI_STATUS_LINES=0
 }
 
+_enc_no_match() {
+  if ! _enc_ui_active; then
+    echo "enc: no match" >&2
+  fi
+  return 1
+}
+
 _enc_ui_finalize_states() {
   local key state
   for key in "${_ENC_UI_KEYS[@]}"; do
@@ -655,6 +692,7 @@ _enc_ui_finalize_states() {
 _enc_ui_init() {
   _ENC_UI_KEYS=("$@")
   _ENC_UI_STATE=()
+  _ENC_UI_COMPACT=$(( $# <= 1 ? 1 : 0 ))
   local k
   for k in "$@"; do
     _ENC_UI_STATE[$k]=pending
@@ -673,17 +711,18 @@ _enc_ui_trying() {
 
 _enc_ui_plan() {
   local data="$1" offline="$2" no_crack="$3"
-  local -a keys=() kinds=() fmt
+  local fmt=""
+  local -a ui_keys=() hash_kinds=()
 
   if _enc_bin_p "$data"; then
     _enc_ui_init bin
     return 0
   fi
 
-  kinds=("${(@f)$(_enc_hash_candidates "$data")}")
-  if (( ${#kinds[@]} )); then
-    keys=("${kinds[@]}")
-    _enc_ui_init "${keys[@]}"
+  hash_kinds=("${(@f)$(_enc_hash_candidates "$data")}")
+  if (( ${#hash_kinds[@]} )); then
+    ui_keys=("${hash_kinds[@]}")
+    _enc_ui_init "${ui_keys[@]}"
     return 0
   fi
 
@@ -703,16 +742,61 @@ _enc_ui_plan() {
   fi
 
   if [[ "$data" =~ '^[0-9a-fA-F]+$' ]] && (( ${#data} % 2 == 0 )); then
-    keys=(hex)
+    ui_keys=(hex)
   fi
-  keys+=(b10 b64 b32 b58 b62 rot)
+  ui_keys+=(b10 b64 b32 b58 b62 rot)
 
   if [[ "$data" == *'$'* && "$no_crack" -eq 0 ]]; then
     fmt="$(_enc_hash_fmt_kind "$data")"
-    [[ -n "$fmt" ]] && keys+=("$fmt")
+    [[ -n "$fmt" ]] && ui_keys+=("$fmt")
   fi
 
-  _enc_ui_init "${keys[@]}"
+  _enc_ui_init "${ui_keys[@]}"
+}
+
+_enc_ui_plan_recover() {
+  local data="$1" no_crack="${2:-0}" fmt=""
+
+  if [[ "$data" =~ '^[0-9]+$' ]]; then
+    _enc_ui_init b10
+    return 0
+  fi
+
+  if _enc_ascii_dec_p "$data"; then
+    _enc_ui_init ascii
+    return 0
+  fi
+
+  if _enc_morse_p "$data"; then
+    _enc_ui_init morse
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]{32}$' ]]; then
+    _enc_ui_init md5 ntlm md4
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    _enc_ui_init sha1
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]{64}$' ]]; then
+    _enc_ui_init sha256
+    return 0
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]+$' ]] && (( ${#data} % 2 == 0 )); then
+    if [[ "$data" == *'$'* && "$no_crack" -eq 0 ]]; then
+      fmt="$(_enc_hash_fmt_kind "$data")"
+      [[ -n "$fmt" ]] && _enc_ui_init hex b10 b64 b32 b58 b62 rot "$fmt" && return 0
+    fi
+    _enc_ui_init hex b10 b64 b32 b58 b62 rot
+    return 0
+  fi
+
+  _enc_ui_init b10 b64 b32 b58 b62 rot
 }
 
 _enc_ui_setup() {
@@ -724,6 +808,18 @@ _enc_ui_setup() {
 
 _enc_ui_teardown() {
   if _enc_ui_active; then
+    if (( _ENC_UI_COMPACT )); then
+      local key
+      _enc_ui_finalize_states
+      _enc_ui_clear_block
+      for key in "${_ENC_UI_KEYS[@]}"; do
+        _enc_ui_format_row "$key"
+      done >&2
+      _ENC_UI_LINES=${#_ENC_UI_KEYS[@]}
+      _enc_ui_finish
+      _ENC_UI_INIT=0
+      return 0
+    fi
     local key state need_paint=0
     for key in "${_ENC_UI_KEYS[@]}"; do
       state="${_ENC_UI_STATE[$key]:-pending}"
@@ -755,14 +851,12 @@ _enc_try_log() {
       _ENC_UI_STATE[$key]=ng
     fi
     _ENC_UI_STATUS_TEXT=""
+    (( _ENC_UI_COMPACT )) && return 0
     _enc_ui_paint
     return 0
   fi
   local label="$(_enc_try_label "$key")"
   if [[ -n "$val" && "$val" != skip && "$val" != skip* ]]; then
-    if _enc_flag_like_p "$val" 2>/dev/null; then
-      label=">>${label}"
-    fi
     printf '%-14s OK %s\n' "$label" "$(_enc_ui_disp_val "$val")" >&2
   else
     printf '%-14s NG\n' "$label" >&2
@@ -996,7 +1090,7 @@ _enc_hash_crack_tier() {
         fi
       fi
       ;;
-    hash64)
+    hash64|sha256)
       if _enc_hash_crack_pass "$hash_val" "$wl" sha256 "$tier"; then
         pass="$_ENC_HASH_CRACK_OUT"
         _ENC_HASH_REVERSE_KIND=sha256
@@ -1113,8 +1207,10 @@ _enc_hash_reverse() {
       if [[ -z "$pass" && "$offline" -eq 0 ]]; then
         _enc_ui_status "online lookup"
         pass="$(_enc_hash_online_lookup "$hash_val" md5)"
+        [[ -n "$pass" ]] && _enc_set_crack_report "online md5 lookup https://md5.gromweb.com/?md5=<hash>"
       fi
       if [[ -n "$pass" ]]; then
+        [[ -z "${_ENC_CRACK_REPORT:-}" ]] && _enc_set_crack_report "rainbow table lookup"
         _enc_try_log md5 "$pass"
         _ENC_HASH_REVERSE_KIND=md5
         _ENC_HASH_REVERSE_OUT="$pass"
@@ -1537,8 +1633,14 @@ PY
 _enc_smart_decode() {
   local rc=0
   _ENC_CRACK_REPORT=""
+  _ENC_LAST_HIT_TAG=""
+  _ENC_LAST_HIT_VAL=""
+  _ENC_HIT_COUNT=0
   if _enc_ui_setup; then
     _enc_ui_plan "$1" "${2:-0}" "$3" "${4:-0}"
+    if (( ${#_ENC_UI_KEYS[@]} == 0 )) || [[ -z "${_ENC_UI_KEYS[1]:-}" ]]; then
+      _enc_ui_plan_recover "$1" "${4:-0}"
+    fi
   fi
   _enc_smart_decode_core "$@" || rc=$?
   _enc_ui_teardown
@@ -1567,6 +1669,12 @@ _enc_smart_decode_core() {
         ;;
     esac
     seen[$val]=1
+    if (( _ENC_HIT_COUNT == 0 )); then
+      _ENC_LAST_HIT_TAG="$tag"
+      _ENC_LAST_HIT_VAL="$val"
+    fi
+    (( _ENC_HIT_COUNT++ ))
+    _enc_set_decode_report "$tag"
     (( log_try )) && _enc_try_log "$tag" "$val"
     case "$tag" in
       md4|md5|sha1|sha256|bcrypt|md5crypt|sha512crypt|sha256crypt|argon2)
@@ -1589,13 +1697,13 @@ _enc_smart_decode_core() {
       _enc_try_log bin
     fi
     (( found )) && return 0
-    echo "enc: no match" >&2
-    return 1
+    _enc_no_match
   fi
 
   kind="$(_enc_hash_kind "$data")"
   if [[ -n "$kind" ]]; then
     if out="$(_enc_hash_pot_lookup "$data")"; then
+      _enc_set_crack_report "john --show <hash>  # from pot"
       _enc_hit "$(_enc_hash_log_kind "$kind")" "$out"
       return 0
     fi
@@ -1603,15 +1711,14 @@ _enc_smart_decode_core() {
       _enc_hit "${_ENC_HASH_REVERSE_KIND:-$(_enc_hash_log_kind "$kind")}" "$_ENC_HASH_REVERSE_OUT" 0
     fi
     if (( ! found )) && [[ "$no_crack" -eq 0 ]]; then
-      if (( assume_yes )) || _enc_confirm_heavy_hash "$data" "$wordlist"; then
+      if (( assume_yes )) || (( !_ENC_CHAIN_MODE )) && _enc_confirm_heavy_hash "$data" "$wordlist"; then
         if _enc_hash_reverse "$data" "$wordlist" "$offline" 0 "" heavy; then
           _enc_hit "${_ENC_HASH_REVERSE_KIND:-$(_enc_hash_log_kind "$kind")}" "$_ENC_HASH_REVERSE_OUT" 0
         fi
       fi
     fi
     (( found )) && return 0
-    echo "enc: no match" >&2
-    return 1
+    _enc_no_match
   fi
 
   if [[ "$data" =~ '^[0-9]+$' ]]; then
@@ -1621,8 +1728,7 @@ _enc_smart_decode_core() {
       _enc_try_log b10
     fi
     (( found )) && return 0
-    echo "enc: no match" >&2
-    return 1
+    _enc_no_match
   fi
 
   if _enc_ascii_dec_p "$data"; then
@@ -1632,8 +1738,7 @@ _enc_smart_decode_core() {
       _enc_try_log ascii
     fi
     (( found )) && return 0
-    echo "enc: no match" >&2
-    return 1
+    _enc_no_match
   fi
 
   if _enc_morse_p "$data"; then
@@ -1643,8 +1748,7 @@ _enc_smart_decode_core() {
       _enc_try_log morse
     fi
     (( found )) && return 0
-    echo "enc: no match" >&2
-    return 1
+    _enc_no_match
   fi
 
   if [[ "$data" =~ '^[0-9a-fA-F]+$' ]] && (( ${#data} % 2 == 0 )); then
@@ -1703,12 +1807,77 @@ _enc_smart_decode_core() {
     fi
   fi
 
-  echo "enc: no match" >&2
-  return 1
+  _enc_no_match
 }
 
 _enc_try_all_decode() {
   _enc_smart_decode "$@"
+}
+
+_enc_chain_decode() {
+  local data="$1" offline="${2:-0}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}" max_depth="${6:-5}"
+  local current="$data" next="" rc=1 depth=1 tag="" label="" report=""
+  local -i successes=0
+
+  [[ "$max_depth" =~ '^[0-9]+$' ]] || {
+    echo "enc: --max-depth needs a positive integer" >&2
+    return 1
+  }
+  (( max_depth >= 1 )) || {
+    echo "enc: --max-depth must be >= 1" >&2
+    return 1
+  }
+
+  while (( depth <= max_depth )); do
+    _ENC_CRACK_REPORT=""
+    _ENC_LAST_HIT_TAG=""
+    _ENC_LAST_HIT_VAL=""
+    _ENC_HIT_COUNT=0
+    _ENC_CHAIN_MODE=1
+    { _enc_smart_decode_core "$current" "$offline" "$wordlist" "$no_crack" "$assume_yes" >/dev/null; } 2>/dev/null
+    rc=$?
+    _ENC_CHAIN_MODE=0
+
+    if (( rc != 0 || _ENC_HIT_COUNT == 0 )); then
+      (( successes > 0 )) || {
+        echo "enc: no match" >&2
+        return 1
+      }
+      echo "[i] chain stop: no further decode at step $depth" >&2
+      print -r -- "$current"
+      return 0
+    fi
+
+    if (( _ENC_HIT_COUNT > 1 )); then
+      echo "[i] chain stop: ambiguous decode at step $depth (${_ENC_HIT_COUNT} hits)" >&2
+      print -r -- "$current"
+      return 0
+    fi
+
+    next="$_ENC_LAST_HIT_VAL"
+    if [[ "$next" == "$current" ]]; then
+      echo "[i] chain stop: unchanged output at step $depth" >&2
+      print -r -- "$current"
+      return 0
+    fi
+
+    tag="${_ENC_LAST_HIT_TAG:-decode}"
+    label="$(_enc_try_label "$tag")"
+    report="${_ENC_CRACK_REPORT:-}"
+    if [[ -n "$report" ]]; then
+      echo "[$depth] $label via $report -> $(_enc_ui_disp_val "$next")" >&2
+    else
+      echo "[$depth] $label -> $(_enc_ui_disp_val "$next")" >&2
+    fi
+
+    current="$next"
+    (( successes++ ))
+    (( depth++ ))
+  done
+
+  echo "[i] chain stop: reached max depth $max_depth" >&2
+  print -r -- "$current"
+  return 0
 }
 
 _enc_hash_decode() {
@@ -1784,25 +1953,29 @@ _enc_try_all_encode() {
 #        enc -t b64 -d -f <file>
 enc() {
   emulate -L zsh
-  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0 assume_yes=0
+  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0 assume_yes=0 chain=0 max_depth=5
   local -a positional=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)
         echo "usage: enc -d|-e [input]          smart decode / encode"
-        echo "       enc -t b64|b32|b58|b62|b10|bin|md4|md5|ntlm|sha1|sha256 -d|-e [input]"
+        echo "       enc -t b64|b32|b58|b62|b10|bin|hex|ascii|morse|md4|md5|ntlm|sha1|sha256 -d|-e [input]"
+        echo "       enc -d -C [--max-depth N] [input]"
         echo "       enc -d -f <file>  |  ... | enc -d"
         echo ""
         echo "enc -d (no -t): quick decode first; heavy hash steps ask [y/N]"
         echo "  hash hints: clear formats use built-in rules; ambiguous hashes use name-that-hash when available"
         echo "  quick: rainbow / online md5 / john wordlist (no rules)"
         echo "  heavy: john --rules=Single + hash-crack (~20s on rockyou)"
-        echo "  >> prefix = flag-like (THM{ HTB{ flag{ ...)"
         echo ""
         echo "options:"
         echo "  -d        decode"
         echo "  -e        encode"
+        echo "  -C, --chain"
+        echo "            repeat smart decode until stop condition"
+        echo "  --max-depth N"
+        echo "            limit chained decode depth (default 5)"
         echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md4 md5 ntlm sha1 sha256)"
         echo "  -f FILE   read input from file"
         echo "  -w FILE   wordlist for hash-crack (default: \$RECON_PASSLIST)"
@@ -1824,6 +1997,14 @@ enc() {
         ;;
       -d) mode=de; shift ;;
       -e) mode=en; shift ;;
+      -C|--chain)
+        chain=1
+        shift
+        ;;
+      --max-depth)
+        max_depth="$2"
+        shift 2
+        ;;
       -f)
         file="$2"
         shift 2
@@ -1880,21 +2061,32 @@ enc() {
       b62|base62) type=b62 ;;
       b10|base10|decimal) type=b10 ;;
       bin|binary) type=bin ;;
+      hex) type=hex ;;
+      ascii) type=ascii ;;
+      morse) type=morse ;;
       md4|md5|ntlm|sha1|sha256) ;;
       *)
-        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, md4, md5, ntlm, sha1, or sha256)" >&2
+        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, hex, ascii, morse, md4, md5, ntlm, sha1, or sha256)" >&2
         return 1
         ;;
     esac
   fi
 
   if [[ "$mode" == de ]]; then
+    if (( chain )) && [[ -n "$type" ]]; then
+      echo "enc: --chain cannot be combined with -t" >&2
+      return 1
+    fi
     if [[ -z "$type" ]]; then
       data="$(_enc_read 0 "$file" "${positional[@]}")" || {
         echo "enc: no input (arg, -f, or stdin)" >&2
         return 1
       }
       [[ -n "$data" ]] || { echo "enc: empty input" >&2; return 1; }
+      if (( chain )); then
+        _enc_chain_decode "$data" "$offline" "$wordlist" "$no_crack" "$assume_yes" "$max_depth"
+        return $?
+      fi
       _enc_smart_decode "$data" "$offline" "$wordlist" "$no_crack" "$assume_yes"
       return $?
     fi
@@ -1912,6 +2104,9 @@ enc() {
       b62) _b62_decode_bytes "$data" && print ;;
       b10) _b10_decode_bytes "$data" && print ;;
       bin) _bin_decode_bytes "$data" && print ;;
+      hex) _hex_try_decode "$data" && print ;;
+      ascii) _enc_ascii_dec_try_decode "$data" && print ;;
+      morse) _enc_morse_try_decode "$data" && print ;;
       md4|md5|ntlm|sha1|sha256)
         _enc_hash_decode "$data" "$offline" "$wordlist" "$no_crack" 1 "$type"
         ;;
