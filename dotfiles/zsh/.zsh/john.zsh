@@ -873,6 +873,16 @@ _zip2john_path() {
   return 1
 }
 
+_rar2john_path() {
+  local p
+  p="$(command -v rar2john 2>/dev/null)" && [[ -n "$p" ]] && echo "$p" && return 0
+  if [[ -f /usr/share/john/rar2john.py ]]; then
+    echo /usr/share/john/rar2john.py
+    return 0
+  fi
+  return 1
+}
+
 _zip_crack_extract() {
   local zip="$1" extract_dir="$2" pass="${3:-}"
   mkdir -p "$extract_dir"
@@ -1084,6 +1094,226 @@ for line in sys.stdin:
         ls -la "$extract_dir"
       else
         echo "[-] 7z extract failed" >&2
+        rc=1
+      fi
+    fi
+  elif (( rc == 0 )); then
+    echo "[-] john finished but no password found" >&2
+    rc=1
+  fi
+
+  _john_cleanup_workfiles "$hash_file"
+  return $rc
+}
+
+_rar_crack_extract() {
+  local rar="$1" extract_dir="$2" pass="${3:-}"
+  mkdir -p "$extract_dir"
+  echo "[*] extracting with unrar..."
+  if [[ -n "$pass" ]]; then
+    unrar x -p"$pass" -o+ "$rar" "$extract_dir"/
+  else
+    unrar x -o+ "$rar" "$extract_dir"/
+  fi
+}
+
+_rar_crack_encrypted_p() {
+  local rar2john_out="$1"
+  [[ -n "$rar2john_out" ]] || return 1
+  print -r -- "$rar2john_out" | grep -qE '\$rar(3|5)\$'
+}
+
+# rar2john + john; extract with unrar on success
+# usage: rar-crack [-f] [-n] <rarfile> [wordlist]
+#   x "rar-crack backup.rar"
+# -f: ignore prior crack in this rar's pot and run wordlist again
+# -n: crack only, do not run extract
+# unencrypted rar: skips john, extract without password
+rar-crack() {
+  local force=0
+  local do_extract=1
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -f) force=1; shift ;;
+      -n) do_extract=0; shift ;;
+      -h|--help)
+        echo "usage: rar-crack [-f] [-n] <rarfile> [wordlist]"
+        echo "  default wordlist: \$RECON_PASSLIST"
+        echo "  -f  force re-crack (ignore this rar's pot)"
+        echo "  -n  crack only (no extract)"
+        echo "  unencrypted rar: extract without john"
+        echo "  on success: unrar x [-p<pass>] -> <exports>/<rar-basename>/"
+        return 0
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+
+  if [[ $# -lt 1 ]]; then
+    echo "usage: rar-crack [-f] [-n] <rarfile> [wordlist]"
+    return 1
+  fi
+
+  local rar="$1"
+  local wordlist="${2:-$RECON_PASSLIST}"
+
+  if [[ ! -f "$rar" ]]; then
+    echo "rar not found: $rar"
+    return 1
+  fi
+
+  local rar2john
+  rar2john="$(_rar2john_path)" || {
+    echo "rar2john not found (install john)"
+    return 1
+  }
+
+  if (( do_extract )) && ! command -v unrar >/dev/null 2>&1; then
+    echo "unrar not found (install unrar)"
+    return 1
+  fi
+
+  local out_dir
+  out_dir="$(case-exports-dir)" || return 1
+  mkdir -p "$out_dir"
+
+  local base="${rar:t}"
+  local hash_file="${out_dir}/${base}.john"
+  local pot_file="${hash_file}.pot"
+  local extract_dir="${out_dir}/${base:r}"
+  local rar2john_out=""
+
+  echo "[*] rar:      $rar"
+  (( do_extract )) && echo "[*] extract:  $extract_dir"
+  echo ""
+
+  rar2john_out="$("$rar2john" "$rar" 2>&1)" || return 1
+  print -r -- "$rar2john_out" >"$hash_file"
+
+  if ! _rar_crack_encrypted_p "$rar2john_out"; then
+    echo "[+] rar: not encrypted"
+    if (( do_extract )); then
+      echo ""
+      if _rar_crack_extract "$rar" "$extract_dir"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] unrar extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
+        return 1
+      fi
+    fi
+    _john_cleanup_workfiles "$hash_file"
+    return 0
+  fi
+
+  if [[ ! -f "$wordlist" ]]; then
+    echo "wordlist not found: $wordlist"
+    return 1
+  fi
+
+  if ! command -v john >/dev/null 2>&1; then
+    echo "john not found (install john)"
+    return 1
+  fi
+
+  echo "[*] hash:     $hash_file"
+  echo "[*] pot:      $pot_file"
+  echo "[*] wordlist: $wordlist"
+  echo ""
+
+  _rar_crack_show() {
+    john --pot="$pot_file" --show "$hash_file" 2>/dev/null | sed '/^$/d'
+  }
+
+  _rar_crack_password() {
+    local show
+    show="$(_rar_crack_show)"
+    if [[ -z "$show" || "$show" == *"0 password hashes cracked"* ]]; then
+      show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+    fi
+    print -r -- "$show" | python3 -c "
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if not line or '0 password hashes' in line:
+        continue
+    parts = line.split(':')
+    if len(parts) >= 2 and parts[1]:
+        print(parts[1])
+        break
+"
+  }
+
+  local global_show
+  global_show="$(john --show "$hash_file" 2>/dev/null | sed '/^$/d')"
+  if [[ -n "$global_show" && "$global_show" != *"0 password hashes cracked"* ]]; then
+    echo "[+] already cracked (global john pot):"
+    echo "$global_show"
+    local pass
+    pass="$(_rar_crack_password)"
+    if (( do_extract )) && [[ -n "$pass" ]]; then
+      if _rar_crack_extract "$rar" "$extract_dir" "$pass"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] unrar extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
+        return 1
+      fi
+    fi
+    echo ""
+    echo "[i] isolated re-crack: rar-crack -f $rar"
+    _john_cleanup_workfiles "$hash_file"
+    return 0
+  fi
+
+  local prior
+  prior="$(_rar_crack_show)"
+  if [[ -n "$prior" && "$prior" != *"0 password hashes cracked"* && $force -eq 0 ]]; then
+    echo "[+] already cracked (this rar's pot):"
+    echo "$prior"
+    local pass
+    pass="$(_rar_crack_password)"
+    if (( do_extract )) && [[ -n "$pass" ]]; then
+      if _rar_crack_extract "$rar" "$extract_dir" "$pass"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] unrar extract failed" >&2
+        _john_cleanup_workfiles "$hash_file"
+        return 1
+      fi
+    fi
+    echo ""
+    echo "[i] run again: rar-crack -f $rar"
+    _john_cleanup_workfiles "$hash_file"
+    return 0
+  fi
+
+  [[ $force -eq 1 ]] && rm -f "$pot_file"
+
+  john "$hash_file" --wordlist="$wordlist" --pot="$pot_file"
+  local rc=$?
+
+  echo ""
+  echo "[+] cracked (if any):"
+  _rar_crack_show
+
+  local pass
+  pass="$(_rar_crack_password)"
+  if [[ -n "$pass" ]]; then
+    echo ""
+    echo "[+] rar password: $pass"
+    if (( do_extract )); then
+      if _rar_crack_extract "$rar" "$extract_dir" "$pass"; then
+        echo "[+] extracted to: $extract_dir"
+        ls -la "$extract_dir"
+      else
+        echo "[-] unrar extract failed" >&2
         rc=1
       fi
     fi

@@ -703,6 +703,7 @@ gb-dns example.com    # when real DNS exists
 | `gpg-crack [-f] [-n] [-c cred.pgp] <key.asc> [wordlist]` | gpg2john + john -> decrypt `credential.pgp` -> print plaintext |
 | `hash-crack [-f] [-a] [-b] [-u user] [<hash\|file\|url>] [wordlist]` | Single hash/file/URL to john. No arg (or `-a`) cracks all pending `hlist` entries → `cl` on success. `-b` saves creds as `borg@$IP` |
 | `zip-crack <zip> [wordlist]` | zip hash |
+| `rar-crack <rar> [wordlist]` | rar hash -> `john` -> `unrar x` on success |
 | `borg-crack [-n] [-u user] [-p pass] <dir> [pass]` | Detect Borg repo in directory -> `borg extract` all archives |
 
 ```bash
@@ -898,6 +899,6 @@ Full names only. Alias is shown in parentheses.
 `artifact-add` `artifact-list` (`al`) `artifact-del` `lfi-loot` ·
 `exploit` · `exploit-reject` (`erj`) `exploit-rejects` (`erl`) `exploit-unreject` (`eru`) ·
 `gb-dirs` `gb-dns` `gb-vhost` `gb-set-dns` ·
-`sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·
+`sshkey-crack` `gpg-crack` `hash-crack` `zip-crack` `rar-crack` `borg-crack` · `upload-shell` (`upsh`) `postcmd` (`pcmd`) `shell-url` `shell-cmd` ·
 `pop3` (`p3`) `pop3-list` (`p3l`) `pop3-get` (`p3g`) `pop3-dump` (`p3d`) `hydrapop3` ·
 `enc` (`dec`) `rot` `vig` `fixmagic` · `msfr` · `ports` `http` `ss` `msf` `t` `diga` `digmx` `digtxt` `digns`

@@ -39,6 +39,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     exiftool \
     stegcracker \
     steghide \
+    unrar \
     \
     # === network ===
     ftp \
