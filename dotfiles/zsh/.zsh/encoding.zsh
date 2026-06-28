@@ -324,20 +324,147 @@ _enc_hash_log_kind() {
   esac
 }
 
-_enc_hash_kind() {
+_enc_hash_builtin_candidates() {
   local data="${1//[$' \t\r\n']/}"
-  python3 -c '
-import re, sys
-h = sys.argv[1]
-if re.fullmatch(r"[01]+", h):
-    pass
-elif re.fullmatch(r"[0-9a-fA-F]{32}", h):
-    print("hash32")
-elif re.fullmatch(r"[0-9a-fA-F]{40}", h):
-    print("sha1")
-elif re.fullmatch(r"[0-9a-fA-F]{64}", h):
-    print("hash64")
-' "$data"
+  case "$data" in
+    \$2a\$*|\$2b\$*|\$2y\$*) print -r -- bcrypt ;;
+    \$apr1\$*|\$1\$*) print -r -- md5crypt ;;
+    \$6\$*) print -r -- sha512crypt ;;
+    \$5\$*) print -r -- sha256crypt ;;
+    \$6a\$*|\$argon2*) print -r -- argon2 ;;
+    \{SSHA\}*|\{SHA\}*) print -r -- sha1 ;;
+  esac
+}
+
+_enc_hash_ambiguous_p() {
+  local data="${1//[$' \t\r\n']/}"
+  [[ "$data" =~ '^[0-9a-fA-F]{32}$' || "$data" =~ '^[0-9a-fA-F]{40}$' || "$data" =~ '^[0-9a-fA-F]{64}$' ]]
+}
+
+_enc_nth_candidates() {
+  local data="${1//[$' \t\r\n']/}" nth_bin=""
+  command -v name-that-hash >/dev/null 2>&1 && nth_bin="$(command -v name-that-hash)"
+  [[ -z "$nth_bin" ]] && command -v nth >/dev/null 2>&1 && nth_bin="$(command -v nth)"
+  [[ -n "$nth_bin" ]] || return 1
+  HASH="$data" NTH_BIN="$nth_bin" python3 <<'PY'
+import os, re, subprocess, sys
+
+h = os.environ["HASH"]
+cmd = os.environ.get("NTH_BIN")
+if not cmd:
+    raise SystemExit(1)
+attempts = (
+    [cmd, "--text", h],
+    [cmd, "-t", h],
+    [cmd, h],
+)
+try:
+    proc = None
+    for argv in attempts:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+        text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        if text.strip():
+            break
+except Exception:
+    raise SystemExit(1)
+
+text = (proc.stdout or "") + "\n" + (proc.stderr or "")
+seen = set()
+
+def add(name):
+    if name and name not in seen:
+        seen.add(name)
+        print(name)
+
+for raw in text.splitlines():
+    line = raw.strip()
+    if not line:
+        continue
+    if line.startswith("Most likely possible hash type:"):
+        name = line.split(":", 1)[1].strip()
+    elif line.startswith("Possible hash types:"):
+        continue
+    elif line.startswith("[+]"):
+        name = re.sub(r"\s*\[.*$", "", line[3:].strip())
+    elif line.startswith("- "):
+        name = line[2:].strip()
+    elif "|" in line:
+        parts = [p.strip() for p in line.split("|") if p.strip()]
+        if len(parts) >= 2 and parts[0].isdigit():
+            name = parts[1]
+        else:
+            continue
+    else:
+        continue
+    low = name.lower()
+    if "argon2" in low:
+        add("argon2")
+    elif "bcrypt" in low:
+        add("bcrypt")
+    elif "sha-512" in low and "crypt" in low:
+        add("sha512crypt")
+    elif "sha-256" in low and "crypt" in low:
+        add("sha256crypt")
+    elif ("md5" in low and "crypt" in low) or "apr1" in low:
+        add("md5crypt")
+    elif "{ssha}" in low or "{sha}" in low or "sha-1" in low or low == "sha1":
+        add("sha1")
+    elif "sha-256" in low or low == "sha256":
+        add("sha256")
+    elif "ntlm" in low:
+        add("ntlm")
+    elif low == "md4" or re.search(r"\bmd4\b", low):
+        add("md4")
+    elif low == "md5" or re.search(r"\bmd5\b", low):
+        add("md5")
+PY
+}
+
+_enc_hash_candidates() {
+  local data="${1//[$' \t\r\n']/}" c
+  local -a out=()
+  typeset -A seen
+
+  _enc_add_kind() {
+    local kind="$1"
+    [[ -n "$kind" && -z "${seen[$kind]:-}" ]] || return 0
+    seen[$kind]=1
+    out+=("$kind")
+  }
+
+  while IFS= read -r c; do
+    [[ -n "$c" ]] && _enc_add_kind "$c"
+  done < <(_enc_hash_builtin_candidates "$data")
+
+  if _enc_hash_ambiguous_p "$data"; then
+    while IFS= read -r c; do
+      [[ -n "$c" ]] && _enc_add_kind "$c"
+    done < <(_enc_nth_candidates "$data" 2>/dev/null)
+  fi
+
+  if [[ "$data" =~ '^[0-9a-fA-F]{32}$' ]]; then
+    _enc_add_kind md5
+    _enc_add_kind ntlm
+    _enc_add_kind md4
+  elif [[ "$data" =~ '^[0-9a-fA-F]{40}$' ]]; then
+    _enc_add_kind sha1
+  elif [[ "$data" =~ '^[0-9a-fA-F]{64}$' ]]; then
+    _enc_add_kind sha256
+  fi
+
+  printf '%s\n' "${out[@]}"
+}
+
+_enc_hash_kind() {
+  local data="${1//[$' \t\r\n']/}" first
+  first="$(_enc_hash_candidates "$data" | head -1)"
+  [[ -n "$first" ]] && print -r -- "$first"
 }
 
 _enc_hash_valid_hex() {
@@ -345,7 +472,7 @@ _enc_hash_valid_hex() {
   python3 -c '
 import re, sys
 h, kind = sys.argv[1], sys.argv[2]
-lens = {"md4": 32, "md5": 32, "sha1": 40, "sha256": 64}
+lens = {"md4": 32, "md5": 32, "ntlm": 32, "sha1": 40, "sha256": 64}
 n = lens.get(kind)
 if n and re.fullmatch(rf"[0-9a-fA-F]{{{n}}}", h):
     sys.exit(0)
@@ -372,6 +499,7 @@ _enc_try_label() {
   case "${1:l}" in
     md4) print -r -- MD4 ;;
     md5) print -r -- MD5 ;;
+    ntlm) print -r -- NTLM ;;
     sha1) print -r -- SHA-1 ;;
     sha256) print -r -- SHA-256 ;;
     bcrypt) print -r -- bcrypt ;;
@@ -402,6 +530,16 @@ typeset -g _ENC_UI_LINES=0
 typeset -g _ENC_UI_STATUS_LINES=0
 typeset -g _ENC_UI_STATUS_TEXT=""
 typeset -g _ENC_UI_INIT=0
+typeset -g _ENC_CRACK_REPORT=""
+
+_enc_set_crack_report() {
+  typeset -g _ENC_CRACK_REPORT="$1"
+}
+
+_enc_print_crack_report() {
+  [[ -n "${_ENC_CRACK_REPORT:-}" ]] || return 0
+  echo "[i] cracked via: $_ENC_CRACK_REPORT" >&2
+}
 
 _enc_ui_active() {
   (( _ENC_UI_INIT ))
@@ -535,20 +673,16 @@ _enc_ui_trying() {
 
 _enc_ui_plan() {
   local data="$1" offline="$2" no_crack="$3"
-  local -a keys=() kind fmt
+  local -a keys=() kinds=() fmt
 
   if _enc_bin_p "$data"; then
     _enc_ui_init bin
     return 0
   fi
 
-  kind="$(_enc_hash_kind "$data")"
-  if [[ -n "$kind" ]]; then
-    case "$kind" in
-      hash32) keys=(md5 md4) ;;
-      sha1) keys=(sha1) ;;
-      hash64) keys=(sha256) ;;
-    esac
+  kinds=("${(@f)$(_enc_hash_candidates "$data")}")
+  if (( ${#kinds[@]} )); then
+    keys=("${kinds[@]}")
     _enc_ui_init "${keys[@]}"
     return 0
   fi
@@ -649,7 +783,7 @@ _enc_john_show_pass() {
 
 _enc_john_raw_crack() {
   local hash_val="$1" wordlist="$2" fmt="$3" tier="${4:-full}" kind_label="${5:-md5}"
-  local out_dir hash_file pot_file pass session rules
+  local out_dir hash_file pot_file pass session rules report_cmd
   local -a rule_passes=()
 
   typeset -g _ENC_HASH_CRACK_OUT=""
@@ -687,6 +821,10 @@ _enc_john_raw_crack() {
     fi
     if pass="$(_enc_john_show_pass "$fmt" "$hash_file" "$pot_file")"; then
       typeset -g _ENC_HASH_CRACK_OUT="$pass"
+      report_cmd="john --format=$fmt --wordlist=${(q)wordlist}"
+      [[ -n "$rules" ]] && report_cmd+=" --rules=$rules"
+      report_cmd+=" <hash>"
+      _enc_set_crack_report "$report_cmd"
       _enc_try_log "$kind_label" "$pass"
       rm -rf "$out_dir"
       return 0
@@ -756,6 +894,10 @@ _enc_hash_crack_pass() {
       _enc_john_raw_crack "$hash_val" "$wordlist" Raw-MD4 "$tier" md4
       return $?
       ;;
+    ntlm)
+      _enc_john_raw_crack "$hash_val" "$wordlist" NT "$tier" ntlm
+      return $?
+      ;;
     sha1)
       _enc_john_raw_crack "$hash_val" "$wordlist" Raw-SHA1 "$tier" sha1
       return $?
@@ -811,6 +953,7 @@ PY
     _enc_try_log "${log_kind:-md5}"
     return 1
   }
+  _enc_set_crack_report "hash-crack <hash> ${(q)wordlist}"
   _enc_try_log "${log_kind:-md5}" "$pass"
   typeset -g _ENC_HASH_CRACK_OUT="$pass"
   return 0
@@ -825,6 +968,14 @@ _enc_hash_crack_tier() {
       if _enc_hash_crack_pass "$hash_val" "$wl" md4 "$tier"; then
         pass="$_ENC_HASH_CRACK_OUT"
         _ENC_HASH_REVERSE_KIND=md4
+        _ENC_HASH_REVERSE_OUT="$pass"
+        return 0
+      fi
+      ;;
+    ntlm)
+      if _enc_hash_crack_pass "$hash_val" "$wl" ntlm "$tier"; then
+        pass="$_ENC_HASH_CRACK_OUT"
+        _ENC_HASH_REVERSE_KIND=ntlm
         _ENC_HASH_REVERSE_OUT="$pass"
         return 0
       fi
@@ -904,6 +1055,7 @@ _enc_heavy_steps_label() {
     hash32) print -r -- 'MD4, MD5' ;;
     md4) print -r -- MD4 ;;
     md5) print -r -- MD5 ;;
+    ntlm) print -r -- NTLM ;;
     sha1) print -r -- SHA-1 ;;
     hash64|sha256) print -r -- SHA-256 ;;
     *)
@@ -940,24 +1092,25 @@ _enc_hash_reverse() {
   local hash_val="${1//[$' \t\r\n']/}" wordlist="$2" offline="${3:-0}" no_crack="${4:-0}"
   local forced_kind="${5:-}" phase="${6:-full}"
   local pass kind
+  local -a kinds=()
 
   typeset -g _ENC_HASH_REVERSE_KIND=""
   typeset -g _ENC_HASH_REVERSE_OUT=""
 
   if [[ -n "$forced_kind" ]]; then
-    kind="$forced_kind"
+    kinds=("$forced_kind")
   else
-    kind="$(_enc_hash_kind "$hash_val")"
+    kinds=("${(@f)$(_enc_hash_candidates "$hash_val")}")
   fi
-  [[ -n "$kind" ]] || return 1
+  (( ${#kinds[@]} )) || return 1
 
   if [[ "$phase" == full || "$phase" == quick ]]; then
     local md5_found=""
-    if [[ "$kind" == md5 || "$kind" == hash32 ]]; then
+    if (( ${kinds[(I)md5]} )); then
       _enc_ui_trying md5
       _enc_ui_status "rainbow table"
       pass="$(_enc_hash_rainbow_lookup "$hash_val")"
-      if [[ -z "$pass" && "$offline" -eq 0 && ( "$kind" == md5 || -z "$forced_kind" ) ]]; then
+      if [[ -z "$pass" && "$offline" -eq 0 ]]; then
         _enc_ui_status "online lookup"
         pass="$(_enc_hash_online_lookup "$hash_val" md5)"
       fi
@@ -965,7 +1118,6 @@ _enc_hash_reverse() {
         _enc_try_log md5 "$pass"
         _ENC_HASH_REVERSE_KIND=md5
         _ENC_HASH_REVERSE_OUT="$pass"
-        [[ "$kind" != hash32 ]] && return 0
         md5_found="$pass"
       else
         _enc_try_log md5
@@ -973,19 +1125,20 @@ _enc_hash_reverse() {
     fi
 
     if [[ "$no_crack" -eq 0 ]]; then
-      if [[ "$kind" == hash32 ]]; then
-        _enc_hash_crack_tier "$hash_val" "$wordlist" hash32 quick && return 0
-        [[ -n "$md5_found" ]] && return 0
-      else
+      for kind in "${kinds[@]}"; do
+        [[ "$kind" == md5 && -n "$md5_found" ]] && continue
         _enc_hash_crack_tier "$hash_val" "$wordlist" "$kind" quick && return 0
-      fi
+      done
+      [[ -n "$md5_found" ]] && return 0
     elif [[ -n "$md5_found" ]]; then
       return 0
     fi
   fi
 
   if [[ "$phase" == full || "$phase" == heavy ]] && [[ "$no_crack" -eq 0 ]]; then
-    _enc_hash_crack_tier "$hash_val" "$wordlist" "$kind" heavy && return 0
+    for kind in "${kinds[@]}"; do
+      _enc_hash_crack_tier "$hash_val" "$wordlist" "$kind" heavy && return 0
+    done
   fi
 
   return 1
@@ -999,6 +1152,13 @@ _enc_hash_encode() {
       ;;
     md5)
       printf '%s' "$raw" | md5sum | awk '{print $1}'
+      ;;
+    ntlm)
+      RAW="$raw" python3 <<'PY'
+import hashlib, os
+raw = os.environ["RAW"]
+print(hashlib.new("md4", raw.encode("utf-16le")).hexdigest())
+PY
       ;;
     sha1)
       printf '%s' "$raw" | sha1sum | awk '{print $1}'
@@ -1376,11 +1536,13 @@ PY
 
 _enc_smart_decode() {
   local rc=0
+  _ENC_CRACK_REPORT=""
   if _enc_ui_setup; then
     _enc_ui_plan "$1" "${2:-0}" "$3" "${4:-0}"
   fi
   _enc_smart_decode_core "$@" || rc=$?
   _enc_ui_teardown
+  _enc_print_crack_report
   return $rc
 }
 
@@ -1551,6 +1713,7 @@ _enc_try_all_decode() {
 
 _enc_hash_decode() {
   local data="$1" offline="$2" wordlist="$3" no_crack="$4" assume_yes="$5" type="$6"
+  _ENC_CRACK_REPORT=""
   if [[ -z "$type" ]]; then
     _enc_smart_decode "$data" "$offline" "$wordlist" "$no_crack" "$assume_yes"
     return $?
@@ -1571,6 +1734,7 @@ _enc_hash_decode() {
     rc=1
   fi
   _enc_ui_teardown
+  _enc_print_crack_report
   return $rc
 }
 
@@ -1627,10 +1791,11 @@ enc() {
     case "$1" in
       -h|--help)
         echo "usage: enc -d|-e [input]          smart decode / encode"
-        echo "       enc -t b64|b32|b58|b62|b10|bin|md4|md5|sha1|sha256 -d|-e [input]"
+        echo "       enc -t b64|b32|b58|b62|b10|bin|md4|md5|ntlm|sha1|sha256 -d|-e [input]"
         echo "       enc -d -f <file>  |  ... | enc -d"
         echo ""
         echo "enc -d (no -t): quick decode first; heavy hash steps ask [y/N]"
+        echo "  hash hints: clear formats use built-in rules; ambiguous hashes use name-that-hash when available"
         echo "  quick: rainbow / online md5 / john wordlist (no rules)"
         echo "  heavy: john --rules=Single + hash-crack (~20s on rockyou)"
         echo "  >> prefix = flag-like (THM{ HTB{ flag{ ...)"
@@ -1638,7 +1803,7 @@ enc() {
         echo "options:"
         echo "  -d        decode"
         echo "  -e        encode"
-        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md4 md5 sha1 sha256)"
+        echo "  -t TYPE   force one type (b64 b32 b58 b62 b10 bin md4 md5 ntlm sha1 sha256)"
         echo "  -f FILE   read input from file"
         echo "  -w FILE   wordlist for hash-crack (default: \$RECON_PASSLIST)"
         echo "  -y, --yes run heavy hash steps without prompt"
@@ -1715,9 +1880,9 @@ enc() {
       b62|base62) type=b62 ;;
       b10|base10|decimal) type=b10 ;;
       bin|binary) type=bin ;;
-      md4|md5|sha1|sha256) ;;
+      md4|md5|ntlm|sha1|sha256) ;;
       *)
-        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, md4, md5, sha1, or sha256)" >&2
+        echo "enc: unknown type: $type (use b64, b32, b58, b62, b10, bin, md4, md5, ntlm, sha1, or sha256)" >&2
         return 1
         ;;
     esac
@@ -1747,7 +1912,7 @@ enc() {
       b62) _b62_decode_bytes "$data" && print ;;
       b10) _b10_decode_bytes "$data" && print ;;
       bin) _bin_decode_bytes "$data" && print ;;
-      md4|md5|sha1|sha256)
+      md4|md5|ntlm|sha1|sha256)
         _enc_hash_decode "$data" "$offline" "$wordlist" "$no_crack" 1 "$type"
         ;;
     esac
@@ -1795,7 +1960,7 @@ enc() {
     bin)
       _bin_encode_bytes "$raw"
       ;;
-    md4|md5|sha1|sha256)
+    md4|md5|ntlm|sha1|sha256)
       _enc_hash_encode "$type" "$raw"
       ;;
   esac

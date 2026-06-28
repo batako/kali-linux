@@ -37,6 +37,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     binwalk \
     borgbackup \
     exiftool \
+    name-that-hash \
     stegcracker \
     steghide \
     unrar \
