@@ -771,14 +771,18 @@ upload-shell 63
 |----------|------|
 | `enc -d <str>` / `… \| enc -d` | b10 + b64 + b32 + b58 を試してデコード |
 | `enc -d -C <str>` / `… \| enc -d -C` | smart decode を、変化なし / 曖昧 / no match / 最大段数まで繰り返す |
+| `enc -d --online <hash>` | online md5 lookup を明示的に許可 |
 | `enc -e <str>` | 全形式でエンコード |
 | `enc -t b10 -d <digits>` | 10進整数 → バイト列（ASCII） |
 | `enc -t b10 -e <str>` | 文字列 → 10進整数 |
 | `enc -t b64 -d <str>` | Base64 のみ |
 | `enc -t b32 -d <str>` | Base32 のみ |
 | `enc -t b58 -d <str>` | Base58 のみ |
+| `enc -t hex -d <str>` | hex のみ |
+| `enc -t ascii -d <list>` | ASCII 10進列のみ |
+| `enc -t morse -d <str>` | Morse のみ |
 
-`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。`-C` / `--chain` で連鎖デコード、`--max-depth N` で段数上限（既定 5）。
+`-t` 省略時は全タイプを試す。b10 は **0–9 のみ** の入力で有効。`enc -d`（alias: `dec`）。online lookup は **既定で無効** で、`--online` 指定時のみ有効。`-C` / `--chain` で連鎖デコード、`--max-depth N` で段数上限（既定 5）。
 旧名 `b64d` `b64e` `b32d` `b32e` `b58d` `b58e` `b10d` `b10e` は alias。`enc -h`
 
 ## rot（Caesar / ROT）

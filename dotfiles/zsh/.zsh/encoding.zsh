@@ -1183,7 +1183,7 @@ _enc_confirm_heavy_hash() {
 }
 
 _enc_hash_reverse() {
-  local hash_val="${1//[$' \t\r\n']/}" wordlist="$2" offline="${3:-0}" no_crack="${4:-0}"
+  local hash_val="${1//[$' \t\r\n']/}" wordlist="$2" offline="${3:-1}" no_crack="${4:-0}"
   local forced_kind="${5:-}" phase="${6:-full}"
   local pass kind
   local -a kinds=()
@@ -1649,7 +1649,7 @@ _enc_smart_decode() {
 }
 
 _enc_smart_decode_core() {
-  local data="$1" offline="${2:-0}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}"
+  local data="$1" offline="${2:-1}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}"
   local out kind found=0 tail
   typeset -A seen
 
@@ -1815,7 +1815,7 @@ _enc_try_all_decode() {
 }
 
 _enc_chain_decode() {
-  local data="$1" offline="${2:-0}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}" max_depth="${6:-5}"
+  local data="$1" offline="${2:-1}" wordlist="$3" no_crack="${4:-0}" assume_yes="${5:-0}" max_depth="${6:-5}"
   local current="$data" next="" rc=1 depth=1 tag="" label="" report=""
   local -i successes=0
 
@@ -1953,7 +1953,7 @@ _enc_try_all_encode() {
 #        enc -t b64 -d -f <file>
 enc() {
   emulate -L zsh
-  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=0 no_crack=0 assume_yes=0 chain=0 max_depth=5
+  local type="" mode="" file="" data="" raw="" wordlist="" out="" offline=1 no_crack=0 assume_yes=0 chain=0 max_depth=5
   local -a positional=()
 
   while [[ $# -gt 0 ]]; do
@@ -1966,7 +1966,8 @@ enc() {
         echo ""
         echo "enc -d (no -t): quick decode first; heavy hash steps ask [y/N]"
         echo "  hash hints: clear formats use built-in rules; ambiguous hashes use name-that-hash when available"
-        echo "  quick: rainbow / online md5 / john wordlist (no rules)"
+        echo "  quick: rainbow / john wordlist (no rules)"
+        echo "  online md5 lookup: only with --online"
         echo "  heavy: john --rules=Single + hash-crack (~20s on rockyou)"
         echo ""
         echo "options:"
@@ -1980,7 +1981,8 @@ enc() {
         echo "  -f FILE   read input from file"
         echo "  -w FILE   wordlist for hash-crack (default: \$RECON_PASSLIST)"
         echo "  -y, --yes run heavy hash steps without prompt"
-        echo "  --offline skip online md5 lookup"
+        echo "  --online  allow online md5 lookup"
+        echo "  --offline keep offline-only mode (default)"
         echo "  --no-crack skip john / hash-crack entirely"
         echo ""
         echo "examples:"
@@ -2012,6 +2014,10 @@ enc() {
       -w)
         wordlist="$2"
         shift 2
+        ;;
+      --online)
+        offline=0
+        shift
         ;;
       --offline)
         offline=1
