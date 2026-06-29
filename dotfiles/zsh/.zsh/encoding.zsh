@@ -896,15 +896,17 @@ _enc_john_raw_crack() {
     full|*) rule_passes=("" "Single") ;;
   esac
 
-  out_dir="${TMPDIR:-/tmp}/enc-john-$$"
-  mkdir -p "$out_dir"
+  out_dir="$(mktemp -d "${TMPDIR:-/tmp}/enc-john.XXXXXX")" || {
+    _enc_try_log "$kind_label"
+    return 1
+  }
   hash_file="$out_dir/hash.txt"
   pot_file="$out_dir/john.pot"
 
   print -r -- "$hash_val" >"$hash_file"
 
   for rules in "${rule_passes[@]}"; do
-    session="enc-$$-${EPOCHSECONDS}-${RANDOM}-${kind_label}-${rules:-plain}"
+    session="$out_dir/session-${kind_label}-${rules:-plain}"
     rm -f "$pot_file"
     if [[ -n "$rules" ]]; then
       john --session="$session" --format="$fmt" "$hash_file" --wordlist="$wordlist" \
