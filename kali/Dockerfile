@@ -38,6 +38,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     borgbackup \
     exiftool \
     name-that-hash \
+    poppler-utils \
     stegcracker \
     steghide \
     unrar \
@@ -56,6 +57,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     dnsutils \
     inetutils-ping \
     traceroute \
+    tshark \
     whois \
     \
     # === GUI ===
