@@ -143,6 +143,40 @@ RUN useradd -m -s /usr/bin/zsh ${USERNAME} && \
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}
 
+# === Disable screen saver / screen lock / display power management ===
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    cat > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-screensaver.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-screensaver" version="1.0">
+  <property name="saver" type="empty">
+    <property name="enabled" type="bool" value="false"/>
+    <property name="idle-activation" type="empty">
+      <property name="enabled" type="bool" value="false"/>
+    </property>
+  </property>
+  <property name="lock" type="empty">
+    <property name="enabled" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    cat > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-power-manager.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+
+<channel name="xfce4-power-manager" version="1.0">
+  <property name="xfce4-power-manager" type="empty">
+    <property name="blank-on-ac" type="int" value="0"/>
+    <property name="blank-on-battery" type="int" value="0"/>
+    <property name="dpms-enabled" type="bool" value="false"/>
+    <property name="inactivity-on-ac" type="int" value="0"/>
+    <property name="inactivity-on-battery" type="int" value="0"/>
+    <property name="lock-screen-suspend-hibernate" type="bool" value="false"/>
+  </property>
+</channel>
+EOF
+
 # === Oh My Zsh ===
 RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 
