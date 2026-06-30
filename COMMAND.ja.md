@@ -464,6 +464,7 @@ hint-rm 3         # id=3 を削除
 | `ssh-list [ip]` | creds 一覧（`creds-list` と同系） |
 | `ssh-get` | `creds-list` の creds で **scp ダウンロード**（`-o` 保存先、`-r` 再帰。省略時 `cases/<room>/exports/scp/`。alias: `sget`） |
 | `ssh-put` | `creds-list` の creds で **scp アップロード**（`-r` 再帰。alias: `sput`） |
+| `dav <subcommand> ...` | `curl` ベースの WebDAV ヘルパー（`ls/get/put/cat/mkdir/rm/mv`。既定は認証なし。認証要求があれば、まず `cl` から選択し、未選択なら `wampp:xampp` / `webdav:webdav` / `jigsaw:jigsaw` を試して成功時は `cl` に保存。`-u user[:pass]`、`-n/--dry-run` は表示のみ） |
 
 **注意:** `-l` は OpenSSH の login user ではなく **ログ保存**。ユーザー指定は `ssh holt` のように引数で。
 

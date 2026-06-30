@@ -1435,7 +1435,7 @@ def creds_upsert(
 def creds_delete(ip: str, username: str = None) -> int:
     """
     Remove stored credentials for ip (optional: single username).
-    Deletes password/username rows and ssh_last_user when applicable.
+    Deletes password/username rows and ssh/dav last-user rows when applicable.
     """
     if not ip:
         raise ValueError("ip required")
@@ -1450,16 +1450,17 @@ def creds_delete(ip: str, username: str = None) -> int:
             WHERE ip = ? AND (
                 (kind IN ('password', 'username', 'creds_comment') AND (key = ? OR value = ?))
                 OR (kind = 'ssh_last_user' AND value = ?)
+                OR (kind = 'dav_last_user' AND value = ?)
                 OR (kind = 'ssh_last_key' AND key = ?)
             )
             """,
-            (ip, username, username, username, username),
+            (ip, username, username, username, username, username),
         )
     else:
         cur.execute(
             """
             DELETE FROM artifacts
-            WHERE ip = ? AND kind IN ('password', 'username', 'creds_comment', 'ssh_last_user', 'ssh_last_key')
+            WHERE ip = ? AND kind IN ('password', 'username', 'creds_comment', 'ssh_last_user', 'dav_last_user', 'ssh_last_key')
             """,
             (ip,),
         )
@@ -1603,6 +1604,7 @@ _ARTIFACT_CRED_KINDS = (
     "password",
     "creds_comment",
     "ssh_last_user",
+    "dav_last_user",
     "msfr_last_user",
     "hash",
 )
@@ -1733,6 +1735,43 @@ def set_ssh_last_user(ip: str, username: str, execution_id=None):
         INSERT INTO artifacts (
             ip, kind, key, value, execution_id, created_at
         ) VALUES (?, 'ssh_last_user', '', ?, ?, datetime('now'))
+        """,
+        (ip, username, execution_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_dav_last_user(ip: str):
+    conn = connect()
+    row = conn.execute(
+        """
+        SELECT value
+        FROM artifacts
+        WHERE ip = ? AND kind = 'dav_last_user' AND key = ''
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (ip,),
+    ).fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_dav_last_user(ip: str, username: str, execution_id=None):
+    if get_dav_last_user(ip) == username:
+        return
+    conn = connect()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM artifacts WHERE ip = ? AND kind = 'dav_last_user'",
+        (ip,),
+    )
+    cur.execute(
+        """
+        INSERT INTO artifacts (
+            ip, kind, key, value, execution_id, created_at
+        ) VALUES (?, 'dav_last_user', '', ?, ?, datetime('now'))
         """,
         (ip, username, execution_id),
     )

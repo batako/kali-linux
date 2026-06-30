@@ -451,6 +451,7 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 | `ssh-list [ip]` | List creds (same style as `creds-list`) |
 | `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive; default `cases/<room>/exports/scp/`. alias: `sget`) |
 | `ssh-put` | **scp upload** using creds from `creds-list` (`-r` recursive. alias: `sput`) |
+| `dav <subcommand> ...` | WebDAV helper via `curl` (`ls/get/put/cat/mkdir/rm/mv`; no auth by default, on auth challenge it lets you choose from `cl` first, otherwise tries `wampp:xampp` / `webdav:webdav` / `jigsaw:jigsaw` and saves hits to `cl`; `-u user[:pass]`, `-n/--dry-run` = print only) |
 
 **Note:** `-l` is for **log save**, not OpenSSH login user. Specify user as argument, e.g. `ssh holt`.
 

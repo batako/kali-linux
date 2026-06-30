@@ -2,12 +2,12 @@ FROM kalilinux/kali-rolling
 
 ARG USERNAME=kali
 ARG PASSWORD=kali
+ARG CURL_VERSION=8.21.0
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update
-
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     # === core ===
     base58 \
     binutils \
@@ -107,6 +107,31 @@ RUN ARCH="$(uname -m)" && \
     chmod +x /usr/local/bin/ttyd
 
 ENV DISPLAY=:1
+
+# === curl (NTLM enabled) ===
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        libpsl-dev && \
+    cd /tmp && \
+    curl -LO https://curl.se/download/curl-${CURL_VERSION}.tar.xz && \
+    tar xf curl-${CURL_VERSION}.tar.xz && \
+    cd curl-${CURL_VERSION} && \
+    LDFLAGS="-Wl,-rpath,/usr/local/lib" ./configure \
+        --prefix=/usr/local \
+        --with-openssl \
+        --enable-ntlm && \
+    make -j"$(nproc)" && \
+    make install && \
+    echo "/usr/local/lib" > /etc/ld.so.conf.d/local.conf && \
+    ldconfig && \
+    /usr/local/bin/curl -V | grep NTLM && \
+    apt-get purge -y \
+        libpsl-dev && \
+    apt-get autoremove -y && \
+    apt-get clean && \
+    rm -rf \
+        /var/lib/apt/lists/* \
+        /tmp/curl-${CURL_VERSION}*
 
 # === user setup ===
 RUN useradd -m -s /usr/bin/zsh ${USERNAME} && \

@@ -11,8 +11,10 @@ from db import creds_upsert
 from db import list_ssh_creds
 from db import list_ssh_creds_for_case
 from db import get_ssh_last_user
+from db import get_dav_last_user
 from db import get_ssh_last_key
 from db import set_ssh_last_user
+from db import set_dav_last_user
 from db import set_ssh_last_key
 from db import list_executions
 from db import get_execution
@@ -2038,6 +2040,21 @@ def main():
             print("usage: recon.py ssh-last-set <ip> <username>")
             sys.exit(1)
         set_ssh_last_user(sys.argv[2], sys.argv[3])
+        print("ok")
+
+    elif cmd == "dav-last-get":
+        if len(sys.argv) < 3:
+            print("usage: recon.py dav-last-get <ip>")
+            sys.exit(1)
+        last = get_dav_last_user(sys.argv[2])
+        if last:
+            print(last)
+
+    elif cmd == "dav-last-set":
+        if len(sys.argv) < 4:
+            print("usage: recon.py dav-last-set <ip> <username>")
+            sys.exit(1)
+        set_dav_last_user(sys.argv[2], sys.argv[3])
         print("ok")
 
     elif cmd == "ssh-key-get":
