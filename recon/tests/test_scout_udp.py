@@ -82,6 +82,7 @@ class ScoutUdpTests(unittest.TestCase):
         self.assertIn("22\ttcp\topen\tssh\tOpenSSH", joined)
         self.assertIn("53\tudp\topen\tdomain\tdnsmasq 2.80", joined)
         self.assertIn("161\tudp\topen|filtered\tsnmp\t", joined)
+        self.assertIn("--- UNKNOWN ---", joined)
         self.assertIn("open|filtered is tentative", joined)
 
     @mock.patch("scout_udp.subprocess.run")

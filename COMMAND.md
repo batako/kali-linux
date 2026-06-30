@@ -197,7 +197,7 @@ coverage is **per port number** (`scan`-covered ports are skipped even in `scan 
 |----------|------|
 | `scout [ip]` | Run Phase 1-3 + **exploit search**. **After dirs dispatch, auto-watch like `-ws`** (ends when running=0) |
 | `scout -r` / `--report [ip]` | Recon summary from DB (**room-merged** ports + **OS** + probes + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**). No re-run |
-| `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** only (DB) |
+| `scout -rp` / `--report-ports [ip]` | **OPEN + UNKNOWN + CLOSED** only (DB) |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** only (DB, no re-search) |
 | `scout -ep` / `--exploit-pack [ip]` | **AI submission pack** — refresh searchsploit + Metasploit, save Markdown under `cases/<room>/plans/` (prints paths only) |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** tree only (DB, merged dirs hits) |

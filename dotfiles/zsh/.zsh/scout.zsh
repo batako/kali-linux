@@ -58,7 +58,7 @@ dirs ジョブ状態（対になる操作）:
 
 レポート（DB のみ。再スキャンなし）:
   -r, --report [ip]              フルレポート
-  -rp, --report-ports [ip]       OPEN + CLOSED
+  -rp, --report-ports [ip]       OPEN + UNKNOWN + CLOSED
   -re, --report-exploits [ip]    EXPLOITS
   -ep, --exploit-pack [ip]       AI 提出用 → cases/<room>/plans/*.md
   -rt, --report-paths [ip]       PATHS（dirs ツリー）
@@ -180,7 +180,7 @@ EOF
           echo ""
           echo "report (DB only, no rescan):"
           echo "  -r, --report [ip]              full report"
-          echo "  -rp, --report-ports [ip]       OPEN + CLOSED"
+          echo "  -rp, --report-ports [ip]       OPEN + UNKNOWN + CLOSED"
           echo "  -re, --report-exploits [ip]   EXPLOITS"
           echo "  -ep, --exploit-pack [ip]       AI submission → cases/<room>/plans/*.md"
           echo "  -rt, --report-paths [ip]      PATHS (dirs tree)"
@@ -741,7 +741,7 @@ _scout() {
   _arguments \
     '-h[usage]' '--help[usage]' \
     '-r[full report from DB]' '--report[full report from DB]' \
-    '-rp[OPEN+CLOSED from DB]' '--report-ports[OPEN+CLOSED from DB]' \
+    '-rp[OPEN+UNKNOWN+CLOSED from DB]' '--report-ports[OPEN+UNKNOWN+CLOSED from DB]' \
     '-re[EXPLOITS from DB]' '--report-exploits[EXPLOITS from DB]' \
     '-ep[AI exploit submission pack]' '--exploit-pack[AI exploit submission pack]' \
     '-rt[PATHS tree from DB]' '--report-paths[PATHS tree from DB]' \

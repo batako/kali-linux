@@ -197,7 +197,7 @@ coverage は **ポート番号単位**（`scan` 済みは `scan -f` でもスキ
 |----------|------|
 | `scout [ip]` | Phase 1–3 + **exploit 検索** を実行。**dirs dispatch 後は自動で `-ws` 相当の watch**（running が 0 で終了） |
 | `scout -r` / `--report [ip]` | DB の偵察サマリ（**ルーム統合**ポート + **OS** + プローブ + **TASKS** + **PATHS** + **HINTS** + **EXPLOITS**）。再実行なし |
-| `scout -rp` / `--report-ports [ip]` | **OPEN + CLOSED** のみ（DB） |
+| `scout -rp` / `--report-ports [ip]` | **OPEN + UNKNOWN + CLOSED** のみ（DB） |
 | `scout -re` / `--report-exploits [ip]` | **EXPLOITS** のみ（DB、再 search なし） |
 | `scout -ep` / `--exploit-pack [ip]` | **AI 提出資料** — searchsploit + Metasploit を更新し `cases/<room>/plans/` に Markdown 保存（パスのみ表示） |
 | `scout -rt` / `--report-paths [ip]` | **PATHS** ツリーのみ（DB、dirs ヒット統合） |
