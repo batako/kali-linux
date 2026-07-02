@@ -42,7 +42,7 @@ _listen-download-send-example() {
 listen() {
   local log=false
   local download=false
-  local port="4444"
+  local port="443"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -56,7 +56,7 @@ listen() {
         ;;
       -h|--help)
         _toolkit-echo "usage: listen [-l|-d] [port]" "使い方: listen [-l|-d] [port]"
-        _toolkit-echo "  start netcat listener (default: 4444)" "  netcat リスナーを開始（既定: 4444）"
+        _toolkit-echo "  start netcat listener (default: 443)" "  netcat リスナーを開始（既定: 443）"
         _toolkit-echo "  -l  record to cases/<name>/logs/ (requires cases set <name>, or CASE_LOOSE=1)" "  -l  cases/<name>/logs/ に記録（cases set <name> が必要。もしくは CASE_LOOSE=1）"
         _toolkit-echo "  -d  receive a tar stream and extract it under cases/<room>/exports/listen_<ts>/" "  -d  tar ストリームを受信して cases/<room>/exports/listen_<ts>/ に展開"
         _toolkit-echo "      sender example:" "      送信側の例:"
@@ -103,7 +103,7 @@ _listen() {
   _arguments \
     '-l[record session log]' \
     '-d[receive tar stream and extract here]' \
-    '1:port:(4444 5555 6666)'
+    '1:port:(443 5555 6666)'
 }
 
 compdef _listen listen

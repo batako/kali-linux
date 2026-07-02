@@ -71,7 +71,7 @@ options:
   -f, --file PATH     RFILE (pg-readfile)
   -s, --sql QUERY     SQL (pg-sql)
   -l, --lhost IP      LHOST (exploits)
-  -P, --lport PORT    LPORT (default 4444)
+  -P, --lport PORT    LPORT (default 443)
   -o, --opt KEY=VAL   extra set (repeatable)
   --ssl               set SSL true
   --creds             apply -u/cl creds for -m (off by default for unknown modules)
@@ -361,7 +361,7 @@ _msfr-remember-user() {
 }
 
 msfr() {
-  local preset="" module="" rhost="" lhost="" lport="4444" rport=""
+  local preset="" module="" rhost="" lhost="" lport="443" rport=""
   local user="" pass="" rfile="" sql="" targeturi="" ssl=""
   local batch="" stay="" want_creds="" dry_run=""
   local -a extra_opts=()
@@ -588,7 +588,7 @@ _msfr() {
     '-f[RFILE]:file:_files' \
     '-s[SQL]:query:' \
     '-l[LHOST]:ip:' \
-    '-P[LPORT]:port:(4444 5555)' \
+    '-P[LPORT]:port:(443 5555)' \
     '-o[option]:KEY=VAL:' \
     '--ssl[set SSL true]' \
     '--creds[apply creds for -m]' \

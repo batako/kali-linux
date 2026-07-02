@@ -518,11 +518,11 @@ See [docs/Metasploit.md](docs/Metasploit.md).
 
 | Command | Description |
 |----------|------|
-| `listen [port]` | `nc -lvnp` (default 4444) |
+| `listen [port]` | `nc -lvnp` (default 443) |
 | `listen -l [port]` | Save connection log to `cases/.../logs/revshell_*` |
 | `listen -d [port]` | Receive `tar` stream and extract under `cases/<room>/exports/listen_<ts>/` (`nc -lvnp PORT | tar xf - -C ...`); also prints target-side send command |
 | `webrsh [options] [path\|url]` | Web RCE -> reverse shell (`?cmd=` / POST). LHOST auto-detect: `tun0` -> `eth0`. `-u user[:pass]` for HTTP Basic (pass from `cl` if omitted) |
-| `lfish [options] [path\|url]` | LFI/php://filter include -> reverse shell. Builds PHP filter chain internally, defaults `LHOST=lhost`, `LPORT=4444`, shell type `proc` (`-t proc|bash|nc`) |
+| `lfish [options] [path\|url]` | LFI/php://filter include -> reverse shell. Builds PHP filter chain internally, defaults `LHOST=lhost`, `LPORT=443`, shell type `proc` (`-t proc|bash|nc`) |
 
 Before `ftp-revshell`, start `listen` in **another terminal**.
 
@@ -545,7 +545,7 @@ Before `ftp-revshell`, start `listen` in **another terminal**.
 | `-U <url>` | Full shell URL (skip path calculation) |
 | `-n <name>` | Remote filename (default `shell.php`) |
 | `-p <path>` | Local payload path |
-| `-P <port>` | Reverse shell port (default 4444) |
+| `-P <port>` | Reverse shell port (default 443) |
 
 ### Per-room settings
 
@@ -562,7 +562,7 @@ Default without config: `ftp://$IP/shell.php` -> `http://$IP/shell.php`
 
 ```bash
 cases set startup
-listen 4444          # another terminal
+listen 443           # another terminal
 ftp-revshell
 # or
 ftp-revshell -d ftp -w /files
