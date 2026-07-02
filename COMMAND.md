@@ -429,12 +429,15 @@ hint-rm 3         # delete id=3
 | `hash-rm [ip] [user]` | Delete hashes (omit user for all on IP; alias: `hxr`) |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH -> add to DB on success (`hydrassh -h`) |
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP (target: IP or FQDN; default user: anonymous, `hydraftp -h`) |
+| `mklist [passwords] <url\|html> [options]` | Build a password list from a URL or saved HTML (`mklist -h`) |
 | `reqfuzz [options] <url> <param> <start> <end>` | Simple Intruder-like request fuzzing for GET/POST (`--deep` for details, `-s` shows only diffs) |
 | `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (`-U` for username spray) |
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
 
 `reqfuzz` prints `VALUE / STATUS / BYTES` by default. Use `--deep` to add `WORDS / LINES / HASH / NOTE`.
+
+`mklist` runs CeWL with `-d 1 -m 4` when given a URL, or, for a saved HTML file, stores `raw/html.html`, strips `script` / `style` / `svg` / HTML comments, then drops low-priority Bootstrap-style UI elements such as `nav`, `button`, `toast`, `small text-secondary`, and `form-label` into `work/clean.txt`. It then keeps only value-like lines in `work/value_lines.txt`, extracts label/value pairs into `work/pairs.tsv`, extracts hint sentences into `work/hint_lines.txt`, gathers nearby keyword material into `work/hint_keywords.txt`, extracts words into `.mklist/raw/cewl.txt`, and writes normalized plus stopword-filtered words to `.mklist/work/base.txt`. Stopwords are managed in `dotfiles/zsh/.zsh/mklist-stopwords.txt`, and low-value UI labels plus common CSS/JS terms are excluded by default. HTML-derived compound words, meaningful 4-8 digit numbers, date-aware pair expansions, and hint-driven rule variants also produce candidates such as `MarcoBianchi`, `Marco1995`, `marky14021995`, `Bianchi2495`, and `Security2024!`. The default output is `exports/passwords.txt`. Use `--refresh` to rebuild the raw cache from the current input, `--seed <file>` to append extra seeds, `--pin 4|6` to add numeric PINs, and `--max-lines` to cap the final list.
 
 Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp-anon` hits go to `cl` for `ftp`). SSH quick defaults run via **strike `auth-ssh-quick`**.
 

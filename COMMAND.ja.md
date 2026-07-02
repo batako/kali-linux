@@ -442,12 +442,15 @@ hint-rm 3         # id=3 を削除
 | `hash-rm [ip] [user]` | 削除（user 省略で IP の hash すべて。alias: `hxr`） |
 | `hydrassh [-p port] [ip] <user> [wordlist]` | hydra SSH → 成功時 DB へ（`hydrassh -h`） |
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
+| `mklist [passwords] <url\|html> [options]` | URL または保存済み HTML からパスワードリストを生成（`mklist -h`） |
 | `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`--deep` で詳細、`-s` で差分のみ） |
 | `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
 
 `reqfuzz` のデフォルト出力は `VALUE / STATUS / BYTES`。`--deep` で `WORDS / LINES / HASH / NOTE` を追加する。
+
+`mklist` は URL を渡したときは CeWL を `-d 1 -m 4` で実行し、保存済み HTML を渡したときは `raw/html.html` を保存したうえで `script` / `style` / `svg` / HTML コメントを除去し、さらに Bootstrap 系の `nav` / `button` / `toast` / `small text-secondary` / `form-label` など低優先 UI 要素を落とした `work/clean.txt` を作る。その後、値寄りの行だけを `work/value_lines.txt` に残し、`small text-secondary` → `fw-semibold` のような並びから `work/pairs.tsv` としてラベル値ペアも抽出する。さらに `keyword` / `capitalize` / `year` / `append` / `exclamation` などを含むヒント文を `work/hint_lines.txt` として拾い、その近くの短い単語群を `work/hint_keywords.txt` に集めて、`Security2024!` のようなヒント駆動候補も追加生成する。抽出語は `.mklist/raw/cewl.txt`、正規化と stopword 除外後の語は `.mklist/work/base.txt` に保存する。stopword は `dotfiles/zsh/.zsh/mklist-stopwords.txt` で管理し、UI 汎用語や CSS/JS 系の一般語、低価値ラベル語を既定で除外する。HTML 由来の複合語、4〜8 桁の意味ある数字、さらに `birthdate` / `date` / `dob` と判断できる値から `Bianchi95` / `Bianchi1402` / `Bianchi2495` のような日付派生も追加する。既定出力は `exports/passwords.txt`。`--refresh` で現在の入力元から raw を再生成、`--seed <file>` で語彙追加、`--pin 4|6` で数字 PIN を追加、`--max-lines` で最大行数を制御できる。
 
 `ssh` の自動ログインは **anonymous を除外**（FTP 用。strike `auth-ftp-anon` 成功分は `cl` に入り `ftp` で利用）。SSH 定番は **strike `auth-ssh-quick`**。
 

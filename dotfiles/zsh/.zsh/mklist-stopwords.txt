@@ -1,0 +1,131 @@
+# token stopwords
+token login
+token log
+token signin
+token sign
+token logout
+token register
+token submit
+token save
+token cancel
+token reset
+token search
+token next
+token previous
+token continue
+token back
+token home
+token menu
+token download
+token upload
+token yes
+token no
+token ok
+token close
+token open
+token send
+token confirm
+token username
+token password
+token email
+token phone
+token address
+token message
+token comment
+token action
+token actions
+token profile
+token details
+token employee
+token status
+token settings
+token today
+token updated
+token view
+token request
+token edit
+token disabled
+token demo
+token careers
+token first
+token surname
+token nickname
+token birthdate
+token name
+token last
+token and
+token the
+token then
+token take
+token like
+token company
+token hour
+token hours
+token ago
+token ddmmyyyy
+
+# tech/css/js stopwords
+token div
+token span
+token body
+token main
+token header
+token footer
+token section
+token article
+token nav
+token aside
+token container
+token wrapper
+token content
+token hero
+token row
+token col
+token grid
+token flex
+token hidden
+token active
+token selected
+token primary
+token secondary
+token onclick
+token onload
+token fetch
+token axios
+token token
+token callback
+token async
+token await
+token function
+token const
+token let
+token var
+token document
+token window
+token queryselector
+token getelementbyid
+token class
+token id
+token style
+token src
+token href
+token value
+token type
+token role
+token tabindex
+token aria-label
+token aria-hidden
+token aria-expanded
+token aria-controls
+
+# phrase stopwords
+phrase first name
+phrase birthdate ddmmyyyy
+phrase last updated today
+phrase sign out
+phrase employee details
+phrase active employee
+phrase disabled in the lab demo
+phrase request time off
+phrase edit profile
+phrase view payslips
