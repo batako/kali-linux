@@ -4,6 +4,8 @@
 
 typeset -g PROBE_SCRIPT_DIR="${${(%):-%N}:A:h}"
 
+unalias probe 2>/dev/null || true
+
 probe() {
   python3 "$PROBE_SCRIPT_DIR/probe.py" "$@"
 }
