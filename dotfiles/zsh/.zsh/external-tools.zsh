@@ -2,6 +2,8 @@
 # external tools
 # ========================
 
+typeset -g EXTERNAL_TOOLS_SCRIPT_DIR="${${(%):-%N}:A:h}"
+
 export ENHANCD_DIR=$HOME/.enhancd
 [[ -f $ENHANCD_DIR/init.sh ]] && source $ENHANCD_DIR/init.sh
 
@@ -32,4 +34,9 @@ sqlmap() {
   fi
 
   command sqlmap "${args[@]}"
+}
+
+sql() {
+  local script_dir="${ZSH_HELPER_DIR:-$EXTERNAL_TOOLS_SCRIPT_DIR}"
+  python3 "$script_dir/sql.py" "$@"
 }

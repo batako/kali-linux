@@ -444,10 +444,13 @@ hint-rm 3         # id=3 を削除
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP（target は IP / FQDN、既定 user: anonymous、`hydraftp -h`） |
 | `mklist [passwords] <url\|html> [options]` | URL または保存済み HTML からパスワードリストを生成（`mklist -h`） |
 | `probe <url> [options]` | SSRF / LFI / PHP wrapper 向けの URL パラメータ probe（`probe -h`） |
+| `sql <subcommand> [options]` | `sqlmap` の短縮ラッパー（`test/dbs/tables/columns/dump/auto`） |
 | `reqfuzz [options] <url> <param> <start> <end>` | GET/POST リクエスト fuzz（`--deep` で詳細、`-s` で差分のみ） |
 | `ffufweb <url> <user> [-fw N ...]` | POST ログイン password spray（ffuf。`-U` で username spray） |
 | `hydraweb ...` | hydra http-post-form（`:F`/`:S`。`-H` vhost 可。`hydraweb -h`） |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic 認証（hydra http-get、`hydrabasic -h`） |
+
+`sql` は `sqlmap` の薄いラッパーで、`sql test -r req.txt`、`sql dbs -r req.txt`、`sql tables -r req.txt -D appdb`、`sql columns -r req.txt -D appdb -T users`、`sql dump -r req.txt -D appdb -T users` のような定番操作を短く実行できる。`sql auto` は `--dbs` と `--tables` を順に走らせ、`information_schema` / `mysql` / `sys` などを除外したうえで `users` / `admins` / `accounts` / `employees` など認証情報っぽいテーブルだけを優先 dump する。危険な `--os-shell` / `--sql-shell` / `--file-write` 系は自動実行しない。ルーム内では `sqlmap` と同様に既定の保存先を `exports/sqlmap` に寄せる。
 
 `probe` は URL 中の `FUZZ`、または空のクエリパラメータ（例: `?cv=` や `?mode=view&cv=`）へ既定ペイロードまたは `--payloads` の内容を差し込んで、`file://`、`php://filter`、`data://`、loopback HTTP などの利用可否をまとめて確認する。各試行ごとに `Status`、`Length`、タイムアウト、レスポンス先頭を表示し、`/etc/passwd`、`root:x:`、`<?php`、`DB_HOST`、`Permission denied` などが見つかった場合は強調する。対象パスが `.php` で終わる場合は、追加で `php://filter/convert.base64-encode/resource=...` を `index.php` / `config.php` / 現在の PHP ファイル名に対して試し、Base64 デコード後に PHP らしい内容が見つかれば `php://filter appears usable` と表示する。ルームディレクトリ内では `file.php?x=FUZZ` や `file.php?x=`、`/file.php?x=`、`:8080/file.php?x=` のようにホスト部分を省略でき、`CASE.thm` や `cases/<room>/.hosts`、`target-set` の IP から補完する。`--raw` で全文表示、`--save` でレスポンス保存、`--json` で JSON 出力、`-o <dir>` で保存先変更ができる。
 

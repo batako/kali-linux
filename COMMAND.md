@@ -431,10 +431,13 @@ hint-rm 3         # delete id=3
 | `hydraftp [-p port] [target] [user] [wordlist]` | hydra FTP (target: IP or FQDN; default user: anonymous, `hydraftp -h`) |
 | `mklist [passwords] <url\|html> [options]` | Build a password list from a URL or saved HTML (`mklist -h`) |
 | `probe <url> [options]` | Probe SSRF / LFI / PHP-wrapper style URL parameters (`probe -h`) |
+| `sql <subcommand> [options]` | Short `sqlmap` wrapper for `test/dbs/tables/columns/dump/auto` |
 | `reqfuzz [options] <url> <param> <start> <end>` | Simple Intruder-like request fuzzing for GET/POST (`--deep` for details, `-s` shows only diffs) |
 | `ffufweb <url> <user> [-fw N ...]` | POST login password spray via ffuf (`-U` for username spray) |
 | `hydraweb ...` | hydra http-post-form (`:F`/`:S`, `-H` vhost; `hydraweb -h`) |
 | `hydrabasic [-p port] [ip] <user> [path] [wordlist]` | HTTP Basic Auth (hydra http-get, `hydrabasic -h`) |
+
+`sql` is a thin wrapper around `sqlmap` for repetitive CTF flows such as `sql test -r req.txt`, `sql dbs -r req.txt`, `sql tables -r req.txt -D appdb`, `sql columns -r req.txt -D appdb -T users`, and `sql dump -r req.txt -D appdb -T users`. `sql auto` runs `--dbs` and `--tables`, filters out system databases, and only auto-dumps interesting table names such as `users`, `admins`, `accounts`, and `employees`. Dangerous actions like `--os-shell`, `--sql-shell`, and `--file-write` are intentionally not automated. Inside a room directory, the default save path follows the same `exports/sqlmap` behavior as the `sqlmap` wrapper.
 
 `probe` replaces `FUZZ`, or the first empty query parameter (for example `?cv=` or `?mode=view&cv=`), with built-in payloads or a custom `--payloads` list to quickly test `file://`, `php://filter`, `data://`, loopback HTTP targets, and similar wrappers. Each request prints `Status`, `Length`, timeout state, and a response preview, while highlighting hits such as `/etc/passwd`, `root:x:`, `<?php`, `DB_HOST`, and `Permission denied`. When the endpoint path ends with `.php`, `probe` also tries `php://filter/convert.base64-encode/resource=...` against `index.php`, `config.php`, and the current PHP filename, then loosely decodes Base64-looking content to confirm PHP-like code. Inside a room directory, you can omit the host and use forms like `file.php?x=FUZZ`, `file.php?x=`, `/file.php?x=`, or `:8080/file.php?x=`; `probe` fills the host from `CASE.thm`, `cases/<room>/.hosts`, or the current `target-set` IP. Use `--raw` for full body output, `--save` to store responses, `--json` for machine-readable output, and `-o <dir>` to control the save directory.
 
