@@ -15,6 +15,9 @@ services:
       # working directory
       - ./workspace:/workspace
 
+      # Local tool development
+      - ./tools:/tools
+
       # recon app (code read-only; data/ is rw overlay for recon.db)
       - ./recon:/opt/recon:ro
       - ./recon/data:/opt/recon/data

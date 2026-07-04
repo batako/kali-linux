@@ -6,6 +6,9 @@ dotfiles/zsh/.p10k.zsh
 # Local env (docker-compose secrets, API keys)
 .env
 
+# Local tool checkout
+tools/
+
 # OpenVPN (contains credentials; place .ovpn locally)
 config/openvpn/*.ovpn
 
