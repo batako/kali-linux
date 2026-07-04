@@ -97,6 +97,14 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     sudo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# === Batako APT repository tools ===
+RUN echo "deb [trusted=yes] https://apt.batako.net stable main" \
+    > /etc/apt/sources.list.d/batako.list && \
+    DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        req && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 RUN tar -xzf /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz \
     -C /usr/share/seclists/Passwords/Leaked-Databases/ && \
     rm -f /usr/share/seclists/Passwords/Leaked-Databases/rockyou.txt.tar.gz
