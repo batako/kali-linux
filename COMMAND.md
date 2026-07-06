@@ -458,8 +458,8 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 | `ssh [user]` (no `-i`) | Reuses the last successful `ssh -i` key for that ip+user |
 | `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |
 | `ssh-list [ip]` | List creds (same style as `creds-list`) |
-| `ssh-get` | **scp download** using creds from `creds-list` (`-o` destination, `-r` recursive; default `cases/<room>/exports/scp/`. alias: `sget`) |
-| `ssh-put` | **scp upload** using creds from `creds-list` (`-r` recursive. alias: `sput`) |
+| `ssh-get` | **scp download** using creds from `creds-list` or a saved passwordless user (`-o` destination, `-r` recursive; default `cases/<room>/exports/scp/`. alias: `sget`) |
+| `ssh-put` | **scp upload** using creds from `creds-list` or a saved passwordless user (`-r` recursive. alias: `sput`) |
 | `dav <subcommand> ...` | WebDAV helper via `curl` (`ls/get/put/cat/mkdir/rm/mv`; no auth by default, on auth challenge it lets you choose from `cl` first, otherwise tries `wampp:xampp` / `webdav:webdav` / `jigsaw:jigsaw` and saves hits to `cl`; `-u user[:pass]`, `-n/--dry-run` = print only) |
 
 **Note:** `-l` is for **log save**, not OpenSSH login user. Specify user as argument, e.g. `ssh holt`.

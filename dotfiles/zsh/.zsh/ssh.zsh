@@ -592,15 +592,6 @@ ssh-get() {
     echo "[-] no saved creds for ${user}@${ip} (creds-list empty? run sshkey-crack)" >&2
     return 1
   fi
-  if [[ -z "$pass" ]]; then
-    echo "[-] empty password in db for ${user}@${ip}" >&2
-    return 1
-  fi
-
-  if ! command -v sshpass >/dev/null 2>&1; then
-    echo "[-] sshpass not installed" >&2
-    return 1
-  fi
 
   if ! $dest_explicit; then
     dest="$(_ssh-get-default-dest)"
@@ -624,6 +615,27 @@ ssh-get() {
   for r in "${_SSH_GET_REMOTES[@]}"; do
     echo "    ${r}" >&2
   done
+
+  if [[ -z "$pass" ]]; then
+    local -a cmd=(
+      "$(_scp-bin)"
+      -o StrictHostKeyChecking=accept-new
+      -o ConnectTimeout=15
+    )
+    (( ${#scp_args[@]} )) && cmd+=("${scp_args[@]}")
+    cmd+=("${remote_specs[@]}" "$dest/")
+    "${cmd[@]}"
+    local rc=$?
+    if (( rc == 0 )); then
+      echo "[+] saved to: $dest/"
+    fi
+    return $rc
+  fi
+
+  if ! command -v sshpass >/dev/null 2>&1; then
+    echo "[-] sshpass not installed" >&2
+    return 1
+  fi
 
   if [[ -n "$identity" ]]; then
     sshpass -P "Enter passphrase for key" -p "$pass" "$(_scp-bin)" \
@@ -835,15 +847,6 @@ ssh-put() {
     echo "[-] no saved creds for ${user}@${ip} (creds-list empty? run sshkey-crack)" >&2
     return 1
   fi
-  if [[ -z "$pass" ]]; then
-    echo "[-] empty password in db for ${user}@${ip}" >&2
-    return 1
-  fi
-
-  if ! command -v sshpass >/dev/null 2>&1; then
-    echo "[-] sshpass not installed" >&2
-    return 1
-  fi
 
   for l in "${_SSH_PUT_LOCALS[@]}"; do
     if [[ ! -e "$l" ]]; then
@@ -865,6 +868,23 @@ ssh-put() {
   fi
   echo "[+] put: ${user}@${ip} ← ${local_specs[*]}" >&2
   echo "    → ${_SSH_PUT_REMOTE}" >&2
+
+  if [[ -z "$pass" ]]; then
+    local -a cmd=(
+      "$(_scp-bin)"
+      -o StrictHostKeyChecking=accept-new
+      -o ConnectTimeout=15
+    )
+    (( ${#scp_args[@]} )) && cmd+=("${scp_args[@]}")
+    cmd+=("${local_specs[@]}" "$remote_spec")
+    "${cmd[@]}"
+    return $?
+  fi
+
+  if ! command -v sshpass >/dev/null 2>&1; then
+    echo "[-] sshpass not installed" >&2
+    return 1
+  fi
 
   if [[ -n "$identity" ]]; then
     sshpass -P "Enter passphrase for key" -p "$pass" "$(_scp-bin)" \
