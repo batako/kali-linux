@@ -6,11 +6,11 @@ _creds-add() {
   if [[ $# -ge 1 && ( "$1" == -h || "$1" == --help ) ]]; then
     _toolkit-echo "usage: creds-add [-c comment] [ip] <username> [<password>]" "使い方: creds-add [-c コメント] [ip] <ユーザー名> [<パスワード>]"
     _toolkit-echo "  alias: ca" "  alias: ca"
-    _toolkit-echo "  password omitted → prompt (paste ok)" "  パスワード省略時はプロンプト入力（貼り付け可）"
+    _toolkit-echo "  password omitted → save username with blank password" "  パスワード省略時は空パスでユーザー名のみ保存"
     _toolkit-echo "  -c comment   usage hint shown in creds-list (e.g. SSH, HTTP Basic, postgres)" "  -c コメント  creds-list に用途ヒントを表示（例: SSH, HTTP Basic, postgres）"
     _toolkit-echo "  -c may appear before or after username/password" "  -c はユーザー名/パスワードの前後どちらでも指定可"
     _toolkit-echo "examples:" "例:"
-    _toolkit-echo "  creds-add vigilante              # prompt for password" "  creds-add vigilante              # パスワードを対話入力"
+    _toolkit-echo "  creds-add ubuntu                 # save username only" "  creds-add ubuntu                 # ユーザー名のみ保存"
     _toolkit-echo "  creds-add vigilante -            # password from stdin / pipe" "  creds-add vigilante -            # stdin / pipe からパスワード入力"
     _toolkit-echo "  creds-add vigilante '!#th3h00d'  # inline (quote when pass has # or !)" "  creds-add vigilante '!#th3h00d'  # 直接指定（# や ! を含むならクォート）"
     _toolkit-echo "  creds-add -c 'HTTP Basic' barry secret" "  creds-add -c 'HTTP Basic' barry secret"
@@ -72,24 +72,21 @@ _creds-add() {
   elif (( ${#pos[@]} >= 1 )); then
     pass="${(j: :)pos}"
     from_args=true
-  elif [[ -t 0 ]]; then
-    read -r "pass?password for ${user}@${ip} (paste ok): "
   else
-    pass="$(cat)"
-    pass="${pass//$'\n'/}"
+    pass=""
   fi
 
   if [[ -z "$ip" ]]; then
     echo "[-] no target ip — target-set <ip> first" >&2
     return 1
   fi
-  if [[ -z "$user" || -z "$pass" ]]; then
-    echo "[-] empty username or password" >&2
+  if [[ -z "$user" ]]; then
+    echo "[-] empty username" >&2
     return 1
   fi
   if $from_args && [[ "$pass" == "!" ]]; then
     echo "[-] password looks truncated — # starts a shell comment without quotes" >&2
-    echo "      creds-add ${user}              # prompt instead" >&2
+    echo "      creds-add ${user}              # save username only" >&2
     echo "      creds-add ${user} '!#th3h00d'" >&2
     return 1
   fi

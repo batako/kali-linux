@@ -421,7 +421,7 @@ hint-rm 3         # delete id=3
 
 | Command | Description |
 |----------|------|
-| `creds-add [-c comment] [ip] <user> <pass>` | Manual add (alias: `ca`. `-c` sets usage hint) |
+| `creds-add [-c comment] [ip] <user> [pass]` | Manual add (alias: `ca`. omit `pass` to save username only) |
 | `creds-list [ip]` | List creds (`user<TAB>pass<TAB>comment`). hydra / hash-crack auto-tag. **If `cases set` is active: load_from + current IP** (IP column first). `creds-list --all-case` for whole room (alias: `cl`) |
 | `creds-rm [ip] [user]` | Remove creds (omit user to remove all for IP. alias: `cr`. for `?` etc, use `noglob`) |
 | `hash-list [--json] [ip]` | Hash list (`user<TAB>stored<TAB>state`). alias: `hlist` |
@@ -453,7 +453,7 @@ Automatic login for `ssh` excludes **anonymous** (FTP accounts; strike `auth-ftp
 
 | Command | Description |
 |----------|------|
-| `ssh [user] [ip]` | Connect using DB creds + `sshpass` |
+| `ssh [user] [ip]` | Connect using DB creds + `sshpass` or saved passwordless user |
 | `ssh -i <key> [user] [ip]` | Key-based login (passphrase loaded from creds) |
 | `ssh [user]` (no `-i`) | Reuses the last successful `ssh -i` key for that ip+user |
 | `ssh -l` / `ssh --log` | Log session to `cases/.../logs/ssh_*` |

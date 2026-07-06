@@ -38,6 +38,7 @@ _ssh-consume-flags() {
         echo "usage: ssh [-l] [-p port] [-i key] [user] [ip]"
         echo "  saved creds: ssh / ssh user / ssh -i keyfile"
         echo "  ssh -p 6498 boring   → non-default port (OpenSSH -p)"
+        echo "  ca ubuntu            → save user only; if it's the only user in cl, plain ssh auto-uses it"
         echo "  ssh -i keyfile  → \$IP + user from creds-list (ssh-last / single cred / picker)"
         echo "  after a successful ssh -i login, later ssh [user] reuses that key (per ip+user)"
         echo "  -l / --log: session log → cases/.../logs/ssh_<host>_<user>_*.log"
@@ -84,6 +85,23 @@ _ssh-run-session() {
   else
     "${cmd[@]}"
   fi
+}
+
+_ssh-run-passwordless-login() {
+  local ip="$1" user="$2" logfile="$3"
+
+  python3 "$RECON_APP" ssh-last-set "$ip" "$user" >/dev/null 2>&1
+  echo "[+] connecting: ${user}@${ip} (passwordless / saved user)" >&2
+
+  local -a cmd=(
+    "$(_ssh-bin)"
+    -o StrictHostKeyChecking=accept-new
+    -o ConnectTimeout=15
+  )
+  (( ${#_SSH_REST[@]} )) && cmd+=("${_SSH_REST[@]}")
+  cmd+=(-tt "${user}@${ip}")
+
+  _ssh-run-session "$logfile" "${cmd[@]}"
 }
 
 # Parse ssh args; sets _SSH_IDENTITY, _SSH_USER, _SSH_IP, _SSH_REST[]
@@ -279,8 +297,8 @@ ssh-login() {
     return $?
   fi
   if [[ -z "$pass" ]]; then
-    echo "[-] empty password in db for ${user}@${ip}" >&2
-    return 1
+    _ssh-run-passwordless-login "$ip" "$user" "$logfile"
+    return $?
   fi
 
   if ! command -v sshpass >/dev/null 2>&1; then

@@ -102,7 +102,7 @@ for r in json.load(sys.stdin):
   users=("${filtered[@]}")
 
   if (( ${#users[@]} == 0 )); then
-    echo "[-] no ssh login creds for $ip (creds-list has only reserved names? creds-add <user> <pass>)" >&2
+    echo "[-] no ssh login creds for $ip (creds-list has only reserved names? creds-add <user> [pass])" >&2
     return 1
   fi
 

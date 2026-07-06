@@ -434,7 +434,7 @@ hint-rm 3         # id=3 を削除
 
 | コマンド | 説明 |
 |----------|------|
-| `creds-add [-c comment] [ip] <user> <pass>` | 手動登録（alias: `ca`。`-c` で用途メモ。`???` 等は `noglob` 付き） |
+| `creds-add [-c comment] [ip] <user> [pass]` | 手動登録（alias: `ca`。`-c` で用途メモ。`pass` 省略でユーザー名のみ保存。`???` 等は `noglob` 付き） |
 | `creds-list [ip]` | 一覧（`user<TAB>pass<TAB>comment`）。hydra / hash-crack 等は自動コメント。**`cases set` 済みなら lineage + 現在 IP**（先頭に IP 列）。`creds-list --all-case` でルーム内全 IP（alias: `cl`） |
 | `creds-rm [ip] [user]` | 削除（user 省略で IP の creds すべて。alias: `cr`。`?` 等は `noglob` 付き） |
 | `hash-list [--json] [ip]` | ハッシュ一覧（`user<TAB>stored<TAB>state`）。alias: `hlist` |
@@ -466,7 +466,7 @@ hint-rm 3         # id=3 を削除
 
 | コマンド | 説明 |
 |----------|------|
-| `ssh [user] [ip]` | DB の creds + `sshpass` で接続 |
+| `ssh [user] [ip]` | DB の creds + `sshpass`、または保存済み passwordless user で接続 |
 | `ssh -i <key> [user] [ip]` | 鍵（パスフレーズは creds から） |
 | `ssh [user]`（`-i` 省略） | 同一 ip+user で前回成功した `ssh -i` の鍵を自動再利用 |
 | `ssh -l` / `ssh --log` | セッションを `cases/.../logs/ssh_*` に記録 |
