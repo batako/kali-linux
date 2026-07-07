@@ -567,18 +567,32 @@ _enc_ui_active() {
   (( _ENC_UI_INIT ))
 }
 
-_enc_ui_format_row() {
+_enc_ui_row_text() {
   local key="$1" state="${_ENC_UI_STATE[$key]:-pending}" label val
   label="$(_enc_try_label "$key")"
   case "$state" in
-    pending) printf '%-14s -\n' "$label" >&2 ;;
-    trying) printf '%-14s ...\n' "$label" >&2 ;;
-    ng) printf '%-14s NG\n' "$label" >&2 ;;
+    pending) printf '%-14s -' "$label" ;;
+    trying) printf '%-14s ...' "$label" ;;
+    ng) printf '%-14s NG' "$label" ;;
     ok:*)
       val="${state#ok:}"
-      printf '%-14s OK %s\n' "$label" "$(_enc_ui_disp_val "$val")" >&2
+      printf '%-14s OK %s' "$label" "$(_enc_ui_disp_val "$val")"
       ;;
   esac
+}
+
+_enc_ui_text_lines() {
+  local text="$1" cols="${COLUMNS:-80}" len
+  len=${#text}
+  if [[ ! "$cols" =~ '^[0-9]+$' ]] || (( cols <= 0 )); then
+    cols=80
+  fi
+  (( len == 0 )) && { echo 1; return 0; }
+  echo $(( (len + cols - 1) / cols ))
+}
+
+_enc_ui_format_row() {
+  printf '%s\n' "$(_enc_ui_row_text "$1")" >&2
 }
 
 _enc_ui_clear_block() {
@@ -590,15 +604,16 @@ _enc_ui_clear_block() {
 
 _enc_ui_paint() {
   _enc_ui_clear_block
-  local n=0 key
+  local n=0 key row
   for key in "${_ENC_UI_KEYS[@]}"; do
     _enc_ui_format_row "$key"
-    (( n++ ))
+    row="$(_enc_ui_row_text "$key")"
+    (( n += $(_enc_ui_text_lines "$row") ))
   done >&2
   _ENC_UI_LINES=$n
   if [[ -n "$_ENC_UI_STATUS_TEXT" ]]; then
     printf '\n> %s\n' "$_ENC_UI_STATUS_TEXT" >&2
-    _ENC_UI_STATUS_LINES=2
+    _ENC_UI_STATUS_LINES=$(( 1 + $(_enc_ui_text_lines "> ${_ENC_UI_STATUS_TEXT}") ))
   else
     _ENC_UI_STATUS_LINES=0
   fi
@@ -618,18 +633,19 @@ _enc_ui_status_inline() {
   _ENC_UI_STATUS_TEXT="$*"
   if (( _ENC_UI_COMPACT )); then
     printf '? %s' "$_ENC_UI_STATUS_TEXT" >&2
-    _ENC_UI_STATUS_LINES=1
+    _ENC_UI_STATUS_LINES=$(_enc_ui_text_lines "? ${_ENC_UI_STATUS_TEXT}")
     return 0
   fi
   _enc_ui_clear_block
-  local n=0 key
+  local n=0 key row
   for key in "${_ENC_UI_KEYS[@]}"; do
     _enc_ui_format_row "$key"
-    (( n++ ))
+    row="$(_enc_ui_row_text "$key")"
+    (( n += $(_enc_ui_text_lines "$row") ))
   done >&2
   _ENC_UI_LINES=$n
   printf '\n> %s' "$_ENC_UI_STATUS_TEXT" >&2
-  _ENC_UI_STATUS_LINES=2
+  _ENC_UI_STATUS_LINES=$(( 1 + $(_enc_ui_text_lines "> ${_ENC_UI_STATUS_TEXT}") ))
 }
 
 _enc_ui_status_clear() {
@@ -644,14 +660,15 @@ _enc_ui_after_prompt() {
     return 0
   fi
   _ENC_UI_STATUS_TEXT=""
-  local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES + 1 )) n=0 key
+  local total=$(( _ENC_UI_LINES + _ENC_UI_STATUS_LINES + 1 )) n=0 key row
   if (( total > 0 )); then
     printf '\r\e[%dA\e[J' "$total" >&2
   fi
   _ENC_UI_STATUS_LINES=0
   for key in "${_ENC_UI_KEYS[@]}"; do
     _enc_ui_format_row "$key"
-    (( n++ ))
+    row="$(_enc_ui_row_text "$key")"
+    (( n += $(_enc_ui_text_lines "$row") ))
   done >&2
   _ENC_UI_LINES=$n
 }
@@ -809,13 +826,15 @@ _enc_ui_setup() {
 _enc_ui_teardown() {
   if _enc_ui_active; then
     if (( _ENC_UI_COMPACT )); then
-      local key
+      local key row total=0
       _enc_ui_finalize_states
       _enc_ui_clear_block
       for key in "${_ENC_UI_KEYS[@]}"; do
         _enc_ui_format_row "$key"
+        row="$(_enc_ui_row_text "$key")"
+        (( total += $(_enc_ui_text_lines "$row") ))
       done >&2
-      _ENC_UI_LINES=${#_ENC_UI_KEYS[@]}
+      _ENC_UI_LINES=$total
       _enc_ui_finish
       _ENC_UI_INIT=0
       return 0
