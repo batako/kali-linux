@@ -523,8 +523,23 @@ def ip_has_recon_data(ip: str) -> bool:
         SELECT 1 WHERE EXISTS (SELECT 1 FROM ports WHERE ip = ? LIMIT 1)
            OR EXISTS (SELECT 1 FROM executions WHERE ip = ? LIMIT 1)
            OR EXISTS (SELECT 1 FROM scout_jobs WHERE ip = ? LIMIT 1)
+           OR EXISTS (
+                SELECT 1
+                FROM artifacts
+                WHERE ip = ?
+                  AND kind IN (
+                    'username',
+                    'password',
+                    'creds_comment',
+                    'ssh_last_user',
+                    'dav_last_user',
+                    'msfr_last_user',
+                    'hash'
+                  )
+                LIMIT 1
+           )
         """,
-        (ip, ip, ip),
+        (ip, ip, ip, ip),
     ).fetchone()
     conn.close()
     return row is not None

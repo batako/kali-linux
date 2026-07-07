@@ -72,7 +72,7 @@ Structured data goes to Recon CLI -> `recon.db`; shell logs, cracking output, an
 **Not auto-created** (place manually if needed): `.target`, `ftp-shell`, `memo.md`, files pulled from the room like `*.jpg`, etc.
 Those can be placed directly under `CASE_HOME`.
 
-**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/.hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `cases ips` for the list.
+**When TryHackMe IP changes:** `target-set <newIP>` — auto-inherit when the previous target has recon or creds data; older IPs accumulate in `cases/<room>/lineage` (3+ reboots stay in scope). `hosts <room>.thm` is also applied automatically, so the room apex follows the current target IP. Lines in `cases/<room>/.hosts` with the **previous target IP are rewritten to the new IP** and `/etc/hosts` is updated. `exec-list` / `creds-list` / `scout -r` use **lineage + current IP** as recon scope. Pivot: `target-set <ip> --new` (clears lineage; no hosts IP rewrite). Manual pick: `target-set <ip> --pick` or `cases ips` for the list.
 
 ```bash
 cases set startup
@@ -150,7 +150,7 @@ Optional: `/workspace/exploits/<id>/exploit.manifest` (`entry=` `python=` `fetch
 
 | Command | Description |
 |----------|------|
-| `target-set <ip>` | Save to `cases/<room>/.target` and set `$IP`. On IP change, **auto-inherit** when recon data exists for previous target; **applies `hosts <room>.thm`** and **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
+| `target-set <ip>` | Save to `cases/<room>/.target` and set `$IP`. On IP change, **auto-inherit** when recon or creds data exists for previous target; **applies `hosts <room>.thm`** and **rewrites matching `hosts` lines** to the new IP (alias: `ts`) |
 | `target-set` | Reload `$IP` from `.target` (can infer room if cwd is under `cases/<room>/`) |
 | `target-set <ip> --new` | Pivot — no load_from, no hosts IP rewrite (do not inherit old IP scan/dirs) |
 | `target-set <ip> --pick` | Select inheritance source IP by number (last_seen + open/dirs count) |

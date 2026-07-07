@@ -262,6 +262,17 @@ class CaseScopeTests(unittest.TestCase):
         )
         self.assertEqual(load_from, "10.0.0.1")
 
+    def test_resolve_load_from_auto_inherits_previous_with_manual_creds(self) -> None:
+        self.case_scope.register_case_ip(self.case, "10.0.0.1")
+        self.db.creds_upsert("10.0.0.1", "ubuntu", "")
+
+        load_from = self.case_scope.resolve_load_from(
+            new_ip="10.0.0.2",
+            previous_ip="10.0.0.1",
+            mode="auto",
+        )
+        self.assertEqual(load_from, "10.0.0.1")
+
     def test_resolve_load_from_new_clears_inherit(self) -> None:
         self.case_scope.register_case_ip(self.case, "10.0.0.1")
         self.db.add_execution(None, "10.0.0.1", "probe", "curl old")

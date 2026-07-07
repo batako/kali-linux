@@ -72,7 +72,7 @@ target-show
 **自動では作らないもの**（必要なら自分で置く）: `.target`, `ftp-shell`, `memo.md`, ルームから取得した `*.jpg` など。
 それらは `CASE_HOME` 直下に直接置いてよい。
 
-**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/.hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `cases ips` で一覧。
+**TryHackMe で IP が変わったとき:** `target-set <新IP>` — 直前 target に recon / creds データがあれば **自動継承**し、旧 IP は `cases/<room>/lineage` に蓄積（3 回以上の reboot も scope に残る）。さらに `hosts <room>.thm` 相当も自動適用されるため、ルームの apex も現在の target IP に追従する。`cases/<room>/.hosts` の旧 IP 行も **新 IP に自動置換**して `/etc/hosts` を更新。`exec-list` / `creds-list` / `scout -r` は **lineage + 現在 IP** の recon scope を表示。pivot は `target-set <ip> --new`（lineage クリア・hosts IP 置換なし）、継承元の手動選択は `target-set <ip> --pick` または `cases ips` で一覧。
 
 ```bash
 cases set startup
@@ -150,7 +150,7 @@ exploit -u https://target/
 
 | コマンド | 説明 |
 |----------|------|
-| `target-set <ip>` | `cases/<room>/.target` に保存し `$IP` 設定。IP 変更時は直前 target に recon データがあれば **自動継承**し、**`hosts <room>.thm` 相当も自動適用**（alias: `ts`） |
+| `target-set <ip>` | `cases/<room>/.target` に保存し `$IP` 設定。IP 変更時は直前 target に recon / creds データがあれば **自動継承**し、**`hosts <room>.thm` 相当も自動適用**（alias: `ts`） |
 | `target-set` | `.target` から `$IP` を再読込（`cases/<room>/` 以下の cwd からルーム推定可） |
 | `target-set <ip> --new` | pivot — load_from なし（旧 IP の scan/dirs を引き継がない） |
 | `target-set <ip> --pick` | 継承元 IP を番号で選択（last_seen + open/dirs 件数） |
