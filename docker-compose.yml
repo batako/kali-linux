@@ -25,7 +25,7 @@ services:
       # configs
       - ./config/openvpn/tryhackme.ovpn:/etc/openvpn/tryhackme.ovpn:ro
       - ./dotfiles/tmux/.tmux.conf:/home/kali/.tmux.conf:ro
-      - ./dotfiles/zsh/.p10k.zsh:/home/kali/.p10k.zsh
+      - ./dotfiles/zsh/.p10k.zsh:/home/kali/.p10k.zsh:ro
       - ./dotfiles/zsh/.zsh:/home/kali/.zsh:ro
       - ./dotfiles/zsh/.zshrc:/home/kali/.zshrc
       - ./kali/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro

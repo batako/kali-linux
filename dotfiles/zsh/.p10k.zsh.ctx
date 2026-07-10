@@ -28,7 +28,7 @@
   # Zsh >= 5.1 is required.
   [[ $ZSH_VERSION == (5.<1->*|<6->.*) ]] || return
 
-  # Default layout; precmd switches to (ctx newline vcs_joined) inside a case.
+  # Default layout; precmd switches to (ctx newline vcs_joined) inside an active workspace.
   typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=(
     # os_icon               # os identifier
     dir                     # current directory
@@ -218,7 +218,7 @@
   # the full directory that was used in previous commands.
   typeset -g POWERLEVEL9K_DIR_HYPERLINK=false
 
-  # Refresh ctx prompt data once before each prompt.
+  # Refresh ctx prompt data before layout and segment rendering.
   function _ctx_prompt_refresh() {
     unset CTX_ACTIVE CTX_WORKSPACE_ID CTX_WORKSPACE_NAME CTX_WORKSPACE_PATH
     unset CTX_LOCAL_IP CTX_LOCAL_INTERFACE CTX_TARGET_NAME CTX_TARGET_IP
@@ -229,9 +229,24 @@
     output="$(command ctx prompt --format shell 2>/dev/null)" || return 0
     [[ -n "$output" ]] || return 0
 
+    local name quoted_value value
     while IFS= read -r line; do
-      [[ -n "$line" ]] || continue
-      eval "typeset -g ${line}"
+      [[ -n "$line" && "$line" == *=* ]] || continue
+
+      name="${line%%=*}"
+      quoted_value="${line#*=}"
+
+      case "$name" in
+        CTX_ACTIVE|CTX_WORKSPACE_ID|CTX_WORKSPACE_NAME|CTX_WORKSPACE_PATH|\
+        CTX_LOCAL_IP|CTX_LOCAL_INTERFACE|CTX_TARGET_NAME|CTX_TARGET_IP)
+          ;;
+        *)
+          continue
+          ;;
+      esac
+
+      value="${(Q)quoted_value}"
+      typeset -g "$name=$value"
     done <<< "$output"
   }
 
@@ -1824,22 +1839,22 @@
   #   - same-dir: Trim down prompt when accepting a command line unless this is the first command
   #               typed after changing current working directory.
   # Manual transient hooks (below) replace POWERLEVEL9K_TRANSIENT_PROMPT=always so we can
-  # hide line 1 (case_room) inside a case while keeping single-line behaviour elsewhere.
+  # Hide line 1 (ctx) inside an active workspace while keeping single-line behaviour elsewhere.
   typeset -g POWERLEVEL9K_TRANSIENT_PROMPT=off
 
   function p10k-on-pre-prompt() {
-    if [[ -n "${CASE_HOME:-}" && "$PWD" == "$CASE_HOME"(|/*) ]]; then
+    if [[ ${CTX_ACTIVE:-0} == 1 && -n "${CTX_WORKSPACE_PATH:-}" && "$PWD" == "$CTX_WORKSPACE_PATH"(|/*) ]]; then
       p10k display '1'=show
     else
-      p10k display '1/left/(dir|case_target|vcs_joined)'=show
+      p10k display '1/left/(dir|ctx_target|vcs_joined)'=show
     fi
   }
 
   function p10k-on-post-prompt() {
-    if [[ -n "${CASE_HOME:-}" && "$PWD" == "$CASE_HOME"(|/*) ]]; then
+    if [[ ${CTX_ACTIVE:-0} == 1 && -n "${CTX_WORKSPACE_PATH:-}" && "$PWD" == "$CTX_WORKSPACE_PATH"(|/*) ]]; then
       p10k display '1'=hide
     else
-      p10k display '1/left/(dir|case_target|vcs_joined)'=hide
+      p10k display '1/left/(dir|ctx_target|vcs_joined)'=hide
     fi
   }
 
@@ -1861,14 +1876,14 @@
   # really need it.
   typeset -g POWERLEVEL9K_DISABLE_HOT_RELOAD=true
 
-  # Two-line prompt inside a case (room header on line 1); single line elsewhere.
+  # Two-line prompt inside an active workspace (ctx header on line 1); single line elsewhere.
   function _p9k_ctx_layout_precmd() {
     emulate -L zsh
     local -a want
-    if [[ -n "${CASE_HOME:-}" && "$PWD" == "$CASE_HOME"(|/*) ]]; then
+    if [[ ${CTX_ACTIVE:-0} == 1 && -n "${CTX_WORKSPACE_PATH:-}" && "$PWD" == "$CTX_WORKSPACE_PATH"(|/*) ]]; then
       want=(ctx newline vcs_joined prompt_char)
     else
-      want=(dir case_target vcs_joined prompt_char)
+      want=(dir ctx_target vcs_joined prompt_char)
     fi
     if [[ "${POWERLEVEL9K_LEFT_PROMPT_ELEMENTS[*]}" != "${want[*]}" ]]; then
       typeset -g POWERLEVEL9K_LEFT_PROMPT_ELEMENTS=("${want[@]}")
