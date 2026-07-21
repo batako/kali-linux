@@ -1,0 +1,6 @@
+Anonymous FTP is enabled here.
+Try:
+- anonymous with an empty password
+- anonymous with anonymous@
+- ftpuser / ftpuser for authenticated access
+Upload tests should go into /upload.

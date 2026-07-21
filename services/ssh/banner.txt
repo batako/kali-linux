@@ -1,0 +1,5 @@
+Authorized test target.
+Users:
+- kali / kali
+- testuser / testpass
+- root / root

@@ -1,0 +1,13 @@
+Port 22
+Protocol 2
+UsePAM no
+PasswordAuthentication yes
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PermitRootLogin yes
+PubkeyAuthentication yes
+X11Forwarding no
+PrintMotd no
+Banner /etc/issue.net
+Subsystem sftp /usr/lib/openssh/sftp-server
+PidFile /run/sshd.pid

@@ -2,7 +2,7 @@ services:
   kali:
     build:
       context: .
-      dockerfile: ./kali/Dockerfile
+      dockerfile: ./services/kali/Dockerfile
 
     entrypoint: ["/usr/local/bin/entrypoint.sh"]
 
@@ -29,7 +29,7 @@ services:
       - ./dotfiles/zsh/.p10k.zsh:/home/kali/.p10k.zsh:ro
       - ./dotfiles/zsh/.zsh:/home/kali/.zsh:ro
       - ./dotfiles/zsh/.zshrc:/home/kali/.zshrc
-      - ./kali/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+      - ./services/kali/entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
 
     tty: true
     stdin_open: true
@@ -46,3 +46,33 @@ services:
       - "6080:6080" # noVNC
       - "7681:7681" # ttyd
       - "8080:8080" # Burp
+
+  # ssh:
+  #   build:
+  #     context: .
+  #     dockerfile: ./services/ssh/Dockerfile
+  #   ports:
+  #     - "2222:22" # OpenSSH test target
+
+  # ftp:
+  #   build:
+  #     context: .
+  #     dockerfile: ./services/ftp/Dockerfile
+  #   ports:
+  #     - "2121:21" # FTP control
+  #     - "21100-21110:21100-21110" # FTP passive ports
+
+  # smb:
+  #   build:
+  #     context: .
+  #     dockerfile: ./services/smb/Dockerfile
+  #   ports:
+  #     - "1139:139" # NetBIOS session service
+  #     - "1445:445" # SMB
+
+  # web:
+  #   build:
+  #     context: .
+  #     dockerfile: ./services/web/Dockerfile
+  #   ports:
+  #     - "8081:80" # HTTP test target

@@ -1,0 +1,11 @@
+[project]
+root = "/workspace/cases"
+
+[web.directory]
+max-requests = "10000"
+
+[web.file]
+max-requests = "2000"
+
+[web.tls]
+verify = "false"

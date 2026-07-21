@@ -4,9 +4,10 @@ TryHackMe-oriented Kali environment (Docker + OpenVPN + zsh wrappers + Recon CLI
 
 ## Setup
 
-Copy `.env.example` to `.env`, then edit the values you want to override (`VNC_PASSWORD`, optional `WPSCAN_API_TOKEN`, `TOOLKIT_LANG`, etc.).
+Create the local Docker Compose configuration from the checked-in example, then copy `.env.example` to `.env`. Edit the values you want to override (`VNC_PASSWORD`, optional `WPSCAN_API_TOKEN`, `TOOLKIT_LANG`, etc.). `docker-compose.yml` is local-only and is intentionally not tracked.
 
 ```bash
+cp docker-compose.yml.example docker-compose.yml
 cp .env.example .env
 ```
 
@@ -39,6 +40,8 @@ docker compose exec -it kali zsh
 | SOCKS5 | `localhost:1080` |
 
 Published ports: 1080, 5905, 6080, 7681, 8080 (`docker-compose.yml`).
+
+The `kali` service is the main TryHackMe environment. The other services under `services/` are test targets for validating commands and network tooling; enable them in the local `docker-compose.yml` when needed.
 
 ## Workspace
 
@@ -80,7 +83,8 @@ Playbooks → [CHEATSHEET.md](CHEATSHEET.md). Command reference → [COMMAND.md]
 
 ```
 ├── docker-compose.yml
-├── kali/                  Dockerfile, entrypoint
+├── docker-compose.yml.example  tracked Compose template
+├── services/              service definitions (`kali` plus command-test services)
 ├── config/openvpn/        tryhackme.ovpn (place manually)
 ├── host/foxyproxy/        FoxyProxy profiles for the host browser
 ├── dotfiles/zsh/          wrappers (mounted to /home/kali/.zsh)

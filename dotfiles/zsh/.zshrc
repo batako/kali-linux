@@ -71,3 +71,7 @@ path=(
   "$HOME/.local/bin"
   $path
 )
+
+# >>> ctx >>>
+source <(ctx completion zsh --extra-shortcuts)
+# <<< ctx <<<

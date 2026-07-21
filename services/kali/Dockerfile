@@ -83,6 +83,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     kali-tools-web \
     seclists \
     sherlock \
+    wordlists \
     # === build tools ===
     build-essential \
     golang \
@@ -98,8 +99,8 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # === Batako APT repository tools ===
-RUN echo "deb [trusted=yes] https://apt.batako.net stable main" \
-    > /etc/apt/sources.list.d/batako.list && \
+RUN echo "deb [trusted=yes] https://offsec.batako.net stable main" \
+    > /etc/apt/sources.list.d/batako-offsec.list && \
     DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         req && \

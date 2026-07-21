@@ -6,8 +6,15 @@ dotfiles/zsh/.p10k.zsh
 # Local env (docker-compose secrets, API keys)
 .env
 
+# Local Docker Compose configuration (copy docker-compose.yml.example first)
+docker-compose.yml
+
 # Local tool checkout
 tools/
+
+# ctx runtime state (keep only the checked-in example config)
+dotfiles/ctx/.ctx/*
+!dotfiles/ctx/.ctx/config.toml.example
 
 # OpenVPN (contains credentials; place .ovpn locally)
 config/openvpn/*.ovpn
